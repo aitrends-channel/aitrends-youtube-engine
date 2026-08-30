@@ -8,9 +8,10 @@ import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
-import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban, Check } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban, Check, X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import type { Beat } from "@/lib/types";
+import type { Beat, ProjectElement } from "@/lib/types";
+import useSWR from "swr";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
 import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -137,6 +138,23 @@ function gradeCss(id: string, strength: number): string {
   const f = VIDEO_FILTERS.find((x) => x.id === id);
   return f ? f.css(Math.max(0, Math.min(1, strength))) : "none";
 }
+
+/** The shapes the worker ships, drawn by its scripts/make-elements.sh and
+ *  copied into public/elements so the browser shows the same files. */
+const ELEMENTS = [
+  // The furniture people actually put on a video, each in the colour its
+  // platform uses: a grey pill reads as a caption rather than as a button.
+  { id: "subscribe",  label: "Subscribe" },
+  { id: "subscribed", label: "Subscribed" },
+  { id: "like",       label: "Like" },
+  { id: "share",      label: "Share" },
+  { id: "follow",     label: "Follow" },
+  { id: "comment",    label: "Comment" },
+  { id: "new",        label: "New" },
+  { id: "live",       label: "Live" },
+] as const;
+
+const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.18 };
 
 /** The sound library, synthesised by the worker's scripts/make-sfx.sh and
  *  copied into public/sfx so the browser can play the same files. */
@@ -788,7 +806,7 @@ export default function AssemblePage({ params }: PageProps) {
   const [videoFilter, setVideoFilter] = useState("none");
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
   const [sfxVolume, setSfxVolume] = useState(0.6);
-  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound">("effects");
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -818,12 +836,6 @@ export default function AssemblePage({ params }: PageProps) {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
-  // How wide a second is. Stepped rather than continuous: a slider over pixels
-  // per second invites fiddling, and six steps cover ten minutes to one beat.
-  const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
-  // True while any beat is still guessing, so the panel can say so rather than
-  // presenting an estimate as a measurement.
-  const timelineEstimated = beats.some((b) => beatSeconds(b).estimated);
   const [pxPerSecond, setPxPerSecond] = useState(ZOOM_STEPS[DEFAULT_ZOOM]);
   // The step nearest the current scale, so the slider and the buttons still
   // work after Fit has put us somewhere between two of them.
@@ -835,23 +847,6 @@ export default function AssemblePage({ params }: PageProps) {
   // Squeeze the whole video into the width available, the way CapCut's fit
   // does. Not a zoom step: the right scale depends on the window and on how
   // long this particular video is, so it is computed rather than chosen.
-  const fitTimeline = useCallback(() => {
-    const width = timelineViewportRef.current?.clientWidth ?? 0;
-    if (!width || !timelineTotal) return;
-    // Sixteen px of slack so the last beat is not flush against the edge.
-    setPxPerSecond(Math.max(2, (width - 16) / timelineTotal));
-  }, [timelineTotal]);
-
-  // Fit the whole video into the width once the lengths are known. Runs on the
-  // first real total only: after that the zoom is the user's, and re-fitting
-  // when a beat's duration arrives would yank the strip out from under them.
-  const fittedRef = useRef(false);
-  useEffect(() => {
-    if (fittedRef.current || !timelineTotal || !timelineViewportRef.current?.clientWidth) return;
-    fittedRef.current = true;
-    fitTimeline();
-  }, [timelineTotal, fitTimeline, narrow]);
-
   // Playing the edit before rendering it.
   //
   // There is no assembled video to scrub yet, so this plays what actually
@@ -878,6 +873,41 @@ export default function AssemblePage({ params }: PageProps) {
   const rafRef = useRef<number | null>(null);
 
   const playable = beats.filter((b) => !!b.voiceoverUrl);
+
+  // How wide a second is. Stepped rather than continuous: a slider over pixels
+  // per second invites fiddling, and six steps cover ten minutes to one beat.
+  const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+  /** What one beat's block is drawn at: its own length, or the floor that keeps
+   *  a half-second beat clickable. */
+  const beatTileWidth = useCallback((b: Beat) =>
+    Math.max(pxPerSecond < 12 ? 4 : narrow ? 12 : 20, beatSeconds(b).seconds * pxPerSecond),
+  [pxPerSecond, narrow]);
+  /** The strip is as wide as the picture row actually comes out, gaps included,
+   *  rather than as wide as the time axis says it should be. */
+  const stripWidth = Math.max(
+    320,
+    beats.reduce((sum, b) => sum + beatTileWidth(b), 0) + Math.max(0, beats.length - 1),
+  );
+  // True while any beat is still guessing, so the panel can say so rather than
+  // presenting an estimate as a measurement.
+  const timelineEstimated = beats.some((b) => beatSeconds(b).estimated);
+
+  const fitTimeline = useCallback(() => {
+    const width = timelineViewportRef.current?.clientWidth ?? 0;
+    if (!width || !timelineTotal) return;
+    // Sixteen px of slack so the last beat is not flush against the edge.
+    setPxPerSecond(Math.max(2, (width - 16) / timelineTotal));
+  }, [timelineTotal]);
+
+  // Fit the whole video into the width once the lengths are known. Runs on the
+  // first real total only: after that the zoom is the user's, and re-fitting
+  // when a beat's duration arrives would yank the strip out from under them.
+  const fittedRef = useRef(false);
+  useEffect(() => {
+    if (fittedRef.current || !timelineTotal || !timelineViewportRef.current?.clientWidth) return;
+    fittedRef.current = true;
+    fitTimeline();
+  }, [timelineTotal, fitTimeline, narrow]);
   const bgmPreviewUrl = bgmObjectUrl ?? bgmUploadedUrl;
   // Preview only. The worker has no narration level — the voiceover is the
   // reference everything else is mixed against — so this changes what you hear
@@ -929,6 +959,16 @@ export default function AssemblePage({ params }: PageProps) {
     playIndexRef.current = index;
     setPlayingBeat(beat.beatNumber);
 
+    // Whatever was sounding stops first. This is the only place a voiceover
+    // element is created, so this is the only place it can be leaked.
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch { /* already gone */ }
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+
     // Where this block starts, measured the same way its width is, so the
     // playhead and the strip agree.
     const offset = playable.slice(0, index).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
@@ -970,36 +1010,50 @@ export default function AssemblePage({ params }: PageProps) {
   // of what makes it a timeline rather than a strip of pictures: a tester
   // looked at it and did not recognise one, having found nothing that behaves
   // the way an editor's does.
-  const seekTo = useCallback((seconds: number) => {
+  const locate = useCallback((seconds: number) => {
     const t = Math.max(0, Math.min(timelineTotal, seconds));
     let acc = 0;
-    let index = 0;
-    let within = 0;
     for (let i = 0; i < playable.length; i++) {
       const span = beatSeconds(playable[i]).seconds;
       if (t < acc + span || i === playable.length - 1) {
-        index = i;
-        within = span > 0 ? Math.max(0, Math.min(1, (t - acc) / span)) : 0;
-        break;
+        return { t, index: i, within: span > 0 ? Math.max(0, Math.min(1, (t - acc) / span)) : 0 };
       }
       acc += span;
     }
+    return { t, index: 0, within: 0 };
+  }, [playable, timelineTotal]);
+
+  const seekTo = useCallback((seconds: number, commit = true) => {
+    const { t, index, within } = locate(seconds);
     setPlayhead(t);
+    setShowFinished(false);
     const landedOn = playable[index];
-    if (playing) {
+    if (playing && commit) {
       playFrom(index, within);
+    } else if (playing && !commit) {
+      // Mid-drag: hold the sound while the playhead moves, and let the release
+      // decide where playback resumes.
+      if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } }
     } else if (landedOn) {
       // Not playing: point the preview at the beat under the playhead, which
       // is what a scrub is for when the audio is stopped.
       setTimelineBeat(landedOn.beatNumber);
     }
-  }, [playable, playing, playFrom, timelineTotal]);
+  }, [playable, playing, playFrom, locate]);
 
   const togglePlay = useCallback(() => {
     if (playing) { stopPlayback(); return; }
     if (playable.length === 0) { toast.info("No voiceover to play yet."); return; }
+    // Play means play the edit. With a render on screen the frame was showing
+    // the finished file while the narration ran underneath it, which is two
+    // videos at once and neither of them what was asked for.
+    setShowFinished(false);
     setPlaying(true);
-    setPlayhead(0);
+    // Resume from the marker. Restarting at zero after a pause is the one
+    // thing a transport must not do.
+    const from = playhead >= timelineTotal - 0.05 ? 0 : playhead;
+    const { index, within } = locate(from);
+    setPlayhead(from);
 
     // Muted means volume zero, which is exactly what the worker is told, so
     // there is nothing to start.
@@ -1011,8 +1065,8 @@ export default function AssemblePage({ params }: PageProps) {
       void bed.play().catch(() => { /* the narration still plays without it */ });
     }
 
-    playFrom(0);
-  }, [playing, playable.length, playFrom, stopPlayback, bgmPreviewUrl, bgmVolume]);
+    playFrom(index, within);
+  }, [playing, playable.length, playFrom, stopPlayback, bgmPreviewUrl, bgmVolume, playhead, timelineTotal, locate]);
 
   // Set or clear one beat's effect. Optimistic: the select is the only feedback
   // and waiting a round trip to show a choice feels broken.
@@ -1050,6 +1104,77 @@ export default function AssemblePage({ params }: PageProps) {
 
   const [shuffling, setShuffling] = useState(false);
   const [pickedSound, setPickedSound] = useState<string | null>(null);
+  const [pickedElement, setPickedElement] = useState<string | null>(null);
+  const [selectedElement, setSelectedElement] = useState<string | null>(null);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [editConfirmOpen, setEditConfirmOpen] = useState(false);
+  /** Set when Edit is confirmed: the render on screen is no longer what the
+   *  page describes, so it leaves the preview and the only thing left of it is
+   *  a download. Cleared when a new render arrives. */
+  const [renderStale, setRenderStale] = useState(false);
+  /** Watch the finished video in the preview, or go back to editing it. */
+  const [showFinished, setShowFinished] = useState(true);
+
+  // Elements are their own objects on their own timeline, so they are fetched
+  // and written apart from the beats.
+  const { data: elementData, mutate: mutateElements } = useSWR<{ elements: ProjectElement[] }>(
+    `/api/projects/${projectId}/elements`,
+    (url: string) => fetch(url).then((r) => r.json()),
+    { revalidateOnFocus: false },
+  );
+  const projectElements: ProjectElement[] = elementData?.elements ?? [];
+
+  const addElement = useCallback(async (el: {
+    element: string; start_sec: number; end_sec: number; x: number; y: number; size: number; lane?: number;
+  }) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/elements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(el),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? "Could not add it");
+      await mutateElements();
+      setSelectedElement(out.element?.id ?? null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add it");
+    }
+  }, [projectId, mutateElements]);
+
+  // Optimistic: dragging one is a continuous gesture and a round trip per
+  // frame would make it crawl. The write is debounced behind it.
+  const elementPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateElement = useCallback((id: string, patch: Partial<ProjectElement>, commit = true) => {
+    void mutateElements((cur) => cur && ({
+      elements: cur.elements.map((el) => el.id === id ? { ...el, ...patch } : el),
+    }), { revalidate: false });
+    if (!commit) return;
+    if (elementPatch.current) clearTimeout(elementPatch.current);
+    elementPatch.current = setTimeout(() => {
+      void fetch(`/api/projects/${projectId}/elements`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      }).catch(() => { /* the next drag re-sends it */ });
+    }, 250);
+  }, [projectId, mutateElements]);
+
+  const LANE_H = 35;
+  const elementLaneCount = Math.min(10, Math.max(1, ...projectElements.map((el) => (el.lane ?? 0) + 1)) + (projectElements.length ? 1 : 0));
+
+  const removeElement = useCallback(async (id: string) => {
+    void mutateElements((cur) => cur && ({ elements: cur.elements.filter((el) => el.id !== id) }), { revalidate: false });
+    setSelectedElement((cur) => (cur === id ? null : cur));
+    await fetch(`/api/projects/${projectId}/elements?id=${id}`, { method: "DELETE" }).catch(() => {});
+    await mutateElements();
+  }, [projectId, mutateElements]);
+  /** What is under the pointer mid-drag, so it can be drawn following it. */
+  const [draggingElement, setDraggingElement] = useState<{ id: string; x: number; y: number } | null>(null);
+  const previewFrameRef = useRef<HTMLDivElement | null>(null);
+  /** The strip itself, in timeline pixels, for dropping an element at a time. */
+  const timelineStripRef = useRef<HTMLDivElement | null>(null);
+  const elementRowsRef = useRef<HTMLDivElement | null>(null);
   // Tuning per sound, for sounds not yet committed to a beat. A whoosh pitched
   // down and a chime left alone are two different settings, and coming back to
   // either should find it as it was left.
@@ -1079,7 +1204,7 @@ export default function AssemblePage({ params }: PageProps) {
         transitionLengths?: Record<string, number>;
         motionShapes?: Record<string, { strength: string; seconds: number }>;
       };
-      if (saved.tab && ["effects", "transitions", "filters", "sound"].includes(saved.tab)) {
+      if (saved.tab && ["effects", "transitions", "filters", "sound", "elements"].includes(saved.tab)) {
         setEffectsTab(saved.tab as typeof effectsTab);
       }
       if (typeof saved.pickedSound === "string" || saved.pickedSound === null) {
@@ -1319,6 +1444,22 @@ export default function AssemblePage({ params }: PageProps) {
     return acc;
   }, {});
 
+  useEffect(() => {
+    if (!selectedElement) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      // Not while typing: a caption field would lose its last character.
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        void removeElement(selectedElement);
+      }
+      if (e.key === "Escape") setSelectedElement(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedElement, removeElement]);
+
   const previewCaption = (() => {
     if (!captionsEnabled) return "";
     const source = playingBeat !== null
@@ -1463,6 +1604,10 @@ export default function AssemblePage({ params }: PageProps) {
   const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
+  /** Final mode: a render exists and the page is showing it. Nothing on the
+   *  timeline can be changed here, because none of it is in the video on
+   *  screen — Edit is the way back. */
+  const finalMode = showPreview && showFinished && !renderStale;
 
   // Width the preview <video> actually renders at: min(panel width,
   // 70vh × ratio) — the same bound its max-h-[70vh] + max-w-full impose.
@@ -1492,6 +1637,11 @@ export default function AssemblePage({ params }: PageProps) {
   // doesn't leave the warning stuck.
   const [previewLoadError, setPreviewLoadError] = useState(false);
   useEffect(() => { setPreviewLoadError(false); }, [previewUrl]);
+  useEffect(() => {
+    if (!previewUrl) return;
+    setRenderStale(false);
+    setShowFinished(true);
+  }, [previewUrl]);
 
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
@@ -2867,10 +3017,70 @@ export default function AssemblePage({ params }: PageProps) {
                     ].filter(Boolean).join(" · ")}
                   </p>
                 </div>
-                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
-                  {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setExportConfirmOpen(true); }}
+                    disabled={!hasVoiceover || assembling}
+                    title={hasVoiceover ? "Render the finished video" : "Generate a voiceover first"}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {assembling ? "Rendering…" : showPreview ? "Re-render" : "Render"}
+                  </button>
+                  {showPreview && previewUrl && !renderStale && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (showFinished) setEditConfirmOpen(true);
+                        else setShowFinished(true);
+                      }}
+                      title={showFinished ? "Go back to editing" : "Watch the assembled video"}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      style={showFinished
+                        ? { background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }
+                        : { background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }}
+                    >
+                      {showFinished ? "Edit" : "Watch"}
+                    </button>
+                  )}
+                  {/* Only once there is something to download. The href goes
+                      through our route, which redirects to a presigned
+                      attachment URL: an anchor's download attribute is ignored
+                      cross-origin, so linking R2 opened the video in the tab. */}
+                  {showPreview && previewUrl && !previewLoadError && (
+                    <a
+                      href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(previewUrl)}&filename=${encodeURIComponent(`${(project?.channel_name as string | undefined)?.trim() || "video"}.mp4`)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      title={renderStale ? "Download the last assembled video" : "Download the finished video"}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+                    >
+                      {renderStale ? "↓ Export previous" : "↓ Export"}
+                    </a>
+                  )}
+                  <span style={{ color: "var(--c-45)" }}>
+                    {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                </div>
               </div>
+              {draggingElement && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={`/elements/${draggingElement.id}.png`}
+                  alt=""
+                  className="fixed z-50 pointer-events-none"
+                  style={{
+                    left: draggingElement.x,
+                    top: draggingElement.y,
+                    transform: "translate(-50%, -50%)",
+                    width: 120,
+                    opacity: 0.85,
+                    filter: "drop-shadow(0 4px 10px oklch(0 0 0 / 0.5))",
+                  }}
+                />
+              )}
               {effectsOpen && (
               <>
               {/* Side by side. Full width, the preview was mostly black bars
@@ -2897,6 +3107,8 @@ export default function AssemblePage({ params }: PageProps) {
                     }}
                   >
                     <div
+                      ref={previewFrameRef}
+                      onPointerDown={() => setSelectedElement(null)}
                       className="relative w-full overflow-hidden"
                       style={{
                         aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
@@ -2905,6 +3117,21 @@ export default function AssemblePage({ params }: PageProps) {
                         containerType: "size",
                       }}
                     >
+                      {/* The finished render, in the frame the edit was made
+                          in. Everything under it is still there and comes back
+                          the moment it is toggled off. */}
+                      {showPreview && previewUrl && !previewLoadError && showFinished && !renderStale ? (
+                        <video
+                          key={previewUrl}
+                          src={previewUrl}
+                          controls
+                          className="absolute inset-0 w-full h-full object-contain"
+                          style={{ background: "black" }}
+                          onError={() => setPreviewLoadError(true)}
+                          onLoadedMetadata={() => setPreviewLoadError(false)}
+                        />
+                      ) : (
+                      <>
                       {/* The grade goes on the picture, not on the frame: it
                           covers both shots through a seam, and the caption and
                           the logo above it stay ungraded, which is where the
@@ -2999,6 +3226,93 @@ export default function AssemblePage({ params }: PageProps) {
                           loop={!playing}
                         />
                       )}
+                      {/* Every element on screen at this moment, over the
+                          picture and under the logo, exactly as the render
+                          stacks them. Draggable while the tab is open, because
+                          a position typed as two numbers is a position nobody
+                          gets right. */}
+                      {[...projectElements]
+                        .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
+                        .filter((el) => playhead >= el.start_sec && playhead < el.end_sec)
+                        .map((el) => {
+                          const editable = effectsTab === "elements" && !assembling;
+                          const picked = selectedElement === el.id;
+                          return (
+                            <div
+                              key={el.id}
+                              className="absolute touch-none"
+                              style={{
+                                left: `${el.x * 100}%`,
+                                top: `${el.y * 100}%`,
+                                width: `${el.size * 100}%`,
+                                outline: picked && editable ? "1px dashed oklch(0.72 0.25 285)" : undefined,
+                                outlineOffset: 2,
+                              }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`/elements/${el.element}.png`}
+                                alt=""
+                                draggable={false}
+                                onPointerDown={!editable ? undefined : (ev) => {
+                                  ev.preventDefault();
+                                  ev.stopPropagation();
+                                  setSelectedElement(el.id);
+                                  const frame = previewFrameRef.current;
+                                  if (!frame) return;
+                                  const r = frame.getBoundingClientRect();
+                                  // Where inside it the drag began, so it stays
+                                  // under the pointer rather than jumping its
+                                  // own corner there.
+                                  const grabX = (ev.clientX - r.left) / r.width - el.x;
+                                  const grabY = (ev.clientY - r.top) / r.height - el.y;
+                                  const at = (m: PointerEvent) => ({
+                                    x: Math.max(0, Math.min(1, (m.clientX - r.left) / r.width - grabX)),
+                                    y: Math.max(0, Math.min(1, (m.clientY - r.top) / r.height - grabY)),
+                                  });
+                                  const move = (m: PointerEvent) => updateElement(el.id, at(m), false);
+                                  const up = (m: PointerEvent) => {
+                                    window.removeEventListener("pointermove", move);
+                                    window.removeEventListener("pointerup", up);
+                                    updateElement(el.id, at(m));
+                                  };
+                                  window.addEventListener("pointermove", move);
+                                  window.addEventListener("pointerup", up);
+                                }}
+                                className="block w-full h-auto touch-none"
+                                style={{
+                                  cursor: editable ? "grab" : "default",
+                                  filter: "drop-shadow(0 2px 6px oklch(0 0 0 / 0.5))",
+                                }}
+                              />
+                              {editable && picked && (
+                                <span
+                                  onPointerDown={(ev) => {
+                                    ev.stopPropagation();
+                                    ev.preventDefault();
+                                    setSelectedElement(el.id);
+                                    const frame = previewFrameRef.current;
+                                    if (!frame) return;
+                                    const r = frame.getBoundingClientRect();
+                                    const left = el.x * r.width;
+                                    const sizeAt = (m: PointerEvent) =>
+                                      Math.max(0.05, Math.min(0.8, (m.clientX - r.left - left) / r.width));
+                                    const move = (m: PointerEvent) => updateElement(el.id, { size: sizeAt(m) }, false);
+                                    const up = (m: PointerEvent) => {
+                                      window.removeEventListener("pointermove", move);
+                                      window.removeEventListener("pointerup", up);
+                                      updateElement(el.id, { size: sizeAt(m) });
+                                    };
+                                    window.addEventListener("pointermove", move);
+                                    window.addEventListener("pointerup", up);
+                                  }}
+                                  className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 rounded-full cursor-nwse-resize touch-none"
+                                  style={{ background: "oklch(0.72 0.25 285)", border: "2px solid white" }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       {(logoUploadedUrl || logoObjectUrl) && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
@@ -3013,7 +3327,10 @@ export default function AssemblePage({ params }: PageProps) {
                           }}
                         />
                       )}
+                      </>
+                      )}
                     </div>
+
                   </div>
                 </div>
                 )}
@@ -3052,8 +3369,11 @@ export default function AssemblePage({ params }: PageProps) {
                     on screen, and how it gives way to the next one. Tabs rather
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
-                <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"]] as const).map(([id, label]) => (
+                {/* The tabs themselves stay live in final mode: looking at
+                    what was set is not changing it. */}
+                <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
+                  style={{ background: "var(--bg-input)" }}>
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"]] as const).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -3068,7 +3388,436 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
-                {effectsTab === "sound" ? (
+                {assembling ? (
+                <div className="space-y-4">
+                {/* In-progress preview — visible while assembling, only
+                    after the worker has uploaded mixed.mp4. The video is
+                    watchable but is missing the final-burn pass (captions
+                    + logo bake + upscale), so we label it clearly so the
+                    user knows the cosmetic touch-ups are still rendering. */}
+                {assembling && inProgressPreviewUrl && (
+                  <div className="space-y-2">
+                    <video
+                      key={inProgressPreviewUrl}
+                      src={inProgressPreviewUrl}
+                      controls
+                      className="mx-auto block max-h-[70vh] rounded-xl"
+                      style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
+                    />
+                    <p className="text-sm text-center font-medium leading-snug" style={{ color: "var(--accent-amber-text)" }}>
+                      Preview — finishing up
+                    </p>
+                  </div>
+                )}
+
+                {assembling && (() => {
+                  /* Stage-aware progress: the worker emits short status strings
+                     for each phase via setProgress(); we match the current one
+                     to a known stage and render every stage with a done/doing/
+                     pending indicator + an overall % bar.
+
+                     `paused` freezes the animations the moment the user clicks
+                     Stop. Without this the per-step spinner + indeterminate
+                     stripe keep moving while we wait the few seconds for the
+                     worker to acknowledge — visually indistinguishable from
+                     normal progress, which makes the Stop click feel ignored.
+                     Active when stopRequested (user clicked Stop),
+                     finalizeRequested (user clicked Use this version), or
+                     the worker has already transitioned to "stopped". */
+                  const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
+                  const stopped = project?.assembly_status === "stopped";
+                  // Matchers are tightened so each one only catches its own
+                  // worker progress string. The old "Downloading" prefix
+                  // greedily swallowed bgm and logo downloads too, which
+                  // collapsed them into the voiceover stage and hid that they
+                  // were happening. The worker emits the exact strings shown
+                  // below (assemble.ts), so anchor to them precisely.
+                  // Stage list only includes stages that map to a real
+                  // worker pass after the assemble pipeline refactor:
+                  //   - Logo overlay was baked into normalizeClip — the
+                  //     "Downloading channel logo…" status is folded into
+                  //     the clips stage match because it's a brief prelude
+                  //     to clip processing, not its own pass.
+                  //   - Burning captions was baked into normalizeClip too,
+                  //     so the standalone "Burn captions" stage is gone.
+                  //   - "Generate captions" never had a worker progress
+                  //     line of its own; the only meaningful caption-prep
+                  //     wait is the optional translate call, kept as its
+                  //     own stage when captions translation is needed.
+                  //   - join only matches the final visuals concat now;
+                  //     "Joining per-beat audio…" lands in voiceover.
+                  // Five high-level stages. The previous 9-step layout
+                  // exposed pipeline internals (transcribe, translate,
+                  // download bgm, restore-from-checkpoint) that the
+                  // user can't act on and that change run-to-run based
+                  // on whether captions/translation/BGM are configured.
+                  // Collapsing into Prepare / Build clips / Mix audio /
+                  // Burn captions / Upload keeps the count stable and
+                  // the labels meaningful regardless of options.
+                  const stages = [
+                    // Prepare: queue claim, voiceover ready, transcribe,
+                    // translate, channel-logo download (the latter is
+                    // an early-stage prereq, not part of clip encoding).
+                    { key: "prepare",    label: "Prepare",         match: (s: string) => (
+                      s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
+                      || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
+                      || s.startsWith("Transcribing") || s.startsWith("Translating")
+                    ) },
+                    // Build clips: per-beat encode pass + the post-encode
+                    // "Finalizing…" debounce the worker emits when a
+                    // worker pool finishes its last beat.
+                    { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
+                    // Mix audio: join clips, freeze-pad, BGM + logo
+                    // download, and the actual mix pass. Logo download
+                    // lives here now (used to be a Stage B prereq) so
+                    // both BGM and logo prep land in one user-visible
+                    // step. The freeze-pad only fires in legacy mode
+                    // with trailing silence; folding it in keeps step
+                    // counts run-stable.
+                    { key: "mix",        label: "Mix audio",       match: (s: string) => (
+                      s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
+                      || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
+                      || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
+                    ) },
+                    // Stage F removed in the post-Coconut refactor.
+                    // Captions are baked per-beat during Build clips;
+                    // logo composites at Mix audio; there's no final-
+                    // burn pass anymore. mixed.mp4 IS the final video,
+                    // which uploads directly from Stage D's output.
+                    { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
+                  ];
+                  // Monotonic stage index: once we've seen progress to
+                  // a later stage, don't ever fall back to an earlier
+                  // one. The worker occasionally writes transient
+                  // status lines that don't match any rule (e.g. a
+                  // "Validating…" / "Cleaning up…" between stages),
+                  // which would otherwise drop findIndex to -1 and
+                  // make the progress bar visibly jump back to step 1
+                  // before snapping forward on the next matching line.
+                  const i = stages.findIndex((s) => s.match(assembleStatus));
+                  if (i > lastStageIdxRef.current) lastStageIdxRef.current = i;
+                  else if (i === -1 && lastStageIdxRef.current === -1) lastStageIdxRef.current = 0;
+                  const currentIdx = lastStageIdxRef.current >= 0 ? lastStageIdxRef.current : 0;
+                  const pct = Math.round((currentIdx / stages.length) * 100);
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs" style={{ color: "var(--c-45)" }}>
+                          <span>Step {currentIdx + 1} of {stages.length}</span>
+                          <span>{pct}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                          <div className="h-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2">
+                        {stages.map((s, i) => {
+                          const done = i < currentIdx;
+                          const doing = i === currentIdx;
+                          // While the in-progress preview is showing,
+                          // the user already knows the early stages
+                          // completed — they're watching the video.
+                          // Collapse the list to only the still-active
+                          // and pending steps so the panel focuses on
+                          // what they're waiting for (Finalize, Upload).
+                          // The overall % bar + "Step X of N" header
+                          // above keep showing total progress.
+                          if (inProgressPreviewUrl && done) return null;
+                          /* Per-stage progress: parse "X of N" out of the status
+                             when possible (clips stage). Otherwise we show an
+                             indeterminate animated stripe so the user still sees
+                             the stage is actively working. */
+                          const clipMatch = doing ? assembleStatus.match(/(\d+)\s+of\s+(\d+)/i) : null;
+                          const stagePct = done
+                            ? 100
+                            : doing && clipMatch
+                            ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
+                            : 0;
+                          const showIndeterminate = doing && !clipMatch;
+                          // Active-step palette swaps to amber when paused so
+                          // the row visually reads "halted here" rather than
+                          // "still working." `pausedHere` only fires on the
+                          // doing step; other steps keep their done/pending
+                          // styling regardless.
+                          const pausedHere = paused && doing;
+                          return (
+                            <li key={s.key} className="space-y-1">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                                  style={{
+                                    background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
+                                    border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
+                                    color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "var(--accent-amber-text)" : doing ? "var(--accent-purple-text)" : "var(--c-35)",
+                                    fontSize: "9px",
+                                  }}>
+                                  {done ? "✓" : pausedHere ? (
+                                    // Pause glyph: two short vertical bars.
+                                    // Inline SVG so it inherits currentColor
+                                    // and doesn't pull in an icon dep.
+                                    <svg width="7" height="8" viewBox="0 0 6 8" fill="currentColor"><rect x="0" y="0" width="2" height="8" rx="0.5" /><rect x="4" y="0" width="2" height="8" rx="0.5" /></svg>
+                                  ) : doing ? (
+                                    <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                                  ) : i + 1}
+                                </span>
+                                <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
+                                  {/* The load stage bundles three meaningfully
+                                     different states (Queued… / Starting… /
+                                     Loading project data…) under one static
+                                     label, so a user sitting in a queue can't
+                                     tell whether the worker is busy with
+                                     someone else's project or just slow to
+                                     pick up theirs. When this is the active
+                                     stage, surface the raw worker status
+                                     instead of the catch-all label. Other
+                                     stages keep their polished labels — their
+                                     raw status strings are less readable. */}
+                                  {doing && s.key === "load" ? (assembleStatus || s.label) : s.label}
+                                </span>
+                                {doing && clipMatch && (
+                                  <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
+                                )}
+                              </div>
+                              <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
+                                {showIndeterminate && !pausedHere ? (
+                                  <div className="progress-indeterminate h-full"
+                                    style={{ background: "oklch(0.72 0.25 285)" }} />
+                                ) : pausedHere ? (
+                                  // Frozen stripe — solid amber at a fixed
+                                  // fill so the user can still see this is
+                                  // the active step, just not animating.
+                                  <div className="h-full"
+                                    style={{ width: "30%", background: "oklch(0.72 0.18 60)" }} />
+                                ) : (
+                                  <div className="h-full transition-all duration-500"
+                                    style={{
+                                      width: `${stagePct}%`,
+                                      background: done ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                                    }} />
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
+                        {/* While the worker is acknowledging an
+                            interrupt, surface the right "…" line so
+                            the click doesn't feel ignored. Once the
+                            worker transitions to stopped/done, the
+                            useEffect above sets assembleStatus to a
+                            terminal line and we fall through. */}
+                        {finalizeRequested && !stopped
+                          ? "Stopping to confirm preview…"
+                          : stopRequested && !stopped
+                          ? "Stopping…"
+                          : (assembleStatus || "Working…")}
+                      </p>
+
+                      {project?.assembly_status === "stopped" ? (
+                        // Two stopped flavors:
+                        //   - Stopped via "Use this version":
+                        //     assembly_finalize_preview_requested stays
+                        //     true after the worker's stop, signaling
+                        //     the user wants to ship the preview. Show
+                        //     Continue instead of Resume — clicking it
+                        //     promotes the preview to assembled_url and
+                        //     marks the assembly done without running
+                        //     any remaining work.
+                        //   - Stopped via Stop: the usual Resume path.
+                        finalizeRequested ? (
+                          <div className="flex gap-2">
+                            <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                              disabled={cancellingAssembly || committingPreview}
+                              className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                              Cancel
+                            </button>
+                            <button onClick={commitPreview}
+                              disabled={cancellingAssembly || committingPreview}
+                              className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                              {committingPreview ? "Continuing…" : "Continue"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                              disabled={cancellingAssembly}
+                              className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                              Cancel
+                            </button>
+                            <button onClick={resumeAssembly}
+                              disabled={cancellingAssembly}
+                              className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                              Resume
+                            </button>
+                          </div>
+                        )
+                      ) : inProgressPreviewUrl ? (
+                        // Two-button row whenever the in-progress preview
+                        // is available: "Use this version" promotes the
+                        // preview to the final assembled video and skips
+                        // the remaining final-burn re-encode (saves 5-25
+                        // min on long projects); Stop preserves the
+                        // checkpoint for later Resume. Disabled-state
+                        // labels reflect whichever click is in flight.
+                        <div className="flex gap-2">
+                          <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            {stopRequested ? "Stopping…" : "Stop"}
+                          </button>
+                          <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            {finalizeRequested ? "Finalizing…" : "Export anyway"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={stopAssembly} disabled={stopRequested}
+                          className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                          {stopRequested ? "Stopping…" : "Stop"}
+                        </button>
+                      )}
+                      <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
+                    </div>
+                  );
+                })()}
+                </div>
+                ) : (
+                <div
+                  className={finalMode ? "opacity-55 cursor-not-allowed" : ""}
+                  onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                  onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                >
+                {effectsTab === "elements" ? (
+                <>
+                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                    {projectElements.length
+                      ? `${projectElements.length} placed · drag one onto the preview to add another`
+                      : "Drag one onto the preview, or onto the timeline"}
+                  </p>
+                  {/* Bigger than the sound buttons: these are pictures, and a
+                      64px pill is unreadable. */}
+                  <div className="min-w-0 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                    {ELEMENTS.map((el) => (
+                      <button
+                        key={el.id}
+                        type="button"
+                        disabled={assembling}
+                        title={`Drag ${el.label} onto the preview`}
+                        onPointerDown={(e) => {
+                          if (assembling) return;
+                          e.preventDefault();
+                          setPickedElement(el.id);
+                          setDraggingElement({ id: el.id, x: e.clientX, y: e.clientY });
+                          const move = (ev: PointerEvent) => setDraggingElement({ id: el.id, x: ev.clientX, y: ev.clientY });
+                          const up = (ev: PointerEvent) => {
+                            window.removeEventListener("pointermove", move);
+                            window.removeEventListener("pointerup", up);
+                            setDraggingElement(null);
+                            const frame = previewFrameRef.current;
+                            const strip = timelineStripRef.current;
+                            // Dropped on the preview: it lands where it was
+                            // dropped and runs from the playhead.
+                            if (frame) {
+                              const r = frame.getBoundingClientRect();
+                              if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+                                void addElement({
+                                  element: el.id,
+                                  start_sec: playhead,
+                                  end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
+                                  x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+                                  y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
+                                  size: ELEMENT_DEFAULTS.size,
+                                });
+                                return;
+                              }
+                            }
+                            // Dropped on the timeline: it lands at that moment,
+                            // in the corner, for placing later.
+                            if (strip) {
+                              const r = strip.getBoundingClientRect();
+                              if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top - 40 && ev.clientY <= r.bottom + 40) {
+                                const at = Math.max(0, (ev.clientX - r.left) / pxPerSecond);
+                                // The track it was dropped over, measured from
+                                // the element rows rather than the whole strip.
+                                const rowsTop = elementRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
+                                const lane = Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H)));
+                                void addElement({
+                                  element: el.id,
+                                  start_sec: at,
+                                  end_sec: Math.min(timelineTotal || at + 3, at + 3),
+                                  x: ELEMENT_DEFAULTS.x,
+                                  y: ELEMENT_DEFAULTS.y,
+                                  size: ELEMENT_DEFAULTS.size,
+                                  lane,
+                                });
+                              }
+                            }
+                          };
+                          window.addEventListener("pointermove", move);
+                          window.addEventListener("pointerup", up);
+                        }}
+                        className="rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
+                        style={{
+                          background: "var(--bg-input)",
+                          border: `1px solid ${pickedElement === el.id ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/elements/${el.id}.png`} alt={el.label} className="w-full h-auto" />
+                      </button>
+                    ))}
+                  </div>
+                  {selectedElement && (() => {
+                    const el = projectElements.find((x) => x.id === selectedElement);
+                    if (!el) return null;
+                    return (
+                      <div className="mt-3 rounded-xl px-3 py-2.5 space-y-2"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
+                            {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                            <span className="font-normal" style={{ color: "var(--c-40)" }}>
+                              {` · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
+                            </span>
+                          </p>
+                          <button type="button" onClick={() => removeElement(el.id)} disabled={assembling}
+                            className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+                            Remove
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                            Size
+                          </span>
+                          <input
+                            type="range" min={0.05} max={0.8} step={0.01}
+                            value={el.size}
+                            disabled={assembling}
+                            onChange={(ev) => updateElement(el.id, { size: Number(ev.target.value) })}
+                            className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                          />
+                          <span className="shrink-0 text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                            {Math.round(el.size * 100)}%
+                          </span>
+                        </div>
+                        <p className="text-xs" style={{ color: "var(--c-38)" }}>
+                          Drag it on the preview to move it, its corner to resize, or its block on the timeline to retime it.
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </>
+                ) : effectsTab === "sound" ? (
                 <>
                   {/* A sound belongs to a beat, not to the project: it is an
                       accent on a moment. So this tab needs one selected, and
@@ -3705,6 +4454,8 @@ export default function AssemblePage({ params }: PageProps) {
                 )}
                 </>
                 )}
+                </div>
+                )}
                   </div>
                 </div>
               </div>
@@ -3748,10 +4499,10 @@ export default function AssemblePage({ params }: PageProps) {
                   <button
                     type="button"
                     onClick={togglePlay}
-                    disabled={playable.length === 0}
-                    title={playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
+                    disabled={playable.length === 0 || finalMode}
+                    title={finalMode ? "Press Edit to work on the video" : playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
                     aria-label={playing ? "Pause" : "Play"}
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30"
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
                   >
                     {playing ? <Pause size={13} /> : <Play size={13} className="ml-[1px]" />}
@@ -3760,6 +4511,11 @@ export default function AssemblePage({ params }: PageProps) {
                     {fmtClock(playhead)}
                     <span style={{ color: "var(--c-32)" }}> / {fmtClock(timelineTotal)}</span>
                   </span>
+                  {finalMode && (
+                    <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--c-38)" }}>
+                      final · press Edit to change it
+                    </span>
+                  )}
                   {/* Playback is the narration, and only the beats that have
                       one. Without this the audio stopped a minute into a
                       thirteen-minute strip and looked broken. */}
@@ -3773,14 +4529,16 @@ export default function AssemblePage({ params }: PageProps) {
                 {/* Zoom, the way an editor does it: out to see the shape of
                     the whole video, in to work on one beat. */}
                 <div className="flex items-center gap-2 justify-self-end">
-                  <span className="text-xs hidden lg:inline" style={{ color: "var(--c-38)" }}>Drag the ruler to scrub</span>
+                  {!finalMode && (
+                    <span className="text-xs hidden lg:inline" style={{ color: "var(--c-38)" }}>Drag the ruler to scrub</span>
+                  )}
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.max(0, zoomStep - 1)])}
-                      disabled={zoomStep === 0}
+                      disabled={zoomStep === 0 || finalMode}
                       aria-label="Zoom out"
-                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       −
@@ -3792,15 +4550,16 @@ export default function AssemblePage({ params }: PageProps) {
                       step={1}
                       value={zoomStep}
                       onChange={(e) => setPxPerSecond(ZOOM_STEPS[Number(e.target.value)])}
+                      disabled={finalMode}
                       aria-label="Timeline zoom"
-                      className="hidden sm:block w-20 accent-[oklch(0.72_0.25_285)]"
+                      className="hidden sm:block w-20 accent-[oklch(0.72_0.25_285)] disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomStep + 1)])}
-                      disabled={zoomStep === ZOOM_STEPS.length - 1}
+                      disabled={zoomStep === ZOOM_STEPS.length - 1 || finalMode}
                       aria-label="Zoom in"
-                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       +
@@ -3808,8 +4567,9 @@ export default function AssemblePage({ params }: PageProps) {
                     <button
                       type="button"
                       onClick={fitTimeline}
-                      title="Compress the whole video into the width available"
-                      className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80"
+                      disabled={finalMode}
+                      title={finalMode ? "Press Edit to work on the video" : "Compress the whole video into the width available"}
+                      className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       Fit
@@ -3820,10 +4580,16 @@ export default function AssemblePage({ params }: PageProps) {
 
               <div
                 ref={timelineViewportRef}
-                className="overflow-x-auto rounded-xl px-2 pt-1 pb-2"
-                style={{ background: "oklch(1 0 0 / 0.11)", border: "1px solid oklch(1 0 0 / 0.13)" }}
+                className={`overflow-x-auto rounded-xl px-2 pt-1 pb-2 ${finalMode ? "cursor-not-allowed select-none" : ""}`}
+                onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                style={{
+                  background: "oklch(1 0 0 / 0.11)",
+                  border: "1px solid oklch(1 0 0 / 0.13)",
+                  opacity: finalMode ? 0.55 : 1,
+                }}
               >
-                <div style={{ width: Math.max(320, timelineTotal * pxPerSecond) }}>
+                <div ref={timelineStripRef} style={{ width: stripWidth }}>
                   {/* Ruler. Every five seconds, which keeps a ten-minute video
                       readable without a mark per second. Drag it to scrub:
                       the ticks say what this is, the dragging proves it. */}
@@ -3832,15 +4598,16 @@ export default function AssemblePage({ params }: PageProps) {
                     style={{ borderBottom: "1px solid var(--bd-10)" }}
                     onPointerDown={(e) => {
                       const strip = e.currentTarget;
-                      const scrub = (clientX: number) => {
+                      const scrub = (clientX: number, commit: boolean) => {
                         const rect = strip.getBoundingClientRect();
-                        seekTo((clientX - rect.left) / pxPerSecond);
+                        seekTo((clientX - rect.left) / pxPerSecond, commit);
                       };
-                      scrub(e.clientX);
-                      const move = (ev: PointerEvent) => scrub(ev.clientX);
-                      const up = () => {
+                      scrub(e.clientX, false);
+                      const move = (ev: PointerEvent) => scrub(ev.clientX, false);
+                      const up = (ev: PointerEvent) => {
                         window.removeEventListener("pointermove", move);
                         window.removeEventListener("pointerup", up);
+                        scrub(ev.clientX, true);
                       };
                       window.addEventListener("pointermove", move);
                       window.addEventListener("pointerup", up);
@@ -3932,7 +4699,7 @@ export default function AssemblePage({ params }: PageProps) {
                             // has to give way when the whole video is being
                             // squeezed to fit, or the sum of the floors would
                             // be wider than the space we are fitting into.
-                            width: Math.max(pxPerSecond < 12 ? 4 : narrow ? 12 : 20, seconds * pxPerSecond),
+                            width: beatTileWidth(b),
                             background: "var(--bg-progress)",
                             border: `1px solid ${selected ? "oklch(0.72 0.25 285)" : "var(--bd-6)"}`,
                             boxShadow: selected ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
@@ -4025,12 +4792,115 @@ export default function AssemblePage({ params }: PageProps) {
                     }); })()}
                   </div>
 
+                  {/* Elements, on their own track above the audio: they are
+                      pictures over the video, so they belong nearer it than the
+                      sound does. Each block is draggable along the strip and
+                      trimmable at either end. */}
+                  {projectElements.length > 0 && (
+                    <div ref={elementRowsRef} className="relative mt-[3px]" style={{ height: elementLaneCount * LANE_H - 3 }}>
+                      {/* One faint row per track, so an empty one still reads
+                          as somewhere a block can be dropped. */}
+                      {Array.from({ length: elementLaneCount }, (_, i) => (
+                        <div key={i} className="absolute inset-x-0 rounded-md"
+                          style={{ top: i * LANE_H, height: LANE_H - 3, background: "oklch(1 0 0 / 0.03)" }} />
+                      ))}
+                      {projectElements.map((el) => {
+                        const left = el.start_sec * pxPerSecond;
+                        const width = Math.max(12, (el.end_sec - el.start_sec) * pxPerSecond);
+                        const picked = selectedElement === el.id;
+                        const drag = (mode: "move" | "start" | "end") => (ev: React.PointerEvent) => {
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          setSelectedElement(el.id);
+                          if (assembling) return;
+                          const originX = ev.clientX;
+                          const originY = ev.clientY;
+                          const from = el.start_sec;
+                          const to = el.end_sec;
+                          const lane0 = el.lane ?? 0;
+                          const at = (m: PointerEvent) => {
+                            const delta = (m.clientX - originX) / pxPerSecond;
+                            if (mode === "move") {
+                              const span = to - from;
+                              const start = Math.max(0, Math.min(timelineTotal - span, from + delta));
+                              // Vertical movement changes the track, so one
+                              // gesture both retimes and restacks.
+                              const lane = Math.max(0, Math.min(9, lane0 + Math.round((m.clientY - originY) / LANE_H)));
+                              return { start_sec: start, end_sec: start + span, lane };
+                            }
+                            if (mode === "start") {
+                              const start = Math.max(0, Math.min(to - 0.3, from + delta));
+                              return { start_sec: start, end_sec: to };
+                            }
+                            const end = Math.max(from + 0.3, Math.min(timelineTotal, to + delta));
+                            return { start_sec: from, end_sec: end };
+                          };
+                          const move = (m: PointerEvent) => updateElement(el.id, at(m), false);
+                          const up = (m: PointerEvent) => {
+                            window.removeEventListener("pointermove", move);
+                            window.removeEventListener("pointerup", up);
+                            updateElement(el.id, at(m));
+                          };
+                          window.addEventListener("pointermove", move);
+                          window.addEventListener("pointerup", up);
+                        };
+                        return (
+                          <div
+                            key={el.id}
+                            onPointerDown={drag("move")}
+                            title={`${ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element} · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
+                            className="absolute h-8 rounded-md flex items-center gap-1.5 px-2 cursor-grab touch-none overflow-hidden"
+                            style={{
+                              left, width,
+                              // Its own row when it overlaps another: two blocks
+                              // on one line would hide each other, and stacking
+                              // is what "layers" means on a timeline.
+                              top: (el.lane ?? 0) * LANE_H,
+                              background: picked ? "oklch(0.72 0.25 285 / 0.3)" : "oklch(0.72 0.25 285 / 0.16)",
+                              border: `1px solid ${picked ? "oklch(0.72 0.25 285)" : "oklch(0.72 0.25 285 / 0.4)"}`,
+                            }}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/elements/${el.element}.png`} alt="" className="h-4 w-auto shrink-0 pointer-events-none" />
+                            <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
+                              {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                            </span>
+                            {/* Trim handles, wide enough to hit at any zoom. */}
+                            <span onPointerDown={drag("start")}
+                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
+                            <span onPointerDown={drag("end")}
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
+                            {/* Remove, on the block itself. Shown on the
+                                selected one and on hover, because a × on every
+                                block at once is a row of noise. Delete works
+                                too, once one is selected. */}
+                            {width > 44 && (
+                              <button
+                                type="button"
+                                onPointerDown={(ev) => ev.stopPropagation()}
+                                onClick={(ev) => { ev.stopPropagation(); void removeElement(el.id); }}
+                                title="Remove this element"
+                                aria-label="Remove this element"
+                                className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity ${picked ? "" : "opacity-0 hover:opacity-100"}`}
+                                style={{ background: "oklch(0 0 0 / 0.65)", color: "white" }}
+                              >
+                                <X size={9} strokeWidth={3} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {/* The audio, stacked below the video the way an editor
                       stacks it. Two tracks because there are two things making
                       sound, and each says whether it is in the render. */}
                   <div className="mt-[3px] space-y-[3px]">
-                    <div className="relative h-5 rounded-md flex items-center"
-                      style={{ background: "oklch(0.55 0.15 145 / 0.18)", border: "1px solid oklch(0.55 0.15 145 / 0.35)" }}>
+                    <div className="relative rounded-md flex items-center" data-track="audio"
+                      style={{ height: 26, background: "oklch(0.55 0.15 145 / 0.18)", border: "1px solid oklch(0.55 0.15 145 / 0.35)" }}>
                       {/* Sticky, not scrolled away: the mute and the level are
                           the controls for the whole track, and a track is as
                           wide as the video. Opaque, since the strip runs under
@@ -4046,7 +4916,7 @@ export default function AssemblePage({ params }: PageProps) {
                         className="shrink-0 cursor-help flex items-center" style={{ color: "oklch(0.62 0.13 145)" }}>
                         <Volume2 size={11} />
                       </span>
-                      <span className="text-[9px] font-medium leading-none whitespace-nowrap" style={{ color: "oklch(0.62 0.13 145)" }}>
+                      <span className="text-[10px] font-medium leading-none whitespace-nowrap" style={{ color: "oklch(0.62 0.13 145)" }}>
                         Narration{trimSilence ? " · silences trimmed" : ""}
                       </span>
                       </div>
@@ -4068,8 +4938,9 @@ export default function AssemblePage({ params }: PageProps) {
                       </div>
                     </div>
 
-                    <div className="relative h-5 rounded-md flex items-center"
+                    <div className="relative rounded-md flex items-center" data-track="audio"
                       style={{
+                        height: 26,
                         background: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.16)" : "var(--bg-track)",
                         border: `1px solid ${bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.35)" : "var(--bd-6)"}`,
                         opacity: bgmPreviewUrl ? 1 : 0.5,
@@ -4107,7 +4978,7 @@ export default function AssemblePage({ params }: PageProps) {
                       >
                         {bgmPreviewUrl && bgmVolume > 0 ? <Volume2 size={11} /> : <VolumeX size={11} />}
                       </button>
-                      <span className="text-[9px] font-medium leading-none whitespace-nowrap"
+                      <span className="text-[10px] font-medium leading-none whitespace-nowrap"
                         style={{ color: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.66 0.14 60)" : "var(--c-38)" }}>
                         {!bgmPreviewUrl
                           ? "Music · none added"
@@ -4147,21 +5018,6 @@ export default function AssemblePage({ params }: PageProps) {
 
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              {showPreview && previewUrl && !previewLoadError && (
-                <video
-                  key={previewUrl}
-                  src={previewUrl}
-                  controls
-                  // Size to the clip's own aspect ratio: width fills up to
-                  // the panel, height is capped so a 9:16 portrait render
-                  // doesn't blow up — the video keeps its true shape and
-                  // centers instead of stretching.
-                  className="mx-auto block max-h-[70vh] rounded-xl"
-                  style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
-                  onError={() => setPreviewLoadError(true)}
-                  onLoadedMetadata={() => setPreviewLoadError(false)}
-                />
-              )}
               {showPreview && previewLoadError && (
                 <div
                   className="w-full rounded-xl p-5 text-center space-y-1"
@@ -4171,348 +5027,18 @@ export default function AssemblePage({ params }: PageProps) {
                     Preview unavailable
                   </p>
                   <p className="text-xs" style={{ color: "var(--c-50)" }}>
-                    The cached preview file may have expired. Click Reassemble to rebuild it.
+                    The cached render may have expired. Render again to rebuild it.
                   </p>
                 </div>
               )}
 
-              {/* In-progress preview — visible while assembling, only
-                  after the worker has uploaded mixed.mp4. The video is
-                  watchable but is missing the final-burn pass (captions
-                  + logo bake + upscale), so we label it clearly so the
-                  user knows the cosmetic touch-ups are still rendering. */}
-              {assembling && inProgressPreviewUrl && (
-                <div className="space-y-2">
-                  <video
-                    key={inProgressPreviewUrl}
-                    src={inProgressPreviewUrl}
-                    controls
-                    className="mx-auto block max-h-[70vh] rounded-xl"
-                    style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
-                  />
-                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "var(--accent-amber-text)" }}>
-                    Preview — finishing up
-                  </p>
-                </div>
-              )}
-
-              {assembling && (() => {
-                /* Stage-aware progress: the worker emits short status strings
-                   for each phase via setProgress(); we match the current one
-                   to a known stage and render every stage with a done/doing/
-                   pending indicator + an overall % bar.
-
-                   `paused` freezes the animations the moment the user clicks
-                   Stop. Without this the per-step spinner + indeterminate
-                   stripe keep moving while we wait the few seconds for the
-                   worker to acknowledge — visually indistinguishable from
-                   normal progress, which makes the Stop click feel ignored.
-                   Active when stopRequested (user clicked Stop),
-                   finalizeRequested (user clicked Use this version), or
-                   the worker has already transitioned to "stopped". */
-                const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
-                const stopped = project?.assembly_status === "stopped";
-                // Matchers are tightened so each one only catches its own
-                // worker progress string. The old "Downloading" prefix
-                // greedily swallowed bgm and logo downloads too, which
-                // collapsed them into the voiceover stage and hid that they
-                // were happening. The worker emits the exact strings shown
-                // below (assemble.ts), so anchor to them precisely.
-                // Stage list only includes stages that map to a real
-                // worker pass after the assemble pipeline refactor:
-                //   - Logo overlay was baked into normalizeClip — the
-                //     "Downloading channel logo…" status is folded into
-                //     the clips stage match because it's a brief prelude
-                //     to clip processing, not its own pass.
-                //   - Burning captions was baked into normalizeClip too,
-                //     so the standalone "Burn captions" stage is gone.
-                //   - "Generate captions" never had a worker progress
-                //     line of its own; the only meaningful caption-prep
-                //     wait is the optional translate call, kept as its
-                //     own stage when captions translation is needed.
-                //   - join only matches the final visuals concat now;
-                //     "Joining per-beat audio…" lands in voiceover.
-                // Five high-level stages. The previous 9-step layout
-                // exposed pipeline internals (transcribe, translate,
-                // download bgm, restore-from-checkpoint) that the
-                // user can't act on and that change run-to-run based
-                // on whether captions/translation/BGM are configured.
-                // Collapsing into Prepare / Build clips / Mix audio /
-                // Burn captions / Upload keeps the count stable and
-                // the labels meaningful regardless of options.
-                const stages = [
-                  // Prepare: queue claim, voiceover ready, transcribe,
-                  // translate, channel-logo download (the latter is
-                  // an early-stage prereq, not part of clip encoding).
-                  { key: "prepare",    label: "Prepare",         match: (s: string) => (
-                    s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
-                    || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
-                    || s.startsWith("Transcribing") || s.startsWith("Translating")
-                  ) },
-                  // Build clips: per-beat encode pass + the post-encode
-                  // "Finalizing…" debounce the worker emits when a
-                  // worker pool finishes its last beat.
-                  { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
-                  // Mix audio: join clips, freeze-pad, BGM + logo
-                  // download, and the actual mix pass. Logo download
-                  // lives here now (used to be a Stage B prereq) so
-                  // both BGM and logo prep land in one user-visible
-                  // step. The freeze-pad only fires in legacy mode
-                  // with trailing silence; folding it in keeps step
-                  // counts run-stable.
-                  { key: "mix",        label: "Mix audio",       match: (s: string) => (
-                    s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
-                    || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
-                    || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
-                  ) },
-                  // Stage F removed in the post-Coconut refactor.
-                  // Captions are baked per-beat during Build clips;
-                  // logo composites at Mix audio; there's no final-
-                  // burn pass anymore. mixed.mp4 IS the final video,
-                  // which uploads directly from Stage D's output.
-                  { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
-                ];
-                // Monotonic stage index: once we've seen progress to
-                // a later stage, don't ever fall back to an earlier
-                // one. The worker occasionally writes transient
-                // status lines that don't match any rule (e.g. a
-                // "Validating…" / "Cleaning up…" between stages),
-                // which would otherwise drop findIndex to -1 and
-                // make the progress bar visibly jump back to step 1
-                // before snapping forward on the next matching line.
-                const i = stages.findIndex((s) => s.match(assembleStatus));
-                if (i > lastStageIdxRef.current) lastStageIdxRef.current = i;
-                else if (i === -1 && lastStageIdxRef.current === -1) lastStageIdxRef.current = 0;
-                const currentIdx = lastStageIdxRef.current >= 0 ? lastStageIdxRef.current : 0;
-                const pct = Math.round((currentIdx / stages.length) * 100);
-
-                return (
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs" style={{ color: "var(--c-45)" }}>
-                        <span>Step {currentIdx + 1} of {stages.length}</span>
-                        <span>{pct}%</span>
-                      </div>
-                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-                        <div className="h-full transition-all duration-500"
-                          style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
-                      </div>
-                    </div>
-
-                    <ul className="space-y-2">
-                      {stages.map((s, i) => {
-                        const done = i < currentIdx;
-                        const doing = i === currentIdx;
-                        // While the in-progress preview is showing,
-                        // the user already knows the early stages
-                        // completed — they're watching the video.
-                        // Collapse the list to only the still-active
-                        // and pending steps so the panel focuses on
-                        // what they're waiting for (Finalize, Upload).
-                        // The overall % bar + "Step X of N" header
-                        // above keep showing total progress.
-                        if (inProgressPreviewUrl && done) return null;
-                        /* Per-stage progress: parse "X of N" out of the status
-                           when possible (clips stage). Otherwise we show an
-                           indeterminate animated stripe so the user still sees
-                           the stage is actively working. */
-                        const clipMatch = doing ? assembleStatus.match(/(\d+)\s+of\s+(\d+)/i) : null;
-                        const stagePct = done
-                          ? 100
-                          : doing && clipMatch
-                          ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
-                          : 0;
-                        const showIndeterminate = doing && !clipMatch;
-                        // Active-step palette swaps to amber when paused so
-                        // the row visually reads "halted here" rather than
-                        // "still working." `pausedHere` only fires on the
-                        // doing step; other steps keep their done/pending
-                        // styling regardless.
-                        const pausedHere = paused && doing;
-                        return (
-                          <li key={s.key} className="space-y-1">
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                                style={{
-                                  background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
-                                  border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
-                                  color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "var(--accent-amber-text)" : doing ? "var(--accent-purple-text)" : "var(--c-35)",
-                                  fontSize: "9px",
-                                }}>
-                                {done ? "✓" : pausedHere ? (
-                                  // Pause glyph: two short vertical bars.
-                                  // Inline SVG so it inherits currentColor
-                                  // and doesn't pull in an icon dep.
-                                  <svg width="7" height="8" viewBox="0 0 6 8" fill="currentColor"><rect x="0" y="0" width="2" height="8" rx="0.5" /><rect x="4" y="0" width="2" height="8" rx="0.5" /></svg>
-                                ) : doing ? (
-                                  <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
-                                ) : i + 1}
-                              </span>
-                              <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
-                                {/* The load stage bundles three meaningfully
-                                   different states (Queued… / Starting… /
-                                   Loading project data…) under one static
-                                   label, so a user sitting in a queue can't
-                                   tell whether the worker is busy with
-                                   someone else's project or just slow to
-                                   pick up theirs. When this is the active
-                                   stage, surface the raw worker status
-                                   instead of the catch-all label. Other
-                                   stages keep their polished labels — their
-                                   raw status strings are less readable. */}
-                                {doing && s.key === "load" ? (assembleStatus || s.label) : s.label}
-                              </span>
-                              {doing && clipMatch && (
-                                <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
-                              )}
-                            </div>
-                            <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
-                              {showIndeterminate && !pausedHere ? (
-                                <div className="progress-indeterminate h-full"
-                                  style={{ background: "oklch(0.72 0.25 285)" }} />
-                              ) : pausedHere ? (
-                                // Frozen stripe — solid amber at a fixed
-                                // fill so the user can still see this is
-                                // the active step, just not animating.
-                                <div className="h-full"
-                                  style={{ width: "30%", background: "oklch(0.72 0.18 60)" }} />
-                              ) : (
-                                <div className="h-full transition-all duration-500"
-                                  style={{
-                                    width: `${stagePct}%`,
-                                    background: done ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
-                                  }} />
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-
-                    <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
-                      {/* While the worker is acknowledging an
-                          interrupt, surface the right "…" line so
-                          the click doesn't feel ignored. Once the
-                          worker transitions to stopped/done, the
-                          useEffect above sets assembleStatus to a
-                          terminal line and we fall through. */}
-                      {finalizeRequested && !stopped
-                        ? "Stopping to confirm preview…"
-                        : stopRequested && !stopped
-                        ? "Stopping…"
-                        : (assembleStatus || "Working…")}
-                    </p>
-
-                    {project?.assembly_status === "stopped" ? (
-                      // Two stopped flavors:
-                      //   - Stopped via "Use this version":
-                      //     assembly_finalize_preview_requested stays
-                      //     true after the worker's stop, signaling
-                      //     the user wants to ship the preview. Show
-                      //     Continue instead of Resume — clicking it
-                      //     promotes the preview to assembled_url and
-                      //     marks the assembly done without running
-                      //     any remaining work.
-                      //   - Stopped via Stop: the usual Resume path.
-                      finalizeRequested ? (
-                        <div className="flex gap-2">
-                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                            disabled={cancellingAssembly || committingPreview}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                            Cancel
-                          </button>
-                          <button onClick={commitPreview}
-                            disabled={cancellingAssembly || committingPreview}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                            {committingPreview ? "Continuing…" : "Continue"}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                            disabled={cancellingAssembly}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                            Cancel
-                          </button>
-                          <button onClick={resumeAssembly}
-                            disabled={cancellingAssembly}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                            Resume
-                          </button>
-                        </div>
-                      )
-                    ) : inProgressPreviewUrl ? (
-                      // Two-button row whenever the in-progress preview
-                      // is available: "Use this version" promotes the
-                      // preview to the final assembled video and skips
-                      // the remaining final-burn re-encode (saves 5-25
-                      // min on long projects); Stop preserves the
-                      // checkpoint for later Resume. Disabled-state
-                      // labels reflect whichever click is in flight.
-                      <div className="flex gap-2">
-                        <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
-                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                          {stopRequested ? "Stopping…" : "Stop"}
-                        </button>
-                        <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
-                          className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          {finalizeRequested ? "Finalizing…" : "Export anyway"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={stopAssembly} disabled={stopRequested}
-                        className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                        {stopRequested ? "Stopping…" : "Stop"}
-                      </button>
-                    )}
-                    <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
-                  </div>
-                );
-              })()}
 
               {showPreview && previewUrl && (
                 <div className="mx-auto" style={{ maxWidth: previewMaxW }}>
-                  <div className="flex gap-2">
-                    <button onClick={() => setReassembleConfirmOpen(true)}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
-                      style={previewLoadError
-                        // When the preview can't load, Reassemble is the
-                        // only path forward — promote it to the theme
-                        // purple so it reads as the primary CTA.
-                        ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
-                        : { background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
-                      Reassemble
-                    </button>
-                    {/* Hide Export when the preview can't load — its
-                        href points at the same URL the player just
-                        failed on, so clicking it would 404 too.
-                        Reassemble fills the row via flex-1.
-                        The href goes through our export route (which
-                        302s to a presigned attachment URL) instead of
-                        the raw R2 URL — the anchor `download`
-                        attribute is ignored cross-origin, so linking
-                        R2 directly opened the video in the tab
-                        instead of downloading it. */}
-                    {!previewLoadError && (
-                      <a
-                        href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(previewUrl)}&filename=${encodeURIComponent(`${(project?.channel_name as string | undefined)?.trim() || "video"}.mp4`)}`}
-                        className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
-                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                        ↓ Export
-                      </a>
-                    )}
-                  </div>
                   <button
                     onClick={() => router.push(`/projects/${projectId}/thumbnails`)}
                     disabled={previewLoadError}
-                    title={previewLoadError ? "Reassemble the video before continuing — the cached preview can't be loaded." : undefined}
+                    title={previewLoadError ? "Render the video again before continuing — the cached render can't be loaded." : undefined}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}
                   >
@@ -4574,7 +5100,7 @@ export default function AssemblePage({ params }: PageProps) {
                         Cancel
                       </button>
                     )}
-                    <button onClick={() => assembleVideo()} disabled={!hasVoiceover || assembling}
+                    <button onClick={() => setExportConfirmOpen(true)} disabled={!hasVoiceover || assembling}
                       className={`${reassembleMode ? "flex-1" : "w-full"} py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all`}
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                       {assembling ? (
@@ -4582,7 +5108,7 @@ export default function AssemblePage({ params }: PageProps) {
                           <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                           Queuing…
                         </span>
-                      ) : reassembleMode ? "Assemble" : "Assemble Final Video"}
+                      ) : showPreview ? "Re-render" : "Render"}
                     </button>
                   </div>
                 </>
@@ -4593,6 +5119,76 @@ export default function AssemblePage({ params }: PageProps) {
 
         </div>
       </main>
+
+      <Dialog open={editConfirmOpen} onOpenChange={setEditConfirmOpen}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Go back to editing?</DialogTitle>
+            <DialogDescription>
+              Changes only reach the video when you render again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setEditConfirmOpen(false)}
+              className="px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            >
+              Keep watching
+            </button>
+            <button
+              onClick={() => { setEditConfirmOpen(false); setShowFinished(false); setRenderStale(true); }}
+              className="px-4 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Edit
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={exportConfirmOpen} onOpenChange={(open) => { if (!assembling) setExportConfirmOpen(open); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Render this video?</DialogTitle>
+            <DialogDescription>
+              {beats.length} beats, {timelineTotal ? fmtClock(timelineTotal) : "unknown length"}, at{" "}
+              {dimsFor(aspectRatio, selectedResolution).label}. Rendering takes a few minutes and costs credits.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-xs space-y-1" style={{ color: "var(--c-55)" }}>
+            <p>
+              {imageMotion === "none" ? "No movement" : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label} effect`}
+              {" · "}
+              {transition === "none" ? "hard cuts" : `${TRANSITIONS.find((t) => t.id === transition)?.label.toLowerCase()} transitions`}
+              {videoFilter === "none" ? "" : ` · ${VIDEO_FILTERS.find((f) => f.id === videoFilter)?.label.toLowerCase()} grade`}
+            </p>
+            <p>
+              {captionsEnabled ? `Captions on · ${captionsStyle}` : "No captions"}
+              {projectElements.length ? ` · ${projectElements.length} element${projectElements.length === 1 ? "" : "s"}` : ""}
+              {beats.some((b) => b.soundEffect) ? ` · ${beats.filter((b) => b.soundEffect).length} sound${beats.filter((b) => b.soundEffect).length === 1 ? "" : "s"}` : ""}
+            </p>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setExportConfirmOpen(false)}
+              disabled={assembling}
+              className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-40"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { setExportConfirmOpen(false); setShowFinished(true); void assembleVideo(); }}
+              disabled={assembling || !hasVoiceover}
+              className="px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-40"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {assembling ? "Starting…" : "Render"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
