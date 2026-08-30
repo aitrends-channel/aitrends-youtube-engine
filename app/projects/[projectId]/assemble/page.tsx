@@ -1608,6 +1608,9 @@ export default function AssemblePage({ params }: PageProps) {
    *  timeline can be changed here, because none of it is in the video on
    *  screen — Edit is the way back. */
   const finalMode = showPreview && showFinished && !renderStale;
+  /** Nothing on the timeline can be touched while a render is running either:
+   *  the clips are already being encoded from the settings as they were. */
+  const timelineLocked = finalMode || assembling;
 
   // Width the preview <video> actually renders at: min(panel width,
   // 70vh × ratio) — the same bound its max-h-[70vh] + max-w-full impose.
@@ -3350,7 +3353,7 @@ export default function AssemblePage({ params }: PageProps) {
                     type="button"
                     onClick={() => setMobileEffectsOpen((v) => !v)}
                     aria-expanded={mobileEffectsOpen}
-                    className="sm:hidden w-full flex items-center justify-between gap-3 py-1.5"
+                    className={`${assembling ? "hidden" : "sm:hidden"} w-full flex items-center justify-between gap-3 py-1.5`}
                   >
                     <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                       Effect, strength & duration
@@ -3369,8 +3372,15 @@ export default function AssemblePage({ params }: PageProps) {
                     on screen, and how it gives way to the next one. Tabs rather
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
-                {/* The tabs themselves stay live in final mode: looking at
-                    what was set is not changing it. */}
+                {assembling ? (
+                  <div className="flex items-center gap-2 px-1 mb-3">
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"
+                      style={{ color: "var(--accent-purple-text)" }} />
+                    <p className="text-sm font-semibold">Rendering video</p>
+                  </div>
+                ) : (
+                /* The tabs themselves stay live in final mode: looking at what
+                   was set is not changing it. */
                 <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
                   style={{ background: "var(--bg-input)" }}>
                   {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"]] as const).map(([id, label]) => (
@@ -3388,6 +3398,7 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
+                )}
                 {assembling ? (
                 <div className="space-y-4">
                 {/* In-progress preview — visible while assembling, only
@@ -4499,7 +4510,7 @@ export default function AssemblePage({ params }: PageProps) {
                   <button
                     type="button"
                     onClick={togglePlay}
-                    disabled={playable.length === 0 || finalMode}
+                    disabled={playable.length === 0 || timelineLocked}
                     title={finalMode ? "Press Edit to work on the video" : playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
                     aria-label={playing ? "Pause" : "Play"}
                     className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed"
@@ -4511,9 +4522,9 @@ export default function AssemblePage({ params }: PageProps) {
                     {fmtClock(playhead)}
                     <span style={{ color: "var(--c-32)" }}> / {fmtClock(timelineTotal)}</span>
                   </span>
-                  {finalMode && (
+                  {timelineLocked && (
                     <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--c-38)" }}>
-                      final · press Edit to change it
+                      {assembling ? "rendering…" : "final · press Edit to change it"}
                     </span>
                   )}
                   {/* Playback is the narration, and only the beats that have
@@ -4529,14 +4540,14 @@ export default function AssemblePage({ params }: PageProps) {
                 {/* Zoom, the way an editor does it: out to see the shape of
                     the whole video, in to work on one beat. */}
                 <div className="flex items-center gap-2 justify-self-end">
-                  {!finalMode && (
+                  {!timelineLocked && (
                     <span className="text-xs hidden lg:inline" style={{ color: "var(--c-38)" }}>Drag the ruler to scrub</span>
                   )}
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.max(0, zoomStep - 1)])}
-                      disabled={zoomStep === 0 || finalMode}
+                      disabled={zoomStep === 0 || timelineLocked}
                       aria-label="Zoom out"
                       className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
@@ -4550,14 +4561,14 @@ export default function AssemblePage({ params }: PageProps) {
                       step={1}
                       value={zoomStep}
                       onChange={(e) => setPxPerSecond(ZOOM_STEPS[Number(e.target.value)])}
-                      disabled={finalMode}
+                      disabled={timelineLocked}
                       aria-label="Timeline zoom"
                       className="hidden sm:block w-20 accent-[oklch(0.72_0.25_285)] disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomStep + 1)])}
-                      disabled={zoomStep === ZOOM_STEPS.length - 1 || finalMode}
+                      disabled={zoomStep === ZOOM_STEPS.length - 1 || timelineLocked}
                       aria-label="Zoom in"
                       className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
@@ -4567,8 +4578,8 @@ export default function AssemblePage({ params }: PageProps) {
                     <button
                       type="button"
                       onClick={fitTimeline}
-                      disabled={finalMode}
-                      title={finalMode ? "Press Edit to work on the video" : "Compress the whole video into the width available"}
+                      disabled={timelineLocked}
+                      title={timelineLocked ? (assembling ? "Rendering…" : "Press Edit to work on the video") : "Compress the whole video into the width available"}
                       className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
@@ -4580,13 +4591,13 @@ export default function AssemblePage({ params }: PageProps) {
 
               <div
                 ref={timelineViewportRef}
-                className={`overflow-x-auto rounded-xl px-2 pt-1 pb-2 ${finalMode ? "cursor-not-allowed select-none" : ""}`}
-                onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
-                onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                className={`overflow-x-auto rounded-xl px-2 pt-1 pb-2 ${timelineLocked ? "cursor-not-allowed select-none" : ""}`}
+                onPointerDownCapture={timelineLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                onClickCapture={timelineLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
                 style={{
                   background: "oklch(1 0 0 / 0.11)",
                   border: "1px solid oklch(1 0 0 / 0.13)",
-                  opacity: finalMode ? 0.55 : 1,
+                  opacity: timelineLocked ? 0.55 : 1,
                 }}
               >
                 <div ref={timelineStripRef} style={{ width: stripWidth }}>
