@@ -3031,7 +3031,7 @@ export default function AssemblePage({ params }: PageProps) {
                       </button>
                     </div>
                   </div>
-                  <div className="min-w-0 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
+                  <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))" }}>
                     {SOUND_EFFECTS.map((snd) => {
                       const active = editingBeat
                         ? editingBeat.soundEffect === snd.id
@@ -3065,7 +3065,7 @@ export default function AssemblePage({ params }: PageProps) {
                               );
                             }
                           }}
-                          className="w-full py-2 px-2.5 rounded-xl text-left text-xs transition-all disabled:opacity-40 flex items-center gap-1.5"
+                          className="w-full py-1.5 px-2 rounded-lg text-left text-[11px] transition-all disabled:opacity-40 flex items-center gap-1"
                           style={active ? {
                             background: "oklch(0.72 0.25 285 / 0.18)",
                             border: "1px solid oklch(0.72 0.25 285)",
@@ -3120,9 +3120,11 @@ export default function AssemblePage({ params }: PageProps) {
                       : tuneSound(sound, { pitch: v });
                     const label = SOUND_EFFECTS.find((x) => x.id === sound)?.label ?? sound;
                     return (
-                      <div className="mt-4 space-y-3 rounded-xl p-3"
+                      <div className="mt-3 space-y-2 rounded-xl px-3 py-2.5"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-                        <div className="flex items-baseline justify-between gap-2">
+                        {/* Level and pitch beside each other: two short rows
+                            stacked left a panel taller than it needed to be. */}
+                        <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
                             {label}
                             <span className="font-normal" style={{ color: "var(--c-40)" }}>
@@ -3140,40 +3142,32 @@ export default function AssemblePage({ params }: PageProps) {
                             <Play size={12} className="ml-[1px]" />
                           </button>
                         </div>
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--c-40)" }}>Level</p>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="range" min={0} max={2} step={0.05}
-                              value={volume}
-                              disabled={assembling}
-                              onChange={(e) => setVolume(Number(e.target.value))}
-                              className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
-                            />
-                            <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
-                              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
-                              {Math.round(volume * 100)}%
-                            </span>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--c-40)" }}>Pitch</p>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="range" min={0.5} max={2} step={0.05}
-                              value={pitch}
-                              disabled={assembling}
-                              onChange={(e) => setPitch(Number(e.target.value))}
-                              className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
-                            />
-                            <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
-                              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
-                              {pitch.toFixed(2)}×
-                            </span>
-                          </div>
-                          <p className="text-xs mt-1" style={{ color: "var(--c-38)" }}>
-                            The length stays the same, so a higher click is still a click.
-                          </p>
+                        {/* Label, slider and value on one line each: two rows
+                            rather than six, which is what this panel is worth
+                            in a column sized to the preview. */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                          {([
+                            ["Level", volume, 0, 2, 0.05, setVolume, `${Math.round(volume * 100)}%`],
+                            ["Pitch", pitch, 0.5, 2, 0.05, setPitch, `${pitch.toFixed(2)}×`],
+                          ] as [string, number, number, number, number, (v: number) => void, string][]).map(
+                            ([label, value, min, max, step, onSet, shown]) => (
+                              <div key={label} className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="shrink-0 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                                  {label}
+                                </span>
+                                <input
+                                  type="range" min={min} max={max} step={step}
+                                  value={value}
+                                  disabled={assembling}
+                                  onChange={(e) => onSet(Number(e.target.value))}
+                                  className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                                />
+                                <span className="shrink-0 text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                                  {shown}
+                                </span>
+                              </div>
+                            ),
+                          )}
                         </div>
                       </div>
                     );
