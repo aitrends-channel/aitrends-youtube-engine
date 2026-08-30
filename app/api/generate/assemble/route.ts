@@ -11,7 +11,11 @@ export const dynamic = "force-dynamic";
 
 /** The movements the worker knows how to render, and what the column's check
  *  constraint allows. */
-const IMAGE_MOTIONS = ["none", "zoom-in", "zoom-out", "pan-right", "pan-left", "drift", "auto", "random"];
+const IMAGE_MOTIONS = ["none", "zoom-in", "zoom-out",
+  "pan-right", "pan-left", "pan-up", "pan-down",
+  "drift", "drift-left", "diagonal",
+  "sway", "float", "handheld",
+  "auto", "random"];
 const VIDEO_FILTERS = ["none", "warm", "cool", "vivid", "muted", "mono", "sepia", "vintage", "faded", "punch",
   "cinematic", "noir", "golden", "bleach", "cross", "matte", "night", "pastel", "vignette"];
 const TRANSITIONS = ["none", "dissolve", "fade-black", "fade-white", "fade-grays",

@@ -695,6 +695,50 @@ body {
   to   { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 5%) * -1)); }
 }
 
+@keyframes ken-burns-drift-left {
+  from { transform: scale(1) translateX(calc(var(--kb-pan, 5%) * -1)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateX(var(--kb-pan, 5%)); }
+}
+
+/* Vertical is the same move on the other axis, and travels less: the crop
+ * window has less room to slide up and down than side to side. */
+@keyframes ken-burns-pan-up {
+  from { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * -0.6)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * 0.6)); }
+}
+
+@keyframes ken-burns-pan-down {
+  from { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * 0.6)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * -0.6)); }
+}
+
+@keyframes ken-burns-diagonal {
+  from { transform: scale(1) translate(calc(var(--kb-pan, 5%) * -1), calc(var(--kb-pan, 5%) * -0.6)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translate(var(--kb-pan, 5%), calc(var(--kb-pan, 5%) * 0.6)); }
+}
+
+/* These come back where they started, so they run alternate rather than
+ * looping from the end to the beginning. */
+@keyframes ken-burns-sway {
+  from { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 6%) * -1)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateX(var(--kb-pan, 6%)); }
+}
+
+@keyframes ken-burns-float {
+  from { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * -0.6)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateY(calc(var(--kb-pan, 6%) * 0.6)); }
+}
+
+/* Two axes at frequencies that do not divide into each other, so the frame
+ * never quite repeats a position. */
+@keyframes ken-burns-handheld {
+  0%   { transform: scale(var(--kb-max, 1.15)) translate(0, 0); }
+  25%  { transform: scale(var(--kb-max, 1.15)) translate(calc(var(--kb-pan, 6%) * 0.3), calc(var(--kb-pan, 6%) * -0.2)); }
+  50%  { transform: scale(var(--kb-max, 1.15)) translate(calc(var(--kb-pan, 6%) * -0.2), calc(var(--kb-pan, 6%) * 0.3)); }
+  75%  { transform: scale(var(--kb-max, 1.15)) translate(calc(var(--kb-pan, 6%) * 0.25), calc(var(--kb-pan, 6%) * 0.15)); }
+  100% { transform: scale(var(--kb-max, 1.15)) translate(0, 0); }
+}
+
 /* Transition previews.
  *
  * Two frames of the project stacked in a tile, the top one leaving the way the
@@ -795,4 +839,60 @@ body {
   0%, 30%   { opacity: 1; filter: contrast(1); }
   42%       { opacity: 0.7; filter: contrast(1.6); }
   55%, 100% { opacity: 0; filter: contrast(1.6); }
+}
+
+/* Caption animation previews.
+ *
+ * The render draws these with ASS tags; these are the same movements in CSS so
+ * the choice can be made by looking. Each loops over the sample line rather
+ * than running once, since a preview that plays only on mount shows nothing to
+ * somebody comparing two options. */
+@keyframes caption-fade {
+  0%, 100% { opacity: 0; }
+  15%, 85% { opacity: 1; }
+}
+
+@keyframes caption-pop {
+  0%       { opacity: 0; transform: scale(0.8); }
+  10%      { opacity: 1; transform: scale(1.06); }
+  18%, 88% { opacity: 1; transform: scale(1); }
+  100%     { opacity: 0; transform: scale(1); }
+}
+
+/* Karaoke: the word is on screen throughout and brightens on its turn. */
+@keyframes caption-word-lit {
+  0%   { opacity: 0.45; }
+  100% { opacity: 1; }
+}
+
+/* Reveal: the word is not there at all until its turn. */
+@keyframes caption-word-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes caption-slide {
+  0%       { opacity: 0; transform: translateY(18%); }
+  12%, 88% { opacity: 1; transform: translateY(0); }
+  100%     { opacity: 0; transform: translateY(0); }
+}
+
+@keyframes caption-grow {
+  0%   { transform: scale(0.92); }
+  100% { transform: scale(1.04); }
+}
+
+@keyframes caption-tilt {
+  0%       { opacity: 0; transform: rotate(-9deg); }
+  12%, 88% { opacity: 1; transform: rotate(0); }
+  100%     { opacity: 0; transform: rotate(0); }
+}
+
+/* The accent it lands in, before settling into its own colour. Only the colour
+ * is animated, so the style's own treatment survives. */
+@keyframes caption-flash {
+  0%       { opacity: 0; color: #ffff00; }
+  10%      { opacity: 1; color: #ffff00; }
+  30%, 88% { opacity: 1; }
+  100%     { opacity: 0; }
 }
