@@ -132,6 +132,71 @@ const MOTION_STRENGTHS = [
 ];
 
 /** The preview animation for each, matching what the assembler renders. */
+/** What happens at every beat boundary. Hard cut first: it is what every
+ *  assembly has done, and a cut is the one join a viewer does not notice. */
+const TRANSITIONS = [
+  { id: "none",          label: "Cut",           hint: "Straight to the next shot" },
+  { id: "dissolve",      label: "Dissolve",      hint: "One fades into the other" },
+  { id: "fade-black",    label: "Through black", hint: "Out to black, then in" },
+  { id: "fade-white",    label: "Through white", hint: "Out to white, then in" },
+  { id: "fade-grays",    label: "Through grey",  hint: "Colour drains, then returns" },
+  { id: "slide-left",    label: "Slide left",    hint: "The next shot pushes in from the right" },
+  { id: "slide-up",      label: "Slide up",      hint: "The next shot pushes in from below" },
+  { id: "wipe-right",    label: "Wipe",          hint: "A hard edge crosses the frame" },
+  { id: "wipe-up",       label: "Wipe up",       hint: "A hard edge rises up the frame" },
+  { id: "wipe-diagonal", label: "Diagonal",      hint: "The edge crosses from the corner" },
+  { id: "smooth-right",  label: "Soft wipe",     hint: "A wipe with a feathered edge" },
+  { id: "circle-open",   label: "Circle in",     hint: "The old shot closes to a point" },
+  { id: "circle-close",  label: "Circle out",    hint: "The new shot opens from a point" },
+  { id: "zoom",          label: "Zoom",          hint: "The old shot rushes past the camera" },
+  { id: "pixelize",      label: "Pixelate",      hint: "Both shots break into blocks" },
+  { id: "blur",          label: "Blur",          hint: "Out of focus and back" },
+  { id: "grain",         label: "Scatter",       hint: "Pixels swap over at random" },
+] as const;
+
+const SEAM_ANIMATION: Record<string, string> = {
+  dissolve: "seam-dissolve 3s ease-in-out infinite",
+  "fade-black": "seam-fade-black 3s ease-in-out infinite",
+  "fade-white": "seam-fade-white 3s ease-in-out infinite",
+  "fade-grays": "seam-fade-grays 3s ease-in-out infinite",
+  "slide-left": "seam-slide-left 3s ease-in-out infinite",
+  "slide-up": "seam-slide-up 3s ease-in-out infinite",
+  "wipe-right": "seam-wipe-right 3s ease-in-out infinite",
+  "wipe-up": "seam-wipe-up 3s ease-in-out infinite",
+  "wipe-diagonal": "seam-wipe-diagonal 3s ease-in-out infinite",
+  "smooth-right": "seam-smooth-right 3s ease-in-out infinite",
+  "circle-open": "seam-circle-open 3s ease-in-out infinite",
+  // Circle out reveals the incoming shot, so the animation runs on the layer
+  // underneath rather than on the one leaving.
+  "circle-close": "seam-circle-close 3s ease-in-out infinite",
+  zoom: "seam-zoom 3s ease-in-out infinite",
+  pixelize: "seam-pixelize 3s ease-in-out infinite",
+  blur: "seam-blur 3s ease-in-out infinite",
+  grain: "seam-grain 3s ease-in-out infinite",
+};
+
+/** The soft wipe animates a mask, which has to be declared on the element. */
+const SEAM_MASK: Record<string, React.CSSProperties> = {
+  "smooth-right": {
+    WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 35%)",
+    maskImage: "linear-gradient(to right, transparent 0%, black 35%)",
+    WebkitMaskSize: "300% 100%",
+    maskSize: "300% 100%",
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+  },
+  // A hole that grows: the outgoing shot is masked out from the centre while
+  // the incoming one shows through it.
+  "circle-close": {
+    WebkitMaskImage: "radial-gradient(circle, transparent 49%, black 50%)",
+    maskImage: "radial-gradient(circle, transparent 49%, black 50%)",
+    WebkitMaskPosition: "center",
+    maskPosition: "center",
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+  },
+};
+
 const MOTION_ANIMATION: Record<string, string> = {
   "zoom-in": "ken-burns-in 4s linear infinite",
   "zoom-out": "ken-burns-out 4s linear infinite",
@@ -230,6 +295,8 @@ export default function AssemblePage({ params }: PageProps) {
       captions_style?:    string  | null;
       captions_size?:     string  | null;
       captions_position?: string  | null;
+      transition?:        string  | null;
+      transition_seconds?: number | null;
       image_motion?:      string  | null;
       image_motion_seconds?: number | null;
       image_motion_strength?: string | null;
@@ -239,6 +306,8 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_style    === "string" && cap.captions_style)    setCaptionsStyle(cap.captions_style);
     if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
+    if (typeof cap.transition        === "string" && cap.transition)        setTransition(cap.transition);
+    if (typeof cap.transition_seconds === "number" && cap.transition_seconds > 0) setTransitionSeconds(cap.transition_seconds);
     if (typeof cap.image_motion      === "string" && cap.image_motion)      setImageMotion(cap.image_motion);
     if (typeof cap.image_motion_seconds === "number")                       setImageMotionSeconds(cap.image_motion_seconds);
     if (typeof cap.image_motion_strength === "string" && cap.image_motion_strength) setImageMotionStrength(cap.image_motion_strength);
@@ -448,6 +517,9 @@ export default function AssemblePage({ params }: PageProps) {
   // that has a generated clip is untouched, so a project with clips everywhere
   // sees no difference whatever this is set to.
   const [imageMotion, setImageMotion] = useState("none");
+  const [transition, setTransition] = useState("none");
+  const [transitionSeconds, setTransitionSeconds] = useState(0.5);
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -707,6 +779,13 @@ export default function AssemblePage({ params }: PageProps) {
   const previewClipUrl = previewBeat?.videoUrl ?? null;
   const stillPreviewUrl = previewBeat?.imageUrl ?? null;
   const previewSrc = previewClipUrl ?? stillPreviewUrl;
+  // The shot after the previewed one. A transition is about two frames, and two
+  // copies of the same one shows nothing.
+  const nextPreviewUrl = (() => {
+    const at = previewBeat ? beats.findIndex((b) => b.beatNumber === previewBeat.beatNumber) : -1;
+    const after = at >= 0 ? beats.slice(at + 1).find((b) => b.imageUrl) : beats.filter((b) => b.imageUrl)[1];
+    return after?.imageUrl ?? stillPreviewUrl;
+  })();
 
   // The effect that beat will actually get: its own if it has one, otherwise
   // the project's. Watching the project setting animate on a beat that
@@ -756,11 +835,13 @@ export default function AssemblePage({ params }: PageProps) {
           image_motion: imageMotion,
           image_motion_seconds: imageMotionSeconds || null,
           image_motion_strength: imageMotionStrength,
+          transition,
+          transition_seconds: transition === "none" ? null : transitionSeconds,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -1074,6 +1155,8 @@ export default function AssemblePage({ params }: PageProps) {
           captionsPosition,
           trimSilenceEnabled: trimSilence,
           imageMotion,
+          transition,
+          transitionSeconds: transition === "none" ? null : transitionSeconds,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUploadedUrl,
@@ -1222,6 +1305,8 @@ export default function AssemblePage({ params }: PageProps) {
           captionsPosition,
           trimSilenceEnabled: trimSilence,
           imageMotion,
+          transition,
+          transitionSeconds: transition === "none" ? null : transitionSeconds,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUrl,
@@ -2053,9 +2138,14 @@ export default function AssemblePage({ params }: PageProps) {
                 <div>
                   <p className="text-sm font-semibold">Preview & Effects</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    {imageMotion === "none"
-                      ? `${movableBeats} ${movableBeats === 1 ? "beat" : "beats"} · no movement`
-                      : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label ?? imageMotion} · ${MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.label.toLowerCase()} · ${imageMotionSeconds === 0 ? "whole beat" : `${imageMotionSeconds.toFixed(1)}s`}`}
+                    {[
+                      imageMotion === "none"
+                        ? `${movableBeats} ${movableBeats === 1 ? "beat" : "beats"} · no movement`
+                        : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label ?? imageMotion} · ${MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.label.toLowerCase()} · ${imageMotionSeconds === 0 ? "whole beat" : `${imageMotionSeconds.toFixed(1)}s`}`,
+                      transition === "none"
+                        ? "hard cuts"
+                        : `${TRANSITIONS.find((t) => t.id === transition)?.label.toLowerCase()} ${transitionSeconds.toFixed(1)}s`,
+                    ].join(" · ")}
                   </p>
                 </div>
                 <span className="shrink-0" style={{ color: "var(--c-45)" }}>
@@ -2091,10 +2181,29 @@ export default function AssemblePage({ params }: PageProps) {
                       className="relative w-full overflow-hidden"
                       style={{ aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9" }}
                     >
-                      {/* The same 15% travel the assembler applies, over four
-                          seconds, which is about what a beat runs for. Looped,
-                          so two options can be compared without clicking twice. */}
-                      {previewClipUrl ? (
+                      {/* On the transitions tab the preview shows the join
+                          rather than the shot: this beat handing over to the
+                          next one, at the size the decision is made at. The
+                          tiles are too small to judge a soft wipe from a hard
+                          one. Playback wins over both — while the timeline is
+                          running, this is the playback view. */}
+                      {effectsTab === "transitions" && transition !== "none" && !playing && stillPreviewUrl && nextPreviewUrl ? (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={nextPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={stillPreviewUrl}
+                            alt=""
+                            key={`seam-${transition}`}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            style={{
+                              animation: SEAM_ANIMATION[transition],
+                              ...(SEAM_MASK[transition] ?? {}),
+                            }}
+                          />
+                        </>
+                      ) : previewClipUrl ? (
                         <video
                           src={previewClipUrl}
                           autoPlay
@@ -2172,6 +2281,105 @@ export default function AssemblePage({ params }: PageProps) {
                     </span>
                   </button>
                   <div className={`${previewSrc ? "sm:absolute sm:inset-0 sm:overflow-y-auto sm:pr-1" : ""} ${mobileEffectsOpen ? "" : "hidden sm:block"}`}>
+                {/* Two things about the same edit: what a shot does while it is
+                    on screen, and how it gives way to the next one. Tabs rather
+                    than two stacked grids, which would put the second one below
+                    the fold of a column sized to the preview. */}
+                <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
+                  {([["effects", "Effects"], ["transitions", "Transitions"]] as const).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setEffectsTab(id)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all"
+                      style={effectsTab === id ? {
+                        background: "oklch(0.72 0.25 285 / 0.18)",
+                        color: "var(--accent-purple-text)",
+                      } : { color: "var(--c-50)" }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {effectsTab === "transitions" ? (
+                <>
+                  {/* Every boundary, not one of them: a transition set per seam
+                      needs a control between two tiles on the timeline, which is
+                      its own piece of work. */}
+                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                    Applied at every cut between beats
+                  </p>
+                  <div className="min-w-0 grid grid-cols-3 lg:grid-cols-4 gap-2">
+                    {TRANSITIONS.map((tr) => {
+                      const active = transition === tr.id;
+                      const anim = SEAM_ANIMATION[tr.id];
+                      return (
+                        <button key={tr.id} onClick={() => setTransition(tr.id)} disabled={assembling}
+                          title={tr.hint}
+                          className="text-left transition-all disabled:opacity-40">
+                          <span className="block relative w-full aspect-video rounded-lg overflow-hidden"
+                            style={{
+                              background: "var(--bg-input)",
+                              border: `1px solid ${active ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
+                              boxShadow: active ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
+                            }}>
+                            {stillPreviewUrl && nextPreviewUrl && (
+                              <>
+                                {/* The incoming shot underneath, the outgoing
+                                    one over it doing whatever it does to
+                                    leave. A cut has nothing to animate, so it
+                                    shows the two halves meeting instead. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={nextPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                  style={tr.id === "none" ? { clipPath: "inset(0 0 0 50%)" } : undefined} />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                  style={tr.id === "none"
+                                    ? { clipPath: "inset(0 50% 0 0)" }
+                                    : anim ? { animation: anim, ...(SEAM_MASK[tr.id] ?? {}) } : undefined} />
+                                {tr.id === "none" && (
+                                  <span className="absolute inset-y-0 left-1/2 w-px" style={{ background: "oklch(1 0 0 / 0.7)" }} />
+                                )}
+                              </>
+                            )}
+                          </span>
+                          <span className="block mt-1 text-[11px] truncate"
+                            style={{ color: active ? "var(--accent-purple-text)" : "var(--c-55)" }}>
+                            {tr.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {transition !== "none" && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
+                        Transition length
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0.2}
+                          max={1.5}
+                          step={0.1}
+                          value={transitionSeconds}
+                          disabled={assembling}
+                          onChange={(e) => setTransitionSeconds(Number(e.target.value))}
+                          className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                        />
+                        <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
+                          {transitionSeconds.toFixed(1)}s
+                        </span>
+                      </div>
+                      <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
+                        Each beat holds this much longer so the overlap does not pull the narration early. Capped at a fifth of the shortest beat.
+                      </p>
+                    </div>
+                  )}
+                </>
+                ) : (
+                <>
                 {/* A grid of moving thumbnails rather than a list of names.
                     "Drift" and "Pan left, zoom held" describe a movement to
                     somebody who already knows what it looks like; a tile that
@@ -2328,6 +2536,8 @@ export default function AssemblePage({ params }: PageProps) {
                         : "The move arrives, then the frame holds. Capped at the beat's length."}
                     </p>
                   </div>
+                )}
+                </>
                 )}
                   </div>
                 </div>

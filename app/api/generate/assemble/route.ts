@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 /** The movements the worker knows how to render, and what the column's check
  *  constraint allows. */
 const IMAGE_MOTIONS = ["none", "zoom-in", "zoom-out", "pan-right", "pan-left", "drift", "auto", "random"];
+const TRANSITIONS = ["none", "dissolve", "fade-black", "fade-white", "fade-grays",
+  "slide-left", "slide-up", "wipe-right", "wipe-up", "wipe-diagonal", "smooth-right",
+  "circle-open", "circle-close", "zoom", "pixelize", "blur", "grain"];
 
 export async function POST(req: Request) {
   let user: User;
@@ -38,6 +41,8 @@ export async function POST(req: Request) {
     /** Seconds each move takes. Absent means the whole beat. */
     imageMotionSeconds?: number;
     imageMotionStrength?: string;
+    transition?: string;
+    transitionSeconds?: number;
     // Opt-in flag set by the "Trim silences" button on the assemble
     // page. The worker only runs the per-beat silence trim when this
     // is true; a normal Assemble / Reassemble leaves audio untouched.
@@ -127,6 +132,11 @@ export async function POST(req: Request) {
       image_motion_strength: ["gentle", "normal", "strong"].includes(options.imageMotionStrength as string)
         ? options.imageMotionStrength
         : "normal",
+      transition: TRANSITIONS.includes(options.transition as string) ? options.transition : "none",
+      transition_seconds: typeof options.transitionSeconds === "number"
+        && options.transitionSeconds > 0 && options.transitionSeconds <= 2
+        ? options.transitionSeconds
+        : null,
     })
     .eq("id", projectId);
 

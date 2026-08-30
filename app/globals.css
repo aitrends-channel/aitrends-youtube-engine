@@ -694,3 +694,105 @@ body {
   from { transform: scale(1) translateX(var(--kb-pan, 5%)); }
   to   { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 5%) * -1)); }
 }
+
+/* Transition previews.
+ *
+ * Two frames of the project stacked in a tile, the top one leaving the way the
+ * assembler will make it leave. Each runs the same 3s loop with a hold at both
+ * ends, so a half-second dissolve is legible at tile size — the shape of the
+ * move is what the choice is about, not its exact speed. */
+@keyframes seam-dissolve {
+  0%, 30%   { opacity: 1; }
+  55%, 100% { opacity: 0; }
+}
+
+@keyframes seam-fade-black {
+  0%, 25%  { opacity: 1; filter: brightness(1); }
+  45%      { opacity: 1; filter: brightness(0); }
+  55%      { opacity: 0; filter: brightness(0); }
+  100%     { opacity: 0; filter: brightness(1); }
+}
+
+@keyframes seam-slide-left {
+  0%, 30%   { transform: translateX(0); }
+  55%, 100% { transform: translateX(-100%); }
+}
+
+@keyframes seam-wipe-right {
+  0%, 30%   { clip-path: inset(0 0 0 0); }
+  55%, 100% { clip-path: inset(0 0 0 100%); }
+}
+
+@keyframes seam-fade-white {
+  0%, 25%  { opacity: 1; filter: brightness(1); }
+  45%      { opacity: 1; filter: brightness(3.5); }
+  55%      { opacity: 0; filter: brightness(3.5); }
+  100%     { opacity: 0; filter: brightness(1); }
+}
+
+@keyframes seam-fade-grays {
+  0%, 25%   { opacity: 1; filter: saturate(1); }
+  45%       { opacity: 1; filter: saturate(0); }
+  55%, 100% { opacity: 0; filter: saturate(0); }
+}
+
+@keyframes seam-slide-up {
+  0%, 30%   { transform: translateY(0); }
+  55%, 100% { transform: translateY(-100%); }
+}
+
+@keyframes seam-wipe-up {
+  0%, 30%   { clip-path: inset(0 0 0 0); }
+  55%, 100% { clip-path: inset(100% 0 0 0); }
+}
+
+@keyframes seam-wipe-diagonal {
+  0%, 30%   { clip-path: polygon(0 0, 200% 0, 0 200%); }
+  55%, 100% { clip-path: polygon(0 0, 0 0, 0 0); }
+}
+
+/* A wipe with a soft edge rather than a hard one. The mask is a gradient the
+ * width of the frame, slid across it. */
+@keyframes seam-smooth-right {
+  0%, 30%   { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+  55%, 100% { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+}
+
+@keyframes seam-circle-open {
+  0%, 30%   { clip-path: circle(75% at 50% 50%); }
+  55%, 100% { clip-path: circle(0% at 50% 50%); }
+}
+
+/* The incoming shot opens from a point, so what grows is a hole in the outgoing
+ * one. clip-path cannot cut a hole; a radial mask can, and its size animates. */
+@keyframes seam-circle-close {
+  0%, 30%   { -webkit-mask-size: 0% 0%; mask-size: 0% 0%; }
+  55%, 100% { -webkit-mask-size: 300% 300%; mask-size: 300% 300%; }
+}
+
+@keyframes seam-zoom {
+  0%, 30%   { transform: scale(1); opacity: 1; }
+  55%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Pixelize has no CSS equivalent, so the preview stands in with a coarse blur:
+ * wrong texture, right idea — the picture stops being a picture on the way. */
+@keyframes seam-pixelize {
+  0%, 25%   { opacity: 1; filter: blur(0); }
+  45%       { opacity: 1; filter: blur(8px) contrast(1.4); }
+  55%, 100% { opacity: 0; filter: blur(8px) contrast(1.4); }
+}
+
+@keyframes seam-blur {
+  0%, 25%   { opacity: 1; filter: blur(0); }
+  45%       { opacity: 1; filter: blur(6px); }
+  55%, 100% { opacity: 0; filter: blur(6px); }
+}
+
+/* ffmpeg's "dissolve" is the noisy one: pixels swap over in a scatter rather
+ * than the whole frame fading. Approximated with a dithered mask. */
+@keyframes seam-grain {
+  0%, 30%   { opacity: 1; filter: contrast(1); }
+  42%       { opacity: 0.7; filter: contrast(1.6); }
+  55%, 100% { opacity: 0; filter: contrast(1.6); }
+}
