@@ -111,6 +111,21 @@ export interface ThumbnailAnalysis {
   emotionTriggers: string[];
 }
 
+/** A button overlaid on the finished video: which one, when it is on screen,
+ *  and where. Times are seconds along the video; position and size are
+ *  fractions of the frame. */
+export interface ProjectElement {
+  id: string;
+  element: string;
+  start_sec: number;
+  end_sec: number;
+  x: number;
+  y: number;
+  size: number;
+  /** Which track it sits on. Higher draws over lower. */
+  lane: number;
+}
+
 export interface Beat {
   beatNumber: number;
   scriptSegment: string;
@@ -137,11 +152,6 @@ export interface Beat {
   /** Level and pitch for this beat's sound. Null means the sound as it is. */
   soundVolume?: number | null;
   soundPitch?: number | null;
-  /** A shape drawn over this beat, placed as fractions of the frame. */
-  element?: string | null;
-  elementX?: number | null;
-  elementY?: number | null;
-  elementSize?: number | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;
