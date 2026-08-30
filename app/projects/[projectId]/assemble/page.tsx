@@ -836,12 +836,6 @@ export default function AssemblePage({ params }: PageProps) {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, []);
-  // How wide a second is. Stepped rather than continuous: a slider over pixels
-  // per second invites fiddling, and six steps cover ten minutes to one beat.
-  const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
-  // True while any beat is still guessing, so the panel can say so rather than
-  // presenting an estimate as a measurement.
-  const timelineEstimated = beats.some((b) => beatSeconds(b).estimated);
   const [pxPerSecond, setPxPerSecond] = useState(ZOOM_STEPS[DEFAULT_ZOOM]);
   // The step nearest the current scale, so the slider and the buttons still
   // work after Fit has put us somewhere between two of them.
@@ -853,23 +847,6 @@ export default function AssemblePage({ params }: PageProps) {
   // Squeeze the whole video into the width available, the way CapCut's fit
   // does. Not a zoom step: the right scale depends on the window and on how
   // long this particular video is, so it is computed rather than chosen.
-  const fitTimeline = useCallback(() => {
-    const width = timelineViewportRef.current?.clientWidth ?? 0;
-    if (!width || !timelineTotal) return;
-    // Sixteen px of slack so the last beat is not flush against the edge.
-    setPxPerSecond(Math.max(2, (width - 16) / timelineTotal));
-  }, [timelineTotal]);
-
-  // Fit the whole video into the width once the lengths are known. Runs on the
-  // first real total only: after that the zoom is the user's, and re-fitting
-  // when a beat's duration arrives would yank the strip out from under them.
-  const fittedRef = useRef(false);
-  useEffect(() => {
-    if (fittedRef.current || !timelineTotal || !timelineViewportRef.current?.clientWidth) return;
-    fittedRef.current = true;
-    fitTimeline();
-  }, [timelineTotal, fitTimeline, narrow]);
-
   // Playing the edit before rendering it.
   //
   // There is no assembled video to scrub yet, so this plays what actually
@@ -896,6 +873,41 @@ export default function AssemblePage({ params }: PageProps) {
   const rafRef = useRef<number | null>(null);
 
   const playable = beats.filter((b) => !!b.voiceoverUrl);
+
+  // How wide a second is. Stepped rather than continuous: a slider over pixels
+  // per second invites fiddling, and six steps cover ten minutes to one beat.
+  const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+  /** What one beat's block is drawn at: its own length, or the floor that keeps
+   *  a half-second beat clickable. */
+  const beatTileWidth = useCallback((b: Beat) =>
+    Math.max(pxPerSecond < 12 ? 4 : narrow ? 12 : 20, beatSeconds(b).seconds * pxPerSecond),
+  [pxPerSecond, narrow]);
+  /** The strip is as wide as the picture row actually comes out, gaps included,
+   *  rather than as wide as the time axis says it should be. */
+  const stripWidth = Math.max(
+    320,
+    beats.reduce((sum, b) => sum + beatTileWidth(b), 0) + Math.max(0, beats.length - 1),
+  );
+  // True while any beat is still guessing, so the panel can say so rather than
+  // presenting an estimate as a measurement.
+  const timelineEstimated = beats.some((b) => beatSeconds(b).estimated);
+
+  const fitTimeline = useCallback(() => {
+    const width = timelineViewportRef.current?.clientWidth ?? 0;
+    if (!width || !timelineTotal) return;
+    // Sixteen px of slack so the last beat is not flush against the edge.
+    setPxPerSecond(Math.max(2, (width - 16) / timelineTotal));
+  }, [timelineTotal]);
+
+  // Fit the whole video into the width once the lengths are known. Runs on the
+  // first real total only: after that the zoom is the user's, and re-fitting
+  // when a beat's duration arrives would yank the strip out from under them.
+  const fittedRef = useRef(false);
+  useEffect(() => {
+    if (fittedRef.current || !timelineTotal || !timelineViewportRef.current?.clientWidth) return;
+    fittedRef.current = true;
+    fitTimeline();
+  }, [timelineTotal, fitTimeline, narrow]);
   const bgmPreviewUrl = bgmObjectUrl ?? bgmUploadedUrl;
   // Preview only. The worker has no narration level — the voiceover is the
   // reference everything else is mixed against — so this changes what you hear
@@ -998,21 +1010,23 @@ export default function AssemblePage({ params }: PageProps) {
   // of what makes it a timeline rather than a strip of pictures: a tester
   // looked at it and did not recognise one, having found nothing that behaves
   // the way an editor's does.
-  const seekTo = useCallback((seconds: number, commit = true) => {
+  const locate = useCallback((seconds: number) => {
     const t = Math.max(0, Math.min(timelineTotal, seconds));
     let acc = 0;
-    let index = 0;
-    let within = 0;
     for (let i = 0; i < playable.length; i++) {
       const span = beatSeconds(playable[i]).seconds;
       if (t < acc + span || i === playable.length - 1) {
-        index = i;
-        within = span > 0 ? Math.max(0, Math.min(1, (t - acc) / span)) : 0;
-        break;
+        return { t, index: i, within: span > 0 ? Math.max(0, Math.min(1, (t - acc) / span)) : 0 };
       }
       acc += span;
     }
+    return { t, index: 0, within: 0 };
+  }, [playable, timelineTotal]);
+
+  const seekTo = useCallback((seconds: number, commit = true) => {
+    const { t, index, within } = locate(seconds);
     setPlayhead(t);
+    setShowFinished(false);
     const landedOn = playable[index];
     if (playing && commit) {
       playFrom(index, within);
@@ -1025,13 +1039,21 @@ export default function AssemblePage({ params }: PageProps) {
       // is what a scrub is for when the audio is stopped.
       setTimelineBeat(landedOn.beatNumber);
     }
-  }, [playable, playing, playFrom, timelineTotal]);
+  }, [playable, playing, playFrom, locate]);
 
   const togglePlay = useCallback(() => {
     if (playing) { stopPlayback(); return; }
     if (playable.length === 0) { toast.info("No voiceover to play yet."); return; }
+    // Play means play the edit. With a render on screen the frame was showing
+    // the finished file while the narration ran underneath it, which is two
+    // videos at once and neither of them what was asked for.
+    setShowFinished(false);
     setPlaying(true);
-    setPlayhead(0);
+    // Resume from the marker. Restarting at zero after a pause is the one
+    // thing a transport must not do.
+    const from = playhead >= timelineTotal - 0.05 ? 0 : playhead;
+    const { index, within } = locate(from);
+    setPlayhead(from);
 
     // Muted means volume zero, which is exactly what the worker is told, so
     // there is nothing to start.
@@ -1043,8 +1065,8 @@ export default function AssemblePage({ params }: PageProps) {
       void bed.play().catch(() => { /* the narration still plays without it */ });
     }
 
-    playFrom(0);
-  }, [playing, playable.length, playFrom, stopPlayback, bgmPreviewUrl, bgmVolume]);
+    playFrom(index, within);
+  }, [playing, playable.length, playFrom, stopPlayback, bgmPreviewUrl, bgmVolume, playhead, timelineTotal, locate]);
 
   // Set or clear one beat's effect. Optimistic: the select is the only feedback
   // and waiting a round trip to show a choice feels broken.
@@ -1084,6 +1106,14 @@ export default function AssemblePage({ params }: PageProps) {
   const [pickedSound, setPickedSound] = useState<string | null>(null);
   const [pickedElement, setPickedElement] = useState<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [editConfirmOpen, setEditConfirmOpen] = useState(false);
+  /** Set when Edit is confirmed: the render on screen is no longer what the
+   *  page describes, so it leaves the preview and the only thing left of it is
+   *  a download. Cleared when a new render arrives. */
+  const [renderStale, setRenderStale] = useState(false);
+  /** Watch the finished video in the preview, or go back to editing it. */
+  const [showFinished, setShowFinished] = useState(true);
 
   // Elements are their own objects on their own timeline, so they are fetched
   // and written apart from the beats.
@@ -1574,6 +1604,10 @@ export default function AssemblePage({ params }: PageProps) {
   const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
+  /** Final mode: a render exists and the page is showing it. Nothing on the
+   *  timeline can be changed here, because none of it is in the video on
+   *  screen — Edit is the way back. */
+  const finalMode = showPreview && showFinished && !renderStale;
 
   // Width the preview <video> actually renders at: min(panel width,
   // 70vh × ratio) — the same bound its max-h-[70vh] + max-w-full impose.
@@ -1603,6 +1637,11 @@ export default function AssemblePage({ params }: PageProps) {
   // doesn't leave the warning stuck.
   const [previewLoadError, setPreviewLoadError] = useState(false);
   useEffect(() => { setPreviewLoadError(false); }, [previewUrl]);
+  useEffect(() => {
+    if (!previewUrl) return;
+    setRenderStale(false);
+    setShowFinished(true);
+  }, [previewUrl]);
 
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
@@ -2978,9 +3017,53 @@ export default function AssemblePage({ params }: PageProps) {
                     ].filter(Boolean).join(" · ")}
                   </p>
                 </div>
-                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
-                  {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setExportConfirmOpen(true); }}
+                    disabled={!hasVoiceover || assembling}
+                    title={hasVoiceover ? "Render the finished video" : "Generate a voiceover first"}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {assembling ? "Rendering…" : showPreview ? "Re-render" : "Render"}
+                  </button>
+                  {showPreview && previewUrl && !renderStale && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (showFinished) setEditConfirmOpen(true);
+                        else setShowFinished(true);
+                      }}
+                      title={showFinished ? "Go back to editing" : "Watch the assembled video"}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      style={showFinished
+                        ? { background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }
+                        : { background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }}
+                    >
+                      {showFinished ? "Edit" : "Watch"}
+                    </button>
+                  )}
+                  {/* Only once there is something to download. The href goes
+                      through our route, which redirects to a presigned
+                      attachment URL: an anchor's download attribute is ignored
+                      cross-origin, so linking R2 opened the video in the tab. */}
+                  {showPreview && previewUrl && !previewLoadError && (
+                    <a
+                      href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(previewUrl)}&filename=${encodeURIComponent(`${(project?.channel_name as string | undefined)?.trim() || "video"}.mp4`)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      title={renderStale ? "Download the last assembled video" : "Download the finished video"}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+                    >
+                      {renderStale ? "↓ Export previous" : "↓ Export"}
+                    </a>
+                  )}
+                  <span style={{ color: "var(--c-45)" }}>
+                    {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                </div>
               </div>
               {draggingElement && (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -3025,6 +3108,7 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     <div
                       ref={previewFrameRef}
+                      onPointerDown={() => setSelectedElement(null)}
                       className="relative w-full overflow-hidden"
                       style={{
                         aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
@@ -3033,6 +3117,21 @@ export default function AssemblePage({ params }: PageProps) {
                         containerType: "size",
                       }}
                     >
+                      {/* The finished render, in the frame the edit was made
+                          in. Everything under it is still there and comes back
+                          the moment it is toggled off. */}
+                      {showPreview && previewUrl && !previewLoadError && showFinished && !renderStale ? (
+                        <video
+                          key={previewUrl}
+                          src={previewUrl}
+                          controls
+                          className="absolute inset-0 w-full h-full object-contain"
+                          style={{ background: "black" }}
+                          onError={() => setPreviewLoadError(true)}
+                          onLoadedMetadata={() => setPreviewLoadError(false)}
+                        />
+                      ) : (
+                      <>
                       {/* The grade goes on the picture, not on the frame: it
                           covers both shots through a seam, and the caption and
                           the logo above it stay ungraded, which is where the
@@ -3157,6 +3256,7 @@ export default function AssemblePage({ params }: PageProps) {
                                 draggable={false}
                                 onPointerDown={!editable ? undefined : (ev) => {
                                   ev.preventDefault();
+                                  ev.stopPropagation();
                                   setSelectedElement(el.id);
                                   const frame = previewFrameRef.current;
                                   if (!frame) return;
@@ -3185,7 +3285,7 @@ export default function AssemblePage({ params }: PageProps) {
                                   filter: "drop-shadow(0 2px 6px oklch(0 0 0 / 0.5))",
                                 }}
                               />
-                              {editable && (
+                              {editable && picked && (
                                 <span
                                   onPointerDown={(ev) => {
                                     ev.stopPropagation();
@@ -3227,7 +3327,10 @@ export default function AssemblePage({ params }: PageProps) {
                           }}
                         />
                       )}
+                      </>
+                      )}
                     </div>
+
                   </div>
                 </div>
                 )}
@@ -3266,7 +3369,10 @@ export default function AssemblePage({ params }: PageProps) {
                     on screen, and how it gives way to the next one. Tabs rather
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
-                <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
+                {/* The tabs themselves stay live in final mode: looking at
+                    what was set is not changing it. */}
+                <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
+                  style={{ background: "var(--bg-input)" }}>
                   {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"]] as const).map(([id, label]) => (
                     <button
                       key={id}
@@ -3282,6 +3388,315 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
+                {assembling ? (
+                <div className="space-y-4">
+                {/* In-progress preview — visible while assembling, only
+                    after the worker has uploaded mixed.mp4. The video is
+                    watchable but is missing the final-burn pass (captions
+                    + logo bake + upscale), so we label it clearly so the
+                    user knows the cosmetic touch-ups are still rendering. */}
+                {assembling && inProgressPreviewUrl && (
+                  <div className="space-y-2">
+                    <video
+                      key={inProgressPreviewUrl}
+                      src={inProgressPreviewUrl}
+                      controls
+                      className="mx-auto block max-h-[70vh] rounded-xl"
+                      style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
+                    />
+                    <p className="text-sm text-center font-medium leading-snug" style={{ color: "var(--accent-amber-text)" }}>
+                      Preview — finishing up
+                    </p>
+                  </div>
+                )}
+
+                {assembling && (() => {
+                  /* Stage-aware progress: the worker emits short status strings
+                     for each phase via setProgress(); we match the current one
+                     to a known stage and render every stage with a done/doing/
+                     pending indicator + an overall % bar.
+
+                     `paused` freezes the animations the moment the user clicks
+                     Stop. Without this the per-step spinner + indeterminate
+                     stripe keep moving while we wait the few seconds for the
+                     worker to acknowledge — visually indistinguishable from
+                     normal progress, which makes the Stop click feel ignored.
+                     Active when stopRequested (user clicked Stop),
+                     finalizeRequested (user clicked Use this version), or
+                     the worker has already transitioned to "stopped". */
+                  const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
+                  const stopped = project?.assembly_status === "stopped";
+                  // Matchers are tightened so each one only catches its own
+                  // worker progress string. The old "Downloading" prefix
+                  // greedily swallowed bgm and logo downloads too, which
+                  // collapsed them into the voiceover stage and hid that they
+                  // were happening. The worker emits the exact strings shown
+                  // below (assemble.ts), so anchor to them precisely.
+                  // Stage list only includes stages that map to a real
+                  // worker pass after the assemble pipeline refactor:
+                  //   - Logo overlay was baked into normalizeClip — the
+                  //     "Downloading channel logo…" status is folded into
+                  //     the clips stage match because it's a brief prelude
+                  //     to clip processing, not its own pass.
+                  //   - Burning captions was baked into normalizeClip too,
+                  //     so the standalone "Burn captions" stage is gone.
+                  //   - "Generate captions" never had a worker progress
+                  //     line of its own; the only meaningful caption-prep
+                  //     wait is the optional translate call, kept as its
+                  //     own stage when captions translation is needed.
+                  //   - join only matches the final visuals concat now;
+                  //     "Joining per-beat audio…" lands in voiceover.
+                  // Five high-level stages. The previous 9-step layout
+                  // exposed pipeline internals (transcribe, translate,
+                  // download bgm, restore-from-checkpoint) that the
+                  // user can't act on and that change run-to-run based
+                  // on whether captions/translation/BGM are configured.
+                  // Collapsing into Prepare / Build clips / Mix audio /
+                  // Burn captions / Upload keeps the count stable and
+                  // the labels meaningful regardless of options.
+                  const stages = [
+                    // Prepare: queue claim, voiceover ready, transcribe,
+                    // translate, channel-logo download (the latter is
+                    // an early-stage prereq, not part of clip encoding).
+                    { key: "prepare",    label: "Prepare",         match: (s: string) => (
+                      s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
+                      || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
+                      || s.startsWith("Transcribing") || s.startsWith("Translating")
+                    ) },
+                    // Build clips: per-beat encode pass + the post-encode
+                    // "Finalizing…" debounce the worker emits when a
+                    // worker pool finishes its last beat.
+                    { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
+                    // Mix audio: join clips, freeze-pad, BGM + logo
+                    // download, and the actual mix pass. Logo download
+                    // lives here now (used to be a Stage B prereq) so
+                    // both BGM and logo prep land in one user-visible
+                    // step. The freeze-pad only fires in legacy mode
+                    // with trailing silence; folding it in keeps step
+                    // counts run-stable.
+                    { key: "mix",        label: "Mix audio",       match: (s: string) => (
+                      s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
+                      || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
+                      || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
+                    ) },
+                    // Stage F removed in the post-Coconut refactor.
+                    // Captions are baked per-beat during Build clips;
+                    // logo composites at Mix audio; there's no final-
+                    // burn pass anymore. mixed.mp4 IS the final video,
+                    // which uploads directly from Stage D's output.
+                    { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
+                  ];
+                  // Monotonic stage index: once we've seen progress to
+                  // a later stage, don't ever fall back to an earlier
+                  // one. The worker occasionally writes transient
+                  // status lines that don't match any rule (e.g. a
+                  // "Validating…" / "Cleaning up…" between stages),
+                  // which would otherwise drop findIndex to -1 and
+                  // make the progress bar visibly jump back to step 1
+                  // before snapping forward on the next matching line.
+                  const i = stages.findIndex((s) => s.match(assembleStatus));
+                  if (i > lastStageIdxRef.current) lastStageIdxRef.current = i;
+                  else if (i === -1 && lastStageIdxRef.current === -1) lastStageIdxRef.current = 0;
+                  const currentIdx = lastStageIdxRef.current >= 0 ? lastStageIdxRef.current : 0;
+                  const pct = Math.round((currentIdx / stages.length) * 100);
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs" style={{ color: "var(--c-45)" }}>
+                          <span>Step {currentIdx + 1} of {stages.length}</span>
+                          <span>{pct}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                          <div className="h-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2">
+                        {stages.map((s, i) => {
+                          const done = i < currentIdx;
+                          const doing = i === currentIdx;
+                          // While the in-progress preview is showing,
+                          // the user already knows the early stages
+                          // completed — they're watching the video.
+                          // Collapse the list to only the still-active
+                          // and pending steps so the panel focuses on
+                          // what they're waiting for (Finalize, Upload).
+                          // The overall % bar + "Step X of N" header
+                          // above keep showing total progress.
+                          if (inProgressPreviewUrl && done) return null;
+                          /* Per-stage progress: parse "X of N" out of the status
+                             when possible (clips stage). Otherwise we show an
+                             indeterminate animated stripe so the user still sees
+                             the stage is actively working. */
+                          const clipMatch = doing ? assembleStatus.match(/(\d+)\s+of\s+(\d+)/i) : null;
+                          const stagePct = done
+                            ? 100
+                            : doing && clipMatch
+                            ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
+                            : 0;
+                          const showIndeterminate = doing && !clipMatch;
+                          // Active-step palette swaps to amber when paused so
+                          // the row visually reads "halted here" rather than
+                          // "still working." `pausedHere` only fires on the
+                          // doing step; other steps keep their done/pending
+                          // styling regardless.
+                          const pausedHere = paused && doing;
+                          return (
+                            <li key={s.key} className="space-y-1">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                                  style={{
+                                    background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
+                                    border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
+                                    color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "var(--accent-amber-text)" : doing ? "var(--accent-purple-text)" : "var(--c-35)",
+                                    fontSize: "9px",
+                                  }}>
+                                  {done ? "✓" : pausedHere ? (
+                                    // Pause glyph: two short vertical bars.
+                                    // Inline SVG so it inherits currentColor
+                                    // and doesn't pull in an icon dep.
+                                    <svg width="7" height="8" viewBox="0 0 6 8" fill="currentColor"><rect x="0" y="0" width="2" height="8" rx="0.5" /><rect x="4" y="0" width="2" height="8" rx="0.5" /></svg>
+                                  ) : doing ? (
+                                    <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                                  ) : i + 1}
+                                </span>
+                                <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
+                                  {/* The load stage bundles three meaningfully
+                                     different states (Queued… / Starting… /
+                                     Loading project data…) under one static
+                                     label, so a user sitting in a queue can't
+                                     tell whether the worker is busy with
+                                     someone else's project or just slow to
+                                     pick up theirs. When this is the active
+                                     stage, surface the raw worker status
+                                     instead of the catch-all label. Other
+                                     stages keep their polished labels — their
+                                     raw status strings are less readable. */}
+                                  {doing && s.key === "load" ? (assembleStatus || s.label) : s.label}
+                                </span>
+                                {doing && clipMatch && (
+                                  <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
+                                )}
+                              </div>
+                              <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
+                                {showIndeterminate && !pausedHere ? (
+                                  <div className="progress-indeterminate h-full"
+                                    style={{ background: "oklch(0.72 0.25 285)" }} />
+                                ) : pausedHere ? (
+                                  // Frozen stripe — solid amber at a fixed
+                                  // fill so the user can still see this is
+                                  // the active step, just not animating.
+                                  <div className="h-full"
+                                    style={{ width: "30%", background: "oklch(0.72 0.18 60)" }} />
+                                ) : (
+                                  <div className="h-full transition-all duration-500"
+                                    style={{
+                                      width: `${stagePct}%`,
+                                      background: done ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                                    }} />
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
+                        {/* While the worker is acknowledging an
+                            interrupt, surface the right "…" line so
+                            the click doesn't feel ignored. Once the
+                            worker transitions to stopped/done, the
+                            useEffect above sets assembleStatus to a
+                            terminal line and we fall through. */}
+                        {finalizeRequested && !stopped
+                          ? "Stopping to confirm preview…"
+                          : stopRequested && !stopped
+                          ? "Stopping…"
+                          : (assembleStatus || "Working…")}
+                      </p>
+
+                      {project?.assembly_status === "stopped" ? (
+                        // Two stopped flavors:
+                        //   - Stopped via "Use this version":
+                        //     assembly_finalize_preview_requested stays
+                        //     true after the worker's stop, signaling
+                        //     the user wants to ship the preview. Show
+                        //     Continue instead of Resume — clicking it
+                        //     promotes the preview to assembled_url and
+                        //     marks the assembly done without running
+                        //     any remaining work.
+                        //   - Stopped via Stop: the usual Resume path.
+                        finalizeRequested ? (
+                          <div className="flex gap-2">
+                            <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                              disabled={cancellingAssembly || committingPreview}
+                              className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                              Cancel
+                            </button>
+                            <button onClick={commitPreview}
+                              disabled={cancellingAssembly || committingPreview}
+                              className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                              {committingPreview ? "Continuing…" : "Continue"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                              disabled={cancellingAssembly}
+                              className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                              Cancel
+                            </button>
+                            <button onClick={resumeAssembly}
+                              disabled={cancellingAssembly}
+                              className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                              Resume
+                            </button>
+                          </div>
+                        )
+                      ) : inProgressPreviewUrl ? (
+                        // Two-button row whenever the in-progress preview
+                        // is available: "Use this version" promotes the
+                        // preview to the final assembled video and skips
+                        // the remaining final-burn re-encode (saves 5-25
+                        // min on long projects); Stop preserves the
+                        // checkpoint for later Resume. Disabled-state
+                        // labels reflect whichever click is in flight.
+                        <div className="flex gap-2">
+                          <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            {stopRequested ? "Stopping…" : "Stop"}
+                          </button>
+                          <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            {finalizeRequested ? "Finalizing…" : "Export anyway"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={stopAssembly} disabled={stopRequested}
+                          className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                          {stopRequested ? "Stopping…" : "Stop"}
+                        </button>
+                      )}
+                      <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
+                    </div>
+                  );
+                })()}
+                </div>
+                ) : (
+                <div
+                  className={finalMode ? "opacity-55 cursor-not-allowed" : ""}
+                  onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                  onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                >
                 {effectsTab === "elements" ? (
                 <>
                   <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
@@ -4039,6 +4454,8 @@ export default function AssemblePage({ params }: PageProps) {
                 )}
                 </>
                 )}
+                </div>
+                )}
                   </div>
                 </div>
               </div>
@@ -4082,10 +4499,10 @@ export default function AssemblePage({ params }: PageProps) {
                   <button
                     type="button"
                     onClick={togglePlay}
-                    disabled={playable.length === 0}
-                    title={playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
+                    disabled={playable.length === 0 || finalMode}
+                    title={finalMode ? "Press Edit to work on the video" : playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
                     aria-label={playing ? "Pause" : "Play"}
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30"
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
                   >
                     {playing ? <Pause size={13} /> : <Play size={13} className="ml-[1px]" />}
@@ -4094,6 +4511,11 @@ export default function AssemblePage({ params }: PageProps) {
                     {fmtClock(playhead)}
                     <span style={{ color: "var(--c-32)" }}> / {fmtClock(timelineTotal)}</span>
                   </span>
+                  {finalMode && (
+                    <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--c-38)" }}>
+                      final · press Edit to change it
+                    </span>
+                  )}
                   {/* Playback is the narration, and only the beats that have
                       one. Without this the audio stopped a minute into a
                       thirteen-minute strip and looked broken. */}
@@ -4107,14 +4529,16 @@ export default function AssemblePage({ params }: PageProps) {
                 {/* Zoom, the way an editor does it: out to see the shape of
                     the whole video, in to work on one beat. */}
                 <div className="flex items-center gap-2 justify-self-end">
-                  <span className="text-xs hidden lg:inline" style={{ color: "var(--c-38)" }}>Drag the ruler to scrub</span>
+                  {!finalMode && (
+                    <span className="text-xs hidden lg:inline" style={{ color: "var(--c-38)" }}>Drag the ruler to scrub</span>
+                  )}
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.max(0, zoomStep - 1)])}
-                      disabled={zoomStep === 0}
+                      disabled={zoomStep === 0 || finalMode}
                       aria-label="Zoom out"
-                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       −
@@ -4126,15 +4550,16 @@ export default function AssemblePage({ params }: PageProps) {
                       step={1}
                       value={zoomStep}
                       onChange={(e) => setPxPerSecond(ZOOM_STEPS[Number(e.target.value)])}
+                      disabled={finalMode}
                       aria-label="Timeline zoom"
-                      className="hidden sm:block w-20 accent-[oklch(0.72_0.25_285)]"
+                      className="hidden sm:block w-20 accent-[oklch(0.72_0.25_285)] disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                     <button
                       type="button"
                       onClick={() => setPxPerSecond(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomStep + 1)])}
-                      disabled={zoomStep === ZOOM_STEPS.length - 1}
+                      disabled={zoomStep === ZOOM_STEPS.length - 1 || finalMode}
                       aria-label="Zoom in"
-                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       +
@@ -4142,8 +4567,9 @@ export default function AssemblePage({ params }: PageProps) {
                     <button
                       type="button"
                       onClick={fitTimeline}
-                      title="Compress the whole video into the width available"
-                      className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80"
+                      disabled={finalMode}
+                      title={finalMode ? "Press Edit to work on the video" : "Compress the whole video into the width available"}
+                      className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
                     >
                       Fit
@@ -4154,10 +4580,16 @@ export default function AssemblePage({ params }: PageProps) {
 
               <div
                 ref={timelineViewportRef}
-                className="overflow-x-auto rounded-xl px-2 pt-1 pb-2"
-                style={{ background: "oklch(1 0 0 / 0.11)", border: "1px solid oklch(1 0 0 / 0.13)" }}
+                className={`overflow-x-auto rounded-xl px-2 pt-1 pb-2 ${finalMode ? "cursor-not-allowed select-none" : ""}`}
+                onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+                style={{
+                  background: "oklch(1 0 0 / 0.11)",
+                  border: "1px solid oklch(1 0 0 / 0.13)",
+                  opacity: finalMode ? 0.55 : 1,
+                }}
               >
-                <div ref={timelineStripRef} style={{ width: Math.max(320, timelineTotal * pxPerSecond) }}>
+                <div ref={timelineStripRef} style={{ width: stripWidth }}>
                   {/* Ruler. Every five seconds, which keeps a ten-minute video
                       readable without a mark per second. Drag it to scrub:
                       the ticks say what this is, the dragging proves it. */}
@@ -4267,7 +4699,7 @@ export default function AssemblePage({ params }: PageProps) {
                             // has to give way when the whole video is being
                             // squeezed to fit, or the sum of the floors would
                             // be wider than the space we are fitting into.
-                            width: Math.max(pxPerSecond < 12 ? 4 : narrow ? 12 : 20, seconds * pxPerSecond),
+                            width: beatTileWidth(b),
                             background: "var(--bg-progress)",
                             border: `1px solid ${selected ? "oklch(0.72 0.25 285)" : "var(--bd-6)"}`,
                             boxShadow: selected ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
@@ -4586,21 +5018,6 @@ export default function AssemblePage({ params }: PageProps) {
 
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              {showPreview && previewUrl && !previewLoadError && (
-                <video
-                  key={previewUrl}
-                  src={previewUrl}
-                  controls
-                  // Size to the clip's own aspect ratio: width fills up to
-                  // the panel, height is capped so a 9:16 portrait render
-                  // doesn't blow up — the video keeps its true shape and
-                  // centers instead of stretching.
-                  className="mx-auto block max-h-[70vh] rounded-xl"
-                  style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
-                  onError={() => setPreviewLoadError(true)}
-                  onLoadedMetadata={() => setPreviewLoadError(false)}
-                />
-              )}
               {showPreview && previewLoadError && (
                 <div
                   className="w-full rounded-xl p-5 text-center space-y-1"
@@ -4610,348 +5027,18 @@ export default function AssemblePage({ params }: PageProps) {
                     Preview unavailable
                   </p>
                   <p className="text-xs" style={{ color: "var(--c-50)" }}>
-                    The cached preview file may have expired. Click Reassemble to rebuild it.
+                    The cached render may have expired. Render again to rebuild it.
                   </p>
                 </div>
               )}
 
-              {/* In-progress preview — visible while assembling, only
-                  after the worker has uploaded mixed.mp4. The video is
-                  watchable but is missing the final-burn pass (captions
-                  + logo bake + upscale), so we label it clearly so the
-                  user knows the cosmetic touch-ups are still rendering. */}
-              {assembling && inProgressPreviewUrl && (
-                <div className="space-y-2">
-                  <video
-                    key={inProgressPreviewUrl}
-                    src={inProgressPreviewUrl}
-                    controls
-                    className="mx-auto block max-h-[70vh] rounded-xl"
-                    style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
-                  />
-                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "var(--accent-amber-text)" }}>
-                    Preview — finishing up
-                  </p>
-                </div>
-              )}
-
-              {assembling && (() => {
-                /* Stage-aware progress: the worker emits short status strings
-                   for each phase via setProgress(); we match the current one
-                   to a known stage and render every stage with a done/doing/
-                   pending indicator + an overall % bar.
-
-                   `paused` freezes the animations the moment the user clicks
-                   Stop. Without this the per-step spinner + indeterminate
-                   stripe keep moving while we wait the few seconds for the
-                   worker to acknowledge — visually indistinguishable from
-                   normal progress, which makes the Stop click feel ignored.
-                   Active when stopRequested (user clicked Stop),
-                   finalizeRequested (user clicked Use this version), or
-                   the worker has already transitioned to "stopped". */
-                const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
-                const stopped = project?.assembly_status === "stopped";
-                // Matchers are tightened so each one only catches its own
-                // worker progress string. The old "Downloading" prefix
-                // greedily swallowed bgm and logo downloads too, which
-                // collapsed them into the voiceover stage and hid that they
-                // were happening. The worker emits the exact strings shown
-                // below (assemble.ts), so anchor to them precisely.
-                // Stage list only includes stages that map to a real
-                // worker pass after the assemble pipeline refactor:
-                //   - Logo overlay was baked into normalizeClip — the
-                //     "Downloading channel logo…" status is folded into
-                //     the clips stage match because it's a brief prelude
-                //     to clip processing, not its own pass.
-                //   - Burning captions was baked into normalizeClip too,
-                //     so the standalone "Burn captions" stage is gone.
-                //   - "Generate captions" never had a worker progress
-                //     line of its own; the only meaningful caption-prep
-                //     wait is the optional translate call, kept as its
-                //     own stage when captions translation is needed.
-                //   - join only matches the final visuals concat now;
-                //     "Joining per-beat audio…" lands in voiceover.
-                // Five high-level stages. The previous 9-step layout
-                // exposed pipeline internals (transcribe, translate,
-                // download bgm, restore-from-checkpoint) that the
-                // user can't act on and that change run-to-run based
-                // on whether captions/translation/BGM are configured.
-                // Collapsing into Prepare / Build clips / Mix audio /
-                // Burn captions / Upload keeps the count stable and
-                // the labels meaningful regardless of options.
-                const stages = [
-                  // Prepare: queue claim, voiceover ready, transcribe,
-                  // translate, channel-logo download (the latter is
-                  // an early-stage prereq, not part of clip encoding).
-                  { key: "prepare",    label: "Prepare",         match: (s: string) => (
-                    s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
-                    || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
-                    || s.startsWith("Transcribing") || s.startsWith("Translating")
-                  ) },
-                  // Build clips: per-beat encode pass + the post-encode
-                  // "Finalizing…" debounce the worker emits when a
-                  // worker pool finishes its last beat.
-                  { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
-                  // Mix audio: join clips, freeze-pad, BGM + logo
-                  // download, and the actual mix pass. Logo download
-                  // lives here now (used to be a Stage B prereq) so
-                  // both BGM and logo prep land in one user-visible
-                  // step. The freeze-pad only fires in legacy mode
-                  // with trailing silence; folding it in keeps step
-                  // counts run-stable.
-                  { key: "mix",        label: "Mix audio",       match: (s: string) => (
-                    s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
-                    || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
-                    || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
-                  ) },
-                  // Stage F removed in the post-Coconut refactor.
-                  // Captions are baked per-beat during Build clips;
-                  // logo composites at Mix audio; there's no final-
-                  // burn pass anymore. mixed.mp4 IS the final video,
-                  // which uploads directly from Stage D's output.
-                  { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
-                ];
-                // Monotonic stage index: once we've seen progress to
-                // a later stage, don't ever fall back to an earlier
-                // one. The worker occasionally writes transient
-                // status lines that don't match any rule (e.g. a
-                // "Validating…" / "Cleaning up…" between stages),
-                // which would otherwise drop findIndex to -1 and
-                // make the progress bar visibly jump back to step 1
-                // before snapping forward on the next matching line.
-                const i = stages.findIndex((s) => s.match(assembleStatus));
-                if (i > lastStageIdxRef.current) lastStageIdxRef.current = i;
-                else if (i === -1 && lastStageIdxRef.current === -1) lastStageIdxRef.current = 0;
-                const currentIdx = lastStageIdxRef.current >= 0 ? lastStageIdxRef.current : 0;
-                const pct = Math.round((currentIdx / stages.length) * 100);
-
-                return (
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs" style={{ color: "var(--c-45)" }}>
-                        <span>Step {currentIdx + 1} of {stages.length}</span>
-                        <span>{pct}%</span>
-                      </div>
-                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-                        <div className="h-full transition-all duration-500"
-                          style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
-                      </div>
-                    </div>
-
-                    <ul className="space-y-2">
-                      {stages.map((s, i) => {
-                        const done = i < currentIdx;
-                        const doing = i === currentIdx;
-                        // While the in-progress preview is showing,
-                        // the user already knows the early stages
-                        // completed — they're watching the video.
-                        // Collapse the list to only the still-active
-                        // and pending steps so the panel focuses on
-                        // what they're waiting for (Finalize, Upload).
-                        // The overall % bar + "Step X of N" header
-                        // above keep showing total progress.
-                        if (inProgressPreviewUrl && done) return null;
-                        /* Per-stage progress: parse "X of N" out of the status
-                           when possible (clips stage). Otherwise we show an
-                           indeterminate animated stripe so the user still sees
-                           the stage is actively working. */
-                        const clipMatch = doing ? assembleStatus.match(/(\d+)\s+of\s+(\d+)/i) : null;
-                        const stagePct = done
-                          ? 100
-                          : doing && clipMatch
-                          ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
-                          : 0;
-                        const showIndeterminate = doing && !clipMatch;
-                        // Active-step palette swaps to amber when paused so
-                        // the row visually reads "halted here" rather than
-                        // "still working." `pausedHere` only fires on the
-                        // doing step; other steps keep their done/pending
-                        // styling regardless.
-                        const pausedHere = paused && doing;
-                        return (
-                          <li key={s.key} className="space-y-1">
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                                style={{
-                                  background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
-                                  border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
-                                  color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "var(--accent-amber-text)" : doing ? "var(--accent-purple-text)" : "var(--c-35)",
-                                  fontSize: "9px",
-                                }}>
-                                {done ? "✓" : pausedHere ? (
-                                  // Pause glyph: two short vertical bars.
-                                  // Inline SVG so it inherits currentColor
-                                  // and doesn't pull in an icon dep.
-                                  <svg width="7" height="8" viewBox="0 0 6 8" fill="currentColor"><rect x="0" y="0" width="2" height="8" rx="0.5" /><rect x="4" y="0" width="2" height="8" rx="0.5" /></svg>
-                                ) : doing ? (
-                                  <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
-                                ) : i + 1}
-                              </span>
-                              <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
-                                {/* The load stage bundles three meaningfully
-                                   different states (Queued… / Starting… /
-                                   Loading project data…) under one static
-                                   label, so a user sitting in a queue can't
-                                   tell whether the worker is busy with
-                                   someone else's project or just slow to
-                                   pick up theirs. When this is the active
-                                   stage, surface the raw worker status
-                                   instead of the catch-all label. Other
-                                   stages keep their polished labels — their
-                                   raw status strings are less readable. */}
-                                {doing && s.key === "load" ? (assembleStatus || s.label) : s.label}
-                              </span>
-                              {doing && clipMatch && (
-                                <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
-                              )}
-                            </div>
-                            <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
-                              {showIndeterminate && !pausedHere ? (
-                                <div className="progress-indeterminate h-full"
-                                  style={{ background: "oklch(0.72 0.25 285)" }} />
-                              ) : pausedHere ? (
-                                // Frozen stripe — solid amber at a fixed
-                                // fill so the user can still see this is
-                                // the active step, just not animating.
-                                <div className="h-full"
-                                  style={{ width: "30%", background: "oklch(0.72 0.18 60)" }} />
-                              ) : (
-                                <div className="h-full transition-all duration-500"
-                                  style={{
-                                    width: `${stagePct}%`,
-                                    background: done ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
-                                  }} />
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-
-                    <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
-                      {/* While the worker is acknowledging an
-                          interrupt, surface the right "…" line so
-                          the click doesn't feel ignored. Once the
-                          worker transitions to stopped/done, the
-                          useEffect above sets assembleStatus to a
-                          terminal line and we fall through. */}
-                      {finalizeRequested && !stopped
-                        ? "Stopping to confirm preview…"
-                        : stopRequested && !stopped
-                        ? "Stopping…"
-                        : (assembleStatus || "Working…")}
-                    </p>
-
-                    {project?.assembly_status === "stopped" ? (
-                      // Two stopped flavors:
-                      //   - Stopped via "Use this version":
-                      //     assembly_finalize_preview_requested stays
-                      //     true after the worker's stop, signaling
-                      //     the user wants to ship the preview. Show
-                      //     Continue instead of Resume — clicking it
-                      //     promotes the preview to assembled_url and
-                      //     marks the assembly done without running
-                      //     any remaining work.
-                      //   - Stopped via Stop: the usual Resume path.
-                      finalizeRequested ? (
-                        <div className="flex gap-2">
-                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                            disabled={cancellingAssembly || committingPreview}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                            Cancel
-                          </button>
-                          <button onClick={commitPreview}
-                            disabled={cancellingAssembly || committingPreview}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                            {committingPreview ? "Continuing…" : "Continue"}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                            disabled={cancellingAssembly}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                            Cancel
-                          </button>
-                          <button onClick={resumeAssembly}
-                            disabled={cancellingAssembly}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                            Resume
-                          </button>
-                        </div>
-                      )
-                    ) : inProgressPreviewUrl ? (
-                      // Two-button row whenever the in-progress preview
-                      // is available: "Use this version" promotes the
-                      // preview to the final assembled video and skips
-                      // the remaining final-burn re-encode (saves 5-25
-                      // min on long projects); Stop preserves the
-                      // checkpoint for later Resume. Disabled-state
-                      // labels reflect whichever click is in flight.
-                      <div className="flex gap-2">
-                        <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
-                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                          {stopRequested ? "Stopping…" : "Stop"}
-                        </button>
-                        <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
-                          className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          {finalizeRequested ? "Finalizing…" : "Export anyway"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={stopAssembly} disabled={stopRequested}
-                        className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                        {stopRequested ? "Stopping…" : "Stop"}
-                      </button>
-                    )}
-                    <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
-                  </div>
-                );
-              })()}
 
               {showPreview && previewUrl && (
                 <div className="mx-auto" style={{ maxWidth: previewMaxW }}>
-                  <div className="flex gap-2">
-                    <button onClick={() => setReassembleConfirmOpen(true)}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
-                      style={previewLoadError
-                        // When the preview can't load, Reassemble is the
-                        // only path forward — promote it to the theme
-                        // purple so it reads as the primary CTA.
-                        ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
-                        : { background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
-                      Reassemble
-                    </button>
-                    {/* Hide Export when the preview can't load — its
-                        href points at the same URL the player just
-                        failed on, so clicking it would 404 too.
-                        Reassemble fills the row via flex-1.
-                        The href goes through our export route (which
-                        302s to a presigned attachment URL) instead of
-                        the raw R2 URL — the anchor `download`
-                        attribute is ignored cross-origin, so linking
-                        R2 directly opened the video in the tab
-                        instead of downloading it. */}
-                    {!previewLoadError && (
-                      <a
-                        href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(previewUrl)}&filename=${encodeURIComponent(`${(project?.channel_name as string | undefined)?.trim() || "video"}.mp4`)}`}
-                        className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
-                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                        ↓ Export
-                      </a>
-                    )}
-                  </div>
                   <button
                     onClick={() => router.push(`/projects/${projectId}/thumbnails`)}
                     disabled={previewLoadError}
-                    title={previewLoadError ? "Reassemble the video before continuing — the cached preview can't be loaded." : undefined}
+                    title={previewLoadError ? "Render the video again before continuing — the cached render can't be loaded." : undefined}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}
                   >
@@ -5013,7 +5100,7 @@ export default function AssemblePage({ params }: PageProps) {
                         Cancel
                       </button>
                     )}
-                    <button onClick={() => assembleVideo()} disabled={!hasVoiceover || assembling}
+                    <button onClick={() => setExportConfirmOpen(true)} disabled={!hasVoiceover || assembling}
                       className={`${reassembleMode ? "flex-1" : "w-full"} py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all`}
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                       {assembling ? (
@@ -5021,7 +5108,7 @@ export default function AssemblePage({ params }: PageProps) {
                           <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                           Queuing…
                         </span>
-                      ) : reassembleMode ? "Assemble" : "Assemble Final Video"}
+                      ) : showPreview ? "Re-render" : "Render"}
                     </button>
                   </div>
                 </>
@@ -5032,6 +5119,76 @@ export default function AssemblePage({ params }: PageProps) {
 
         </div>
       </main>
+
+      <Dialog open={editConfirmOpen} onOpenChange={setEditConfirmOpen}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Go back to editing?</DialogTitle>
+            <DialogDescription>
+              Changes only reach the video when you render again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setEditConfirmOpen(false)}
+              className="px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            >
+              Keep watching
+            </button>
+            <button
+              onClick={() => { setEditConfirmOpen(false); setShowFinished(false); setRenderStale(true); }}
+              className="px-4 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Edit
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={exportConfirmOpen} onOpenChange={(open) => { if (!assembling) setExportConfirmOpen(open); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Render this video?</DialogTitle>
+            <DialogDescription>
+              {beats.length} beats, {timelineTotal ? fmtClock(timelineTotal) : "unknown length"}, at{" "}
+              {dimsFor(aspectRatio, selectedResolution).label}. Rendering takes a few minutes and costs credits.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-xs space-y-1" style={{ color: "var(--c-55)" }}>
+            <p>
+              {imageMotion === "none" ? "No movement" : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label} effect`}
+              {" · "}
+              {transition === "none" ? "hard cuts" : `${TRANSITIONS.find((t) => t.id === transition)?.label.toLowerCase()} transitions`}
+              {videoFilter === "none" ? "" : ` · ${VIDEO_FILTERS.find((f) => f.id === videoFilter)?.label.toLowerCase()} grade`}
+            </p>
+            <p>
+              {captionsEnabled ? `Captions on · ${captionsStyle}` : "No captions"}
+              {projectElements.length ? ` · ${projectElements.length} element${projectElements.length === 1 ? "" : "s"}` : ""}
+              {beats.some((b) => b.soundEffect) ? ` · ${beats.filter((b) => b.soundEffect).length} sound${beats.filter((b) => b.soundEffect).length === 1 ? "" : "s"}` : ""}
+            </p>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setExportConfirmOpen(false)}
+              disabled={assembling}
+              className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-40"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { setExportConfirmOpen(false); setShowFinished(true); void assembleVideo(); }}
+              disabled={assembling || !hasVoiceover}
+              className="px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-40"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {assembling ? "Starting…" : "Render"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
