@@ -132,6 +132,8 @@ export interface Beat {
   imageMotion?: string | null;
   /** A sound played at this beat's start during assembly. Null is silence. */
   soundEffect?: string | null;
+  /** The transition at the cut after this beat. Null follows the project. */
+  transition?: string | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;

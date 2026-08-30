@@ -273,6 +273,25 @@ function CaptionOverlay({ text, style, size, position, animation, loop = true }:
   );
 }
 
+/** A frame inside a picker tile: a still, or a clip's first frame when the
+ *  project has no stills at all. Both take the same transforms, so every
+ *  animation above works either way. */
+function TileFrame({ url, isClip, className, style, frameKey }: {
+  url: string;
+  isClip: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  frameKey?: string;
+}) {
+  if (isClip) {
+    // preload="metadata" plus a #t fragment: one frame, not the whole clip
+    // times however many tiles are on screen.
+    return <video key={frameKey} src={`${url}#t=0.1`} muted playsInline preload="metadata" className={className} style={style} />;
+  }
+  /* eslint-disable-next-line @next/next/no-img-element */
+  return <img key={frameKey} src={url} alt="" className={className} style={style} />;
+}
+
 /** Words per caption line, matching the worker's own grouping. Change one and
  *  the preview stops showing the lines the render will draw. */
 const CAPTION_WORDS_PER_LINE = 7;
@@ -1015,6 +1034,63 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [projectId, mutate]);
 
+  const [shuffling, setShuffling] = useState(false);
+
+  /** Both buttons write real values rather than a mode, so the render and the
+   *  preview agree and a re-render produces the same video. */
+  const applyTransitionToAll = useCallback(async (kind: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/transition`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applyAll: kind }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not apply it");
+      await mutate();
+      toast.success(kind === "none" ? "Every cut is hard now" : "Applied to every cut");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not apply it");
+    }
+  }, [projectId, mutate]);
+
+  const randomizeTransitions = useCallback(async () => {
+    setShuffling(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/transition`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ randomize: true }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? "Could not shuffle them");
+      await mutate();
+      toast.success(`${out.randomized ?? 0} cuts shuffled`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not shuffle them");
+    } finally {
+      setShuffling(false);
+    }
+  }, [projectId, mutate]);
+
+  const setBeatTransition = useCallback(async (beatNumber: number, kind: string | null) => {
+    await mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, transition: kind } : b) };
+    }, { revalidate: false });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/transition`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, transition: kind }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the transition");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not set the transition");
+      await mutate();
+    }
+  }, [projectId, mutate]);
+
   const setBeatSound = useCallback(async (beatNumber: number, sound: string | null) => {
     await mutate((cur: unknown) => {
       const c = cur as { beats?: Beat[] } | undefined;
@@ -1049,20 +1125,28 @@ export default function AssemblePage({ params }: PageProps) {
     ?? (timelineBeat !== null
       ? beats.find((b) => b.beatNumber === timelineBeat && (b.imageUrl || b.videoUrl))
       : null)
-    ?? beats.find((b) => !b.videoUrl && b.imageUrl) ?? null;
+    ?? beats.find((b) => !b.videoUrl && b.imageUrl)
+    ?? beats.find((b) => b.imageUrl || b.videoUrl)
+    ?? null;
   // A beat that generated a clip previews as that clip: it is what gets
   // assembled, and a still of its first frame says nothing about the motion
   // that was paid for.
   const previewClipUrl = previewBeat?.videoUrl ?? null;
   const stillPreviewUrl = previewBeat?.imageUrl ?? null;
   const previewSrc = previewClipUrl ?? stillPreviewUrl;
+  /** The frame every picker tile animates. A clip works as well as a still
+   *  here: a video element takes the same transforms an image does. */
+  const tileUrl = stillPreviewUrl ?? previewClipUrl;
+  const tileIsClip = !stillPreviewUrl && !!previewClipUrl;
   // The shot after the previewed one. A transition is about two frames, and two
   // copies of the same one shows nothing.
   const nextPreviewUrl = (() => {
+    const has = (b: Beat) => b.imageUrl ?? b.videoUrl ?? null;
     const at = previewBeat ? beats.findIndex((b) => b.beatNumber === previewBeat.beatNumber) : -1;
-    const after = at >= 0 ? beats.slice(at + 1).find((b) => b.imageUrl) : beats.filter((b) => b.imageUrl)[1];
-    return after?.imageUrl ?? stillPreviewUrl;
+    const after = at >= 0 ? beats.slice(at + 1).find(has) : beats.filter(has)[1];
+    return (after ? has(after) : null) ?? tileUrl;
   })();
+  const nextIsClip = !!nextPreviewUrl && nextPreviewUrl === beats.find((b) => b.videoUrl === nextPreviewUrl)?.videoUrl;
 
   // The effect that beat will actually get: its own if it has one, otherwise
   // the project's. Watching the project setting animate on a beat that
@@ -1073,7 +1157,7 @@ export default function AssemblePage({ params }: PageProps) {
   // seconds of a beat, at the length the render uses. Without this the preview
   // cut hard between beats and the setting looked like it did nothing.
   const playbackSeam = (() => {
-    if (!playing || transition === "none" || playingBeat === null) return null;
+    if (!playing || playingBeat === null) return null;
     const idx = playable.findIndex((b) => b.beatNumber === playingBeat);
     if (idx < 0 || idx >= playable.length - 1) return null;
     const start = playable.slice(0, idx).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
@@ -1084,7 +1168,12 @@ export default function AssemblePage({ params }: PageProps) {
     const remaining = start + span - playhead;
     if (t <= 0 || remaining > t || remaining < 0) return null;
     const next = playable[idx + 1];
-    return { p: Math.min(1, Math.max(0, (t - remaining) / t)), url: next.imageUrl ?? null };
+    // The cut's own transition, not the project's. Every seam looked identical
+    // during playback while this read the project setting, which made a
+    // randomised video look like it had not been randomised at all.
+    const kind = (playable[idx].transition ?? transition) as string;
+    if (kind === "none") return null;
+    return { p: Math.min(1, Math.max(0, (t - remaining) / t)), url: next.imageUrl ?? null, kind };
   })();
 
   // The caption the preview should be showing right now.
@@ -1125,12 +1214,27 @@ export default function AssemblePage({ params }: PageProps) {
     ? beats.find((b) => b.beatNumber === timelineBeat && (b.imageUrl || b.videoUrl)) ?? null
     : null;
   const editingMotion = editingBeat ? (editingBeat.imageMotion ?? imageMotion) : imageMotion;
+  // A transition belongs to the cut after a beat, so selecting a beat selects
+  // the cut that follows it.
+  const editingTransition = editingBeat ? (editingBeat.transition ?? transition) : transition;
+  /** The cuts that carry their own, and what they were given. With any of
+   *  these and no beat selected the tab has no single answer, so it says
+   *  "mixed" rather than showing the project's and looking like the shuffle
+   *  did nothing. */
+  const ownCuts = beats.filter((b) => b.transition);
+  const mixedCuts = !editingBeat && ownCuts.length > 0;
+  const mixedKinds = [...new Set(ownCuts.map((b) => b.transition as string))];
+  // Walks the kinds actually in use so the preview shows the variety rather
+  // than one of them forever.
+  const mixedPreview = mixedKinds.length ? mixedKinds[randomPreviewStep % mixedKinds.length] : "none";
 
   useEffect(() => {
-    if (previewMotion !== "random") return;
+    const cycling = previewMotion === "random"
+      || (effectsTab === "transitions" && mixedKinds.length > 1);
+    if (!cycling) return;
     const t = setInterval(() => setRandomPreviewStep((n) => n + 1), 4000);
     return () => clearInterval(t);
-  }, [previewMotion]);
+  }, [previewMotion, effectsTab, mixedKinds.length]);
 
   const previewAnimation = previewMotion === "random"
     ? MOTION_ANIMATION[RANDOM_POOL[randomPreviewStep % RANDOM_POOL.length]]
@@ -2379,7 +2483,7 @@ export default function AssemblePage({ params }: PageProps) {
                         will of the video. */}
                     {/* On a wide screen the frame leaves half the card empty, so what is currently selected reads out beside it. Read-only on purpose: the controls for these are below, and a second set of them here would be two places to change the same thing. */}
                     <div className="lg:flex lg:gap-4 lg:items-start">
-                    {stillPreviewUrl && (
+                    {tileUrl && (
                       <div
                         className="relative w-full max-w-[320px] rounded-lg overflow-hidden"
                         style={{
@@ -2389,7 +2493,8 @@ export default function AssemblePage({ params }: PageProps) {
                         }}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                        <TileFrame url={tileUrl} isClip={tileIsClip}
+                          className="absolute inset-0 w-full h-full object-cover"
                           style={{ filter: gradeCss(videoFilter, videoFilterStrength) }} />
                         <CaptionOverlay
                           text={previewBeat?.scriptSegment ?? ""}
@@ -2682,19 +2787,17 @@ export default function AssemblePage({ params }: PageProps) {
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
                       )}
-                      {effectsTab === "transitions" && transition !== "none" && !playing && stillPreviewUrl && nextPreviewUrl ? (
+                      {effectsTab === "transitions" && (mixedCuts ? mixedPreview : editingTransition) !== "none" && !playing && tileUrl && nextPreviewUrl ? (
                         <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={nextPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={stillPreviewUrl}
-                            alt=""
-                            key={`seam-${transition}`}
+                          <TileFrame url={nextPreviewUrl} isClip={nextIsClip} className="absolute inset-0 w-full h-full object-cover" />
+                          <TileFrame
+                            url={tileUrl}
+                            isClip={tileIsClip}
+                            frameKey={`seam-${mixedCuts ? mixedPreview : editingTransition}`}
                             className="absolute inset-0 w-full h-full object-cover"
                             style={{
-                              animation: SEAM_ANIMATION[transition],
-                              ...(SEAM_MASK[transition] ?? {}),
+                              animation: SEAM_ANIMATION[mixedCuts ? mixedPreview : editingTransition],
+                              ...(SEAM_MASK[mixedCuts ? mixedPreview : editingTransition] ?? {}),
                             }}
                           />
                         </>
@@ -2713,7 +2816,7 @@ export default function AssemblePage({ params }: PageProps) {
                           // restarts the clip rather than resuming whatever
                           // point the previous one had reached.
                           key={`clip-${previewBeat?.beatNumber}-${previewMotion}`}
-                          style={playbackSeam ? seamStyle(transition, playbackSeam.p) : previewAnimation ? {
+                          style={playbackSeam ? seamStyle(playbackSeam.kind, playbackSeam.p) : previewAnimation ? {
                             animation: previewAnimation,
                             willChange: "transform",
                             ["--kb-max" as string]: String(1 + (MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15)),
@@ -2730,7 +2833,7 @@ export default function AssemblePage({ params }: PageProps) {
                         // animation rather than swapping the name mid-cycle,
                         // which would jump the frame.
                         key={imageMotion === "random" ? `r${randomPreviewStep}` : imageMotion}
-                        style={playbackSeam ? seamStyle(transition, playbackSeam.p) : previewAnimation ? {
+                        style={playbackSeam ? seamStyle(playbackSeam.kind, playbackSeam.p) : previewAnimation ? {
                           animation: previewAnimation,
                           willChange: "transform",
                           // The keyframes read these, so one set covers every
@@ -2922,10 +3025,10 @@ export default function AssemblePage({ params }: PageProps) {
                               border: `1px solid ${active ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
                               boxShadow: active ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
                             }}>
-                            {stillPreviewUrl ? (
+                            {tileUrl ? (
                               <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                <TileFrame url={tileUrl} isClip={tileIsClip}
+                                  className="absolute inset-0 w-full h-full object-cover"
                                   style={{ filter: f.css(videoFilterStrength) }} />
                                 {f.id === "vignette" && (
                                   <span className="absolute inset-0" style={{ background: VIGNETTE_SHADOW, opacity: videoFilterStrength }} />
@@ -2971,18 +3074,69 @@ export default function AssemblePage({ params }: PageProps) {
                 </>
                 ) : effectsTab === "transitions" ? (
                 <>
-                  {/* Every boundary, not one of them: a transition set per seam
-                      needs a control between two tiles on the timeline, which is
-                      its own piece of work. */}
-                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
-                    Applied at every cut between beats
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                      {editingBeat
+                        ? <>The cut after <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
+                        : mixedCuts
+                          ? `${ownCuts.length} cuts, ${mixedKinds.length} kinds`
+                          : "Every cut between beats"}
+                    </p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {editingBeat?.transition && (
+                        <button type="button" onClick={() => setBeatTransition(editingBeat.beatNumber, null)}
+                          disabled={assembling}
+                          className="text-xs underline underline-offset-2 disabled:opacity-40 mr-1" style={{ color: "var(--c-50)" }}>
+                          Follow project
+                        </button>
+                      )}
+                      {(() => {
+                        const mixed = beats.some((b) => b.transition);
+                        const on = {
+                          background: "oklch(0.72 0.25 285 / 0.18)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                          color: "var(--accent-purple-text)",
+                        };
+                        const off = {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-60)",
+                        };
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => applyTransitionToAll(editingTransition)}
+                              disabled={assembling}
+                              title="Put this transition on every cut, clearing any set one at a time"
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                              style={mixed ? off : on}
+                            >
+                              Apply to all
+                            </button>
+                            <button
+                              type="button"
+                              onClick={randomizeTransitions}
+                              disabled={assembling || shuffling}
+                              title="A different transition at each cut, written down so it stays the same next time"
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                              style={mixed ? on : off}
+                            >
+                              {shuffling ? "Shuffling…" : "Randomize"}
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
                   <div className="min-w-0 grid grid-cols-3 lg:grid-cols-4 gap-2">
                     {TRANSITIONS.map((tr) => {
-                      const active = transition === tr.id;
+                      const active = mixedCuts ? false : editingTransition === tr.id;
                       const anim = SEAM_ANIMATION[tr.id];
                       return (
-                        <button key={tr.id} onClick={() => setTransition(tr.id)} disabled={assembling}
+                        <button key={tr.id}
+                          onClick={() => editingBeat ? setBeatTransition(editingBeat.beatNumber, tr.id) : setTransition(tr.id)}
+                          disabled={assembling}
                           title={tr.hint}
                           className="text-left transition-all disabled:opacity-40">
                           <span className="block relative w-full aspect-video rounded-lg overflow-hidden"
@@ -2991,17 +3145,17 @@ export default function AssemblePage({ params }: PageProps) {
                               border: `1px solid ${active ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
                               boxShadow: active ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
                             }}>
-                            {stillPreviewUrl && nextPreviewUrl && (
+                            {tileUrl && nextPreviewUrl && (
                               <>
                                 {/* The incoming shot underneath, the outgoing
                                     one over it doing whatever it does to
                                     leave. A cut has nothing to animate, so it
                                     shows the two halves meeting instead. */}
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={nextPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                <TileFrame url={nextPreviewUrl} isClip={nextIsClip}
+                                  className="absolute inset-0 w-full h-full object-cover"
                                   style={tr.id === "none" ? { clipPath: "inset(0 0 0 50%)" } : undefined} />
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                <TileFrame url={tileUrl} isClip={tileIsClip}
+                                  className="absolute inset-0 w-full h-full object-cover"
                                   style={tr.id === "none"
                                     ? { clipPath: "inset(0 50% 0 0)" }
                                     : anim ? { animation: anim, ...(SEAM_MASK[tr.id] ?? {}) } : undefined} />
@@ -3019,10 +3173,15 @@ export default function AssemblePage({ params }: PageProps) {
                       );
                     })}
                   </div>
-                  {transition !== "none" && (
+                  {beats.some((b) => b.transition) && (
+                    <p className="text-xs mt-2" style={{ color: "var(--c-38)" }}>
+                      {beats.filter((b) => b.transition).length} cuts have their own transition. Apply to all clears them.
+                    </p>
+                  )}
+                  {editingTransition !== "none" && (
                     <div className="mt-4">
                       <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
-                        Transition length
+                        Transition length{editingBeat ? " · every cut" : ""}
                       </p>
                       <div className="flex items-center gap-2">
                         <input
@@ -3104,16 +3263,15 @@ export default function AssemblePage({ params }: PageProps) {
                             boxShadow: active ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
                           }}
                         >
-                          {m.id === "none" || !stillPreviewUrl ? (
+                          {m.id === "none" || !tileUrl ? (
                             <span className="absolute inset-0 flex items-center justify-center" style={{ color: "var(--c-32)" }}>
                               <Ban size={16} />
                             </span>
                           ) : (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={stillPreviewUrl}
-                              alt=""
-                              key={m.id === "random" ? `r${randomPreviewStep}` : m.id}
+                            <TileFrame
+                              url={tileUrl}
+                              isClip={tileIsClip}
+                              frameKey={m.id === "random" ? `r${randomPreviewStep}` : m.id}
                               className="absolute inset-0 w-full h-full object-cover"
                               style={anim ? {
                                 animation: anim,
@@ -3267,6 +3425,14 @@ export default function AssemblePage({ params }: PageProps) {
                     {fmtClock(playhead)}
                     <span style={{ color: "var(--c-32)" }}> / {fmtClock(timelineTotal)}</span>
                   </span>
+                  {/* Playback is the narration, and only the beats that have
+                      one. Without this the audio stopped a minute into a
+                      thirteen-minute strip and looked broken. */}
+                  {playable.length < beats.length && (
+                    <span className="text-[11px] whitespace-nowrap hidden sm:inline" style={{ color: "var(--c-38)" }}>
+                      narration for {playable.length}/{beats.length}
+                    </span>
+                  )}
                 </div>
 
                 {/* Zoom, the way an editor does it: out to see the shape of
@@ -3506,6 +3672,12 @@ export default function AssemblePage({ params }: PageProps) {
                           {b.imageMotion && (
                             <span className="absolute bottom-0 left-0 right-0 h-[3px]"
                               style={{ background: "oklch(0.72 0.25 285)" }} />
+                          )}
+                          {/* Its own transition, marked at the edge where that
+                              cut happens. */}
+                          {b.transition && (
+                            <span className="absolute top-0 bottom-0 right-0 w-[3px]"
+                              style={{ background: "oklch(0.62 0.15 60)" }} />
                           )}
                           {/* A sound on this beat. A dot rather than a label:
                               the narrowest block here is 12px. */}
