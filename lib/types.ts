@@ -134,6 +134,9 @@ export interface Beat {
   soundEffect?: string | null;
   /** The transition at the cut after this beat. Null follows the project. */
   transition?: string | null;
+  /** Level and pitch for this beat's sound. Null means the sound as it is. */
+  soundVolume?: number | null;
+  soundPitch?: number | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;
