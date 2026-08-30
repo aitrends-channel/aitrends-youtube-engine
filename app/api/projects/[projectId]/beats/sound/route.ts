@@ -27,7 +27,7 @@ export async function PATCH(
 
   const { projectId } = params;
 
-  let body: { beatNumber?: unknown; sound?: unknown; volume?: unknown; pitch?: unknown; applyAll?: unknown };
+  let body: { beatNumber?: unknown; sound?: unknown; volume?: unknown; pitch?: unknown; applyAll?: unknown; tuneAll?: unknown };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
 
@@ -38,9 +38,9 @@ export async function PATCH(
   if (projErr) return NextResponse.json({ error: projErr.message }, { status: 500 });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  // { applyAll: "click" } puts one sound on every beat; { applyAll: null }
-  // takes them all off. Selecting two hundred beats one at a time is not a
-  // workflow, it is a punishment.
+  // { applyAll: "whoosh" } puts one sound at every transition; { applyAll:
+  // null } takes them all off. Selecting two hundred beats one at a time is
+  // not a workflow, it is a punishment.
   if ("applyAll" in body) {
     const all = body.applyAll;
     const value = all === null ? null : typeof all === "string" && SOUNDS.includes(all) ? all : undefined;
@@ -51,14 +51,62 @@ export async function PATCH(
     // applied, and applying it without the tuning would throw that away.
     const bulkVolume = typeof body.volume === "number" && body.volume >= 0 && body.volume <= 2 ? body.volume : null;
     const bulkPitch = typeof body.pitch === "number" && body.pitch >= 0.5 && body.pitch <= 2 ? body.pitch : null;
+
+    if (value === null) {
+      const { error } = await supabase
+        .from("project_beats")
+        .update({ sound_effect: null, sound_volume: null, sound_pitch: null })
+        .eq("project_id", projectId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, applied: null });
+    }
+
+    // Where there is a transition, and on the beat that ARRIVES through it: a
+    // whoosh belongs to the shot coming in, not the one leaving. A cut after
+    // beat 3 means the sound lands on beat 4.
+    const { data: proj } = await supabase
+      .from("projects").select("transition").eq("id", projectId).maybeSingle();
+    const projectTransition = ((proj as Record<string, unknown> | null)?.transition as string | null) ?? "none";
+    const { data: rows, error: readErr } = await supabase
+      .from("project_beats").select("beat_number, transition").eq("project_id", projectId).order("beat_number");
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
+    const beatsList = (rows ?? []) as { beat_number: number; transition: string | null }[];
+    const targets: number[] = [];
+    for (let i = 0; i < beatsList.length - 1; i++) {
+      const seam = beatsList[i].transition ?? projectTransition;
+      if (seam && seam !== "none") targets.push(beatsList[i + 1].beat_number);
+    }
+    if (!targets.length) {
+      return NextResponse.json({ error: "No cuts have a transition yet — set one on the Transitions tab first." }, { status: 400 });
+    }
     const { error } = await supabase
       .from("project_beats")
-      .update(value === null
-        ? { sound_effect: null, sound_volume: null, sound_pitch: null }
-        : { sound_effect: value, sound_volume: bulkVolume, sound_pitch: bulkPitch })
-      .eq("project_id", projectId);
+      .update({ sound_effect: value, sound_volume: bulkVolume, sound_pitch: bulkPitch })
+      .eq("project_id", projectId)
+      .in("beat_number", targets);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, applied: value });
+    return NextResponse.json({ ok: true, applied: value, count: targets.length });
+  }
+
+  // { tuneAll: "whoosh", volume, pitch } re-levels every beat already carrying
+  // that sound, without moving which beats have it. The panel edits whatever
+  // the sound is applied to, so what is heard here is what plays.
+  if ("tuneAll" in body) {
+    const id = body.tuneAll;
+    if (typeof id !== "string" || !SOUNDS.includes(id)) {
+      return NextResponse.json({ error: `tuneAll must be one of: ${SOUNDS.join(", ")}` }, { status: 400 });
+    }
+    const patch: Record<string, unknown> = {};
+    if (typeof body.volume === "number" && body.volume >= 0 && body.volume <= 2) patch.sound_volume = body.volume;
+    if (typeof body.pitch === "number" && body.pitch >= 0.5 && body.pitch <= 2) patch.sound_pitch = body.pitch;
+    if (!Object.keys(patch).length) {
+      return NextResponse.json({ error: "volume or pitch is required" }, { status: 400 });
+    }
+    const { error } = await supabase
+      .from("project_beats").update(patch)
+      .eq("project_id", projectId).eq("sound_effect", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, tuned: id });
   }
 
   const beatNumber = body.beatNumber;
