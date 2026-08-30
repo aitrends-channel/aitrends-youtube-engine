@@ -138,6 +138,23 @@ function gradeCss(id: string, strength: number): string {
   return f ? f.css(Math.max(0, Math.min(1, strength))) : "none";
 }
 
+/** The shapes the worker ships, drawn by its scripts/make-elements.sh and
+ *  copied into public/elements so the browser shows the same files. */
+const ELEMENTS = [
+  // The furniture people actually put on a video, each in the colour its
+  // platform uses: a grey pill reads as a caption rather than as a button.
+  { id: "subscribe",  label: "Subscribe" },
+  { id: "subscribed", label: "Subscribed" },
+  { id: "like",       label: "Like" },
+  { id: "share",      label: "Share" },
+  { id: "follow",     label: "Follow" },
+  { id: "comment",    label: "Comment" },
+  { id: "new",        label: "New" },
+  { id: "live",       label: "Live" },
+] as const;
+
+const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.18 };
+
 /** The sound library, synthesised by the worker's scripts/make-sfx.sh and
  *  copied into public/sfx so the browser can play the same files. */
 const SOUND_EFFECTS = [
@@ -788,7 +805,7 @@ export default function AssemblePage({ params }: PageProps) {
   const [videoFilter, setVideoFilter] = useState("none");
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
   const [sfxVolume, setSfxVolume] = useState(0.6);
-  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound">("effects");
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -929,6 +946,16 @@ export default function AssemblePage({ params }: PageProps) {
     playIndexRef.current = index;
     setPlayingBeat(beat.beatNumber);
 
+    // Whatever was sounding stops first. This is the only place a voiceover
+    // element is created, so this is the only place it can be leaked.
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch { /* already gone */ }
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+
     // Where this block starts, measured the same way its width is, so the
     // playhead and the strip agree.
     const offset = playable.slice(0, index).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
@@ -970,7 +997,7 @@ export default function AssemblePage({ params }: PageProps) {
   // of what makes it a timeline rather than a strip of pictures: a tester
   // looked at it and did not recognise one, having found nothing that behaves
   // the way an editor's does.
-  const seekTo = useCallback((seconds: number) => {
+  const seekTo = useCallback((seconds: number, commit = true) => {
     const t = Math.max(0, Math.min(timelineTotal, seconds));
     let acc = 0;
     let index = 0;
@@ -986,8 +1013,12 @@ export default function AssemblePage({ params }: PageProps) {
     }
     setPlayhead(t);
     const landedOn = playable[index];
-    if (playing) {
+    if (playing && commit) {
       playFrom(index, within);
+    } else if (playing && !commit) {
+      // Mid-drag: hold the sound while the playhead moves, and let the release
+      // decide where playback resumes.
+      if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } }
     } else if (landedOn) {
       // Not playing: point the preview at the beat under the playhead, which
       // is what a scrub is for when the audio is stopped.
@@ -1050,6 +1081,10 @@ export default function AssemblePage({ params }: PageProps) {
 
   const [shuffling, setShuffling] = useState(false);
   const [pickedSound, setPickedSound] = useState<string | null>(null);
+  const [pickedElement, setPickedElement] = useState<string | null>(null);
+  /** What is under the pointer mid-drag, so it can be drawn following it. */
+  const [draggingElement, setDraggingElement] = useState<{ id: string; x: number; y: number } | null>(null);
+  const previewFrameRef = useRef<HTMLDivElement | null>(null);
   // Tuning per sound, for sounds not yet committed to a beat. A whoosh pitched
   // down and a chime left alone are two different settings, and coming back to
   // either should find it as it was left.
@@ -1079,7 +1114,7 @@ export default function AssemblePage({ params }: PageProps) {
         transitionLengths?: Record<string, number>;
         motionShapes?: Record<string, { strength: string; seconds: number }>;
       };
-      if (saved.tab && ["effects", "transitions", "filters", "sound"].includes(saved.tab)) {
+      if (saved.tab && ["effects", "transitions", "filters", "sound", "elements"].includes(saved.tab)) {
         setEffectsTab(saved.tab as typeof effectsTab);
       }
       if (typeof saved.pickedSound === "string" || saved.pickedSound === null) {
@@ -1204,6 +1239,50 @@ export default function AssemblePage({ params }: PageProps) {
         body: JSON.stringify({ tuneAll: sound, ...patch }),
       }).catch(() => { /* the next drag re-sends it */ });
     }, 400);
+  }, [projectId, mutate]);
+
+  const setBeatElement = useCallback(async (
+    beatNumber: number,
+    element: string | null,
+    place?: { x?: number; y?: number; size?: number },
+  ) => {
+    await mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? {
+        ...b,
+        element,
+        elementX: element === null ? null : (place?.x ?? b.elementX ?? ELEMENT_DEFAULTS.x),
+        elementY: element === null ? null : (place?.y ?? b.elementY ?? ELEMENT_DEFAULTS.y),
+        elementSize: element === null ? null : (place?.size ?? b.elementSize ?? ELEMENT_DEFAULTS.size),
+      } : b) };
+    }, { revalidate: false });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/element`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, element, ...place }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the element");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not set the element");
+      await mutate();
+    }
+  }, [projectId, mutate]);
+
+  const applyElementToAll = useCallback(async (element: string | null, place?: { x: number; y: number; size: number }) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/element`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applyAll: element, ...(element ? place : {}) }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not apply it");
+      await mutate();
+      toast.success(element ? "On every beat" : "Stickers cleared");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not apply it");
+    }
   }, [projectId, mutate]);
 
   const setBeatSound = useCallback(async (
@@ -2871,6 +2950,22 @@ export default function AssemblePage({ params }: PageProps) {
                   {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </span>
               </div>
+              {draggingElement && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={`/elements/${draggingElement.id}.png`}
+                  alt=""
+                  className="fixed z-50 pointer-events-none"
+                  style={{
+                    left: draggingElement.x,
+                    top: draggingElement.y,
+                    transform: "translate(-50%, -50%)",
+                    width: 120,
+                    opacity: 0.85,
+                    filter: "drop-shadow(0 4px 10px oklch(0 0 0 / 0.5))",
+                  }}
+                />
+              )}
               {effectsOpen && (
               <>
               {/* Side by side. Full width, the preview was mostly black bars
@@ -2897,6 +2992,7 @@ export default function AssemblePage({ params }: PageProps) {
                     }}
                   >
                     <div
+                      ref={previewFrameRef}
                       className="relative w-full overflow-hidden"
                       style={{
                         aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
@@ -2999,6 +3095,100 @@ export default function AssemblePage({ params }: PageProps) {
                           loop={!playing}
                         />
                       )}
+                      {/* The beat's element, over the picture and under the
+                          logo, exactly as the render stacks them. Draggable
+                          while its tab is open, because a position typed as
+                          two numbers is a position nobody gets right. */}
+                      {previewBeat?.element && (
+                        <div
+                          className="absolute touch-none group"
+                          style={{
+                            left: `${(previewBeat.elementX ?? ELEMENT_DEFAULTS.x) * 100}%`,
+                            top: `${(previewBeat.elementY ?? ELEMENT_DEFAULTS.y) * 100}%`,
+                            width: `${(previewBeat.elementSize ?? ELEMENT_DEFAULTS.size) * 100}%`,
+                          }}
+                        >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/elements/${previewBeat.element}.png`}
+                          alt=""
+                          draggable={false}
+                          onPointerDown={effectsTab !== "elements" || assembling ? undefined : (e) => {
+                            // The frame by ref: the image's parent is its own
+                            // wrapper now, and measuring against that put every
+                            // drag in the wrong place.
+                            const frame = previewFrameRef.current;
+                            if (!frame) return;
+                            e.preventDefault();
+                            const rect = frame.getBoundingClientRect();
+                            // Where inside the element it was grabbed, so it
+                            // stays under the finger instead of jumping its
+                            // own corner to the pointer.
+                            const grabX = (e.clientX - rect.left) / rect.width - (previewBeat.elementX ?? ELEMENT_DEFAULTS.x);
+                            const grabY = (e.clientY - rect.top) / rect.height - (previewBeat.elementY ?? ELEMENT_DEFAULTS.y);
+                            const at = (ev: PointerEvent) => ({
+                              x: Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width - grabX)),
+                              y: Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height - grabY)),
+                            });
+                            const move = (ev: PointerEvent) => {
+                              const pos = at(ev);
+                              void mutate((cur: unknown) => {
+                                const c = cur as { beats?: Beat[] } | undefined;
+                                if (!c?.beats) return cur;
+                                return { ...c, beats: c.beats.map((b) => b.beatNumber === previewBeat.beatNumber
+                                  ? { ...b, elementX: pos.x, elementY: pos.y } : b) };
+                              }, { revalidate: false });
+                            };
+                            const up = (ev: PointerEvent) => {
+                              window.removeEventListener("pointermove", move);
+                              window.removeEventListener("pointerup", up);
+                              void setBeatElement(previewBeat.beatNumber, previewBeat.element!, at(ev));
+                            };
+                            window.addEventListener("pointermove", move);
+                            window.addEventListener("pointerup", up);
+                          }}
+                          className="block w-full h-auto touch-none"
+                          style={{
+                            cursor: effectsTab === "elements" && !assembling ? "grab" : "default",
+                            filter: "drop-shadow(0 2px 6px oklch(0 0 0 / 0.5))",
+                          }}
+                        />
+                        {/* Corner handle, the way the logo resizes. Bottom
+                            right, so dragging it grows the element away from
+                            its own anchor. */}
+                        {effectsTab === "elements" && !assembling && (
+                          <span
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              const frame = previewFrameRef.current;
+                              if (!frame) return;
+                              const r = frame.getBoundingClientRect();
+                              const left = (previewBeat.elementX ?? ELEMENT_DEFAULTS.x) * r.width;
+                              const move = (ev: PointerEvent) => {
+                                const size = Math.max(0.05, Math.min(0.8, (ev.clientX - r.left - left) / r.width));
+                                void mutate((cur: unknown) => {
+                                  const c = cur as { beats?: Beat[] } | undefined;
+                                  if (!c?.beats) return cur;
+                                  return { ...c, beats: c.beats.map((b) => b.beatNumber === previewBeat.beatNumber
+                                    ? { ...b, elementSize: size } : b) };
+                                }, { revalidate: false });
+                              };
+                              const up = (ev: PointerEvent) => {
+                                window.removeEventListener("pointermove", move);
+                                window.removeEventListener("pointerup", up);
+                                const size = Math.max(0.05, Math.min(0.8, (ev.clientX - r.left - left) / r.width));
+                                void setBeatElement(previewBeat.beatNumber, previewBeat.element!, { size });
+                              };
+                              window.addEventListener("pointermove", move);
+                              window.addEventListener("pointerup", up);
+                            }}
+                            className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 rounded-full cursor-nwse-resize touch-none"
+                            style={{ background: "oklch(0.72 0.25 285)", border: "2px solid white" }}
+                          />
+                        )}
+                        </div>
+                      )}
                       {(logoUploadedUrl || logoObjectUrl) && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
@@ -3053,7 +3243,7 @@ export default function AssemblePage({ params }: PageProps) {
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
                 <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"]] as const).map(([id, label]) => (
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"]] as const).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -3068,7 +3258,126 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
-                {effectsTab === "sound" ? (
+                {effectsTab === "elements" ? (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-xs min-w-0 truncate" style={{ color: "var(--c-45)" }}>
+                      {editingBeat
+                        ? <>Drag one onto <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
+                        : beats.some((b) => b.element)
+                          ? `${beats.filter((b) => b.element).length} beats have one`
+                          : "Select a beat, then pick one"}
+                    </p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => applyElementToAll(editingBeat?.element ?? pickedElement, {
+                          x: editingBeat?.elementX ?? ELEMENT_DEFAULTS.x,
+                          y: editingBeat?.elementY ?? ELEMENT_DEFAULTS.y,
+                          size: editingBeat?.elementSize ?? ELEMENT_DEFAULTS.size,
+                        })}
+                        disabled={assembling || !(editingBeat?.element ?? pickedElement)}
+                        title="Put this element on every beat, where it sits now"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                      >
+                        Apply to all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyElementToAll(null)}
+                        disabled={assembling || !beats.some((b) => b.element)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
+                  <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))" }}>
+                    {ELEMENTS.map((el) => {
+                      const active = editingBeat ? editingBeat.element === el.id : pickedElement === el.id;
+                      return (
+                        <button
+                          key={el.id}
+                          type="button"
+                          disabled={assembling}
+                          title={el.label}
+                          onClick={() => {
+                            setPickedElement(active ? null : el.id);
+                            if (editingBeat) setBeatElement(editingBeat.beatNumber, active ? null : el.id);
+                          }}
+                          // Drag it onto the preview and it lands where it is
+                          // dropped. A click still applies it at its last
+                          // position, for anyone who does not think to drag.
+                          onPointerDown={(e) => {
+                            if (assembling || !previewBeat) return;
+                            e.preventDefault();
+                            setDraggingElement({ id: el.id, x: e.clientX, y: e.clientY });
+                            const move = (ev: PointerEvent) =>
+                              setDraggingElement({ id: el.id, x: ev.clientX, y: ev.clientY });
+                            const up = (ev: PointerEvent) => {
+                              window.removeEventListener("pointermove", move);
+                              window.removeEventListener("pointerup", up);
+                              setDraggingElement(null);
+                              const frame = previewFrameRef.current;
+                              if (!frame) return;
+                              const r = frame.getBoundingClientRect();
+                              const inside = ev.clientX >= r.left && ev.clientX <= r.right
+                                && ev.clientY >= r.top && ev.clientY <= r.bottom;
+                              if (!inside) return;
+                              void setBeatElement(previewBeat.beatNumber, el.id, {
+                                x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+                                y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
+                                size: previewBeat.elementSize ?? ELEMENT_DEFAULTS.size,
+                              });
+                              setPickedElement(el.id);
+                            };
+                            window.addEventListener("pointermove", move);
+                            window.addEventListener("pointerup", up);
+                          }}
+                          className="aspect-square rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40"
+                          style={active ? {
+                            background: "oklch(0.72 0.25 285 / 0.18)",
+                            border: "1px solid oklch(0.72 0.25 285)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                          }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/elements/${el.id}.png`} alt={el.label}
+                            className="w-full h-full object-contain"
+                            style={{ opacity: active ? 1 : 0.65 }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editingBeat?.element && (
+                    <div className="mt-3 rounded-xl px-3 py-2.5 space-y-2"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                      <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                        Drag it on the preview to move it, or the corner to resize.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                          Size
+                        </span>
+                        <input
+                          type="range" min={0.05} max={0.8} step={0.01}
+                          value={editingBeat.elementSize ?? ELEMENT_DEFAULTS.size}
+                          disabled={assembling}
+                          onChange={(e) => setBeatElement(editingBeat.beatNumber, editingBeat.element!, { size: Number(e.target.value) })}
+                          className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                        />
+                        <span className="shrink-0 text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                          {Math.round((editingBeat.elementSize ?? ELEMENT_DEFAULTS.size) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+                ) : effectsTab === "sound" ? (
                 <>
                   {/* A sound belongs to a beat, not to the project: it is an
                       accent on a moment. So this tab needs one selected, and
@@ -3832,15 +4141,16 @@ export default function AssemblePage({ params }: PageProps) {
                     style={{ borderBottom: "1px solid var(--bd-10)" }}
                     onPointerDown={(e) => {
                       const strip = e.currentTarget;
-                      const scrub = (clientX: number) => {
+                      const scrub = (clientX: number, commit: boolean) => {
                         const rect = strip.getBoundingClientRect();
-                        seekTo((clientX - rect.left) / pxPerSecond);
+                        seekTo((clientX - rect.left) / pxPerSecond, commit);
                       };
-                      scrub(e.clientX);
-                      const move = (ev: PointerEvent) => scrub(ev.clientX);
-                      const up = () => {
+                      scrub(e.clientX, false);
+                      const move = (ev: PointerEvent) => scrub(ev.clientX, false);
+                      const up = (ev: PointerEvent) => {
                         window.removeEventListener("pointermove", move);
                         window.removeEventListener("pointerup", up);
+                        scrub(ev.clientX, true);
                       };
                       window.addEventListener("pointermove", move);
                       window.addEventListener("pointerup", up);

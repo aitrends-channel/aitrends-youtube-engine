@@ -137,6 +137,11 @@ export interface Beat {
   /** Level and pitch for this beat's sound. Null means the sound as it is. */
   soundVolume?: number | null;
   soundPitch?: number | null;
+  /** A shape drawn over this beat, placed as fractions of the frame. */
+  element?: string | null;
+  elementX?: number | null;
+  elementY?: number | null;
+  elementSize?: number | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;
