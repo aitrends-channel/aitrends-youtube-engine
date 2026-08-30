@@ -175,6 +175,38 @@ const SEAM_ANIMATION: Record<string, string> = {
   grain: "seam-grain 3s ease-in-out infinite",
 };
 
+/**
+ * The same transitions again, as a function of progress rather than as a
+ * keyframe loop. Playback needs this: the seam has to happen at the moment the
+ * playhead reaches it, over the length the render will use, not on a 3s loop of
+ * its own. Applied to the outgoing frame, with the incoming one underneath.
+ */
+function seamStyle(kind: string, p: number): React.CSSProperties {
+  const pct = `${(p * 100).toFixed(1)}%`;
+  switch (kind) {
+    case "dissolve":     return { opacity: 1 - p };
+    // Two halves: out to the colour by the midpoint, then the layer goes.
+    case "fade-black":   return { filter: `brightness(${Math.max(0, 1 - p * 2)})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-white":   return { filter: `brightness(${1 + p * 5})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-grays":   return { filter: `saturate(${Math.max(0, 1 - p * 2)})`, opacity: 1 - p };
+    case "slide-left":   return { transform: `translateX(-${pct})` };
+    case "slide-up":     return { transform: `translateY(-${pct})` };
+    case "wipe-right":   return { clipPath: `inset(0 0 0 ${pct})` };
+    case "wipe-up":      return { clipPath: `inset(${pct} 0 0 0)` };
+    case "wipe-diagonal":return { clipPath: `polygon(0 0, ${(200 - p * 200).toFixed(1)}% 0, 0 ${(200 - p * 200).toFixed(1)}%)` };
+    case "smooth-right": return { ...SEAM_MASK["smooth-right"], WebkitMaskPosition: pct, maskPosition: pct };
+    case "circle-open":  return { clipPath: `circle(${((1 - p) * 75).toFixed(1)}% at 50% 50%)` };
+    case "circle-close": return { ...SEAM_MASK["circle-close"], WebkitMaskSize: `${(p * 300).toFixed(0)}% ${(p * 300).toFixed(0)}%`, maskSize: `${(p * 300).toFixed(0)}% ${(p * 300).toFixed(0)}%` };
+    case "zoom":         return { transform: `scale(${1 + p * 1.2})`, opacity: 1 - p };
+    // No CSS for pixelate or a random pixel swap; blur stands in for both, and
+    // for the blur transition it is the real thing.
+    case "pixelize":     return { filter: `blur(${(p * 10).toFixed(1)}px) contrast(${1 + p * 0.6})`, opacity: 1 - p * 0.9 };
+    case "blur":         return { filter: `blur(${(p * 8).toFixed(1)}px)`, opacity: 1 - p };
+    case "grain":        return { opacity: 1 - p, filter: `contrast(${1 + p * 0.6})` };
+    default:             return { opacity: 1 - p };
+  }
+}
+
 /** The soft wipe animates a mask, which has to be declared on the element. */
 const SEAM_MASK: Record<string, React.CSSProperties> = {
   "smooth-right": {
@@ -791,6 +823,24 @@ export default function AssemblePage({ params }: PageProps) {
   // the project's. Watching the project setting animate on a beat that
   // overrides it would be a lie about what will be rendered.
   const previewMotion = previewBeat?.imageMotion ?? imageMotion;
+
+  // Playback runs the transition where it will actually happen: in the last t
+  // seconds of a beat, at the length the render uses. Without this the preview
+  // cut hard between beats and the setting looked like it did nothing.
+  const playbackSeam = (() => {
+    if (!playing || transition === "none" || playingBeat === null) return null;
+    const idx = playable.findIndex((b) => b.beatNumber === playingBeat);
+    if (idx < 0 || idx >= playable.length - 1) return null;
+    const start = playable.slice(0, idx).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+    const span = beatSeconds(playable[idx]).seconds;
+    // The same clamp the worker applies, so what plays is what renders.
+    const shortest = Math.min(...playable.map((b) => beatSeconds(b).seconds));
+    const t = Math.min(transitionSeconds, 2, shortest / 5);
+    const remaining = start + span - playhead;
+    if (t <= 0 || remaining > t || remaining < 0) return null;
+    const next = playable[idx + 1];
+    return { p: Math.min(1, Math.max(0, (t - remaining) / t)), url: next.imageUrl ?? null };
+  })();
 
   // Select a beat on the timeline and the grid edits that beat; select nothing
   // and it edits the project. One grid either way — a second copy of it for
@@ -2187,6 +2237,10 @@ export default function AssemblePage({ params }: PageProps) {
                           tiles are too small to judge a soft wipe from a hard
                           one. Playback wins over both — while the timeline is
                           running, this is the playback view. */}
+                      {playbackSeam?.url && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                      )}
                       {effectsTab === "transitions" && transition !== "none" && !playing && stillPreviewUrl && nextPreviewUrl ? (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2218,7 +2272,7 @@ export default function AssemblePage({ params }: PageProps) {
                           // restarts the clip rather than resuming whatever
                           // point the previous one had reached.
                           key={`clip-${previewBeat?.beatNumber}-${previewMotion}`}
-                          style={previewAnimation ? {
+                          style={playbackSeam ? seamStyle(transition, playbackSeam.p) : previewAnimation ? {
                             animation: previewAnimation,
                             willChange: "transform",
                             ["--kb-max" as string]: String(1 + (MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15)),
@@ -2235,7 +2289,7 @@ export default function AssemblePage({ params }: PageProps) {
                         // animation rather than swapping the name mid-cycle,
                         // which would jump the frame.
                         key={imageMotion === "random" ? `r${randomPreviewStep}` : imageMotion}
-                        style={previewAnimation ? {
+                        style={playbackSeam ? seamStyle(transition, playbackSeam.p) : previewAnimation ? {
                           animation: previewAnimation,
                           willChange: "transform",
                           // The keyframes read these, so one set covers every
