@@ -138,6 +138,22 @@ function gradeCss(id: string, strength: number): string {
   return f ? f.css(Math.max(0, Math.min(1, strength))) : "none";
 }
 
+/** The sound library, synthesised by the worker's scripts/make-sfx.sh and
+ *  copied into public/sfx so the browser can play the same files. */
+const SOUND_EFFECTS = [
+  { id: "whoosh",   label: "Whoosh",   hint: "Something passing the camera" },
+  { id: "swish",    label: "Swish",    hint: "Shorter and higher, for a cut" },
+  { id: "sweep",    label: "Sweep",    hint: "Long, for a full cross-fade" },
+  { id: "click",    label: "Click",    hint: "A tick, the length of a keystroke" },
+  { id: "pop",      label: "Pop",      hint: "A rounded click with a pitch" },
+  { id: "zoom-in",  label: "Zoom in",  hint: "A tone sweeping up" },
+  { id: "zoom-out", label: "Zoom out", hint: "The same sweep, downward" },
+  { id: "riser",    label: "Riser",    hint: "Noise climbing to a reveal" },
+  { id: "impact",   label: "Impact",   hint: "A low hit with a short tail" },
+  { id: "thud",     label: "Thud",     hint: "Softer, for something landing" },
+  { id: "chime",    label: "Chime",    hint: "Two tones, for a point made" },
+] as const;
+
 /** The vignette the render draws, approximated for the preview. */
 const VIGNETTE_SHADOW = "radial-gradient(ellipse at center, transparent 45%, oklch(0 0 0 / 0.55) 100%)";
 
@@ -364,6 +380,7 @@ export default function AssemblePage({ params }: PageProps) {
       captions_position?: string  | null;
       video_filter?:      string  | null;
       video_filter_strength?: number | null;
+      sfx_volume?: number | null;
       transition?:        string  | null;
       transition_seconds?: number | null;
       image_motion?:      string  | null;
@@ -377,6 +394,7 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
     if (typeof cap.video_filter      === "string" && cap.video_filter)      setVideoFilter(cap.video_filter);
     if (typeof cap.video_filter_strength === "number")                      setVideoFilterStrength(cap.video_filter_strength);
+    if (typeof cap.sfx_volume        === "number")                          setSfxVolume(cap.sfx_volume);
     if (typeof cap.transition        === "string" && cap.transition)        setTransition(cap.transition);
     if (typeof cap.transition_seconds === "number" && cap.transition_seconds > 0) setTransitionSeconds(cap.transition_seconds);
     if (typeof cap.image_motion      === "string" && cap.image_motion)      setImageMotion(cap.image_motion);
@@ -592,7 +610,8 @@ export default function AssemblePage({ params }: PageProps) {
   const [transitionSeconds, setTransitionSeconds] = useState(0.5);
   const [videoFilter, setVideoFilter] = useState("none");
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
-  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters">("effects");
+  const [sfxVolume, setSfxVolume] = useState(0.6);
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -722,6 +741,14 @@ export default function AssemblePage({ params }: PageProps) {
     const offset = playable.slice(0, index).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
     const span = beatSeconds(beat).seconds;
 
+    // The beat's own sound, at its start, at the level the render will use. The
+    // same file the worker mixes, so what is heard here is what is heard there.
+    if (beat.soundEffect && startAt <= 0.01 && sfxVolume > 0) {
+      const cue = new Audio(`/sfx/${beat.soundEffect}.mp3`);
+      cue.volume = Math.max(0, Math.min(1, sfxVolume));
+      void cue.play().catch(() => { /* autoplay rules; the narration still plays */ });
+    }
+
     const audio = new Audio(beat.voiceoverUrl);
     audioRef.current = audio;
     if (startAt > 0) {
@@ -746,7 +773,7 @@ export default function AssemblePage({ params }: PageProps) {
     };
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
-  }, [playable, stopPlayback, narrationPreviewVolume]);
+  }, [playable, stopPlayback, narrationPreviewVolume, sfxVolume]);
 
   // Click anywhere on the timeline and the playhead goes there. This is most
   // of what makes it a timeline rather than a strip of pictures: a tester
@@ -826,6 +853,25 @@ export default function AssemblePage({ params }: PageProps) {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the effect");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not set the effect");
+      await mutate();
+    }
+  }, [projectId, mutate]);
+
+  const setBeatSound = useCallback(async (beatNumber: number, sound: string | null) => {
+    await mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, soundEffect: sound } : b) };
+    }, { revalidate: false });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/sound`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, sound }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the sound");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not set the sound");
       await mutate();
     }
   }, [projectId, mutate]);
@@ -930,11 +976,12 @@ export default function AssemblePage({ params }: PageProps) {
           transition_seconds: transition === "none" ? null : transitionSeconds,
           video_filter: videoFilter,
           video_filter_strength: videoFilterStrength,
+          sfx_volume: sfxVolume,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, sfxVolume, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -1252,6 +1299,7 @@ export default function AssemblePage({ params }: PageProps) {
           transitionSeconds: transition === "none" ? null : transitionSeconds,
           videoFilter,
           videoFilterStrength,
+          sfxVolume,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUploadedUrl,
@@ -1404,6 +1452,7 @@ export default function AssemblePage({ params }: PageProps) {
           transitionSeconds: transition === "none" ? null : transitionSeconds,
           videoFilter,
           videoFilterStrength,
+          sfxVolume,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUrl,
@@ -2398,7 +2447,7 @@ export default function AssemblePage({ params }: PageProps) {
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
                 <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"]] as const).map(([id, label]) => (
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"]] as const).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -2413,7 +2462,84 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
-                {effectsTab === "filters" ? (
+                {effectsTab === "sound" ? (
+                <>
+                  {/* A sound belongs to a beat, not to the project: it is an
+                      accent on a moment. So this tab needs one selected, and
+                      says so rather than quietly doing nothing. */}
+                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                    {editingBeat
+                      ? <>Plays at the start of <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
+                      : "Click to hear one. Select a beat on the timeline to give it that sound."}
+                  </p>
+                  <div className="min-w-0 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    {SOUND_EFFECTS.map((snd) => {
+                      const active = editingBeat?.soundEffect === snd.id;
+                      return (
+                        <button
+                          key={snd.id}
+                          type="button"
+                          disabled={assembling}
+                          title={snd.hint}
+                          onClick={() => {
+                            // Always playable, even with nothing selected: a
+                            // greyed-out row of names reads as broken, and
+                            // hearing the library is how anyone decides which
+                            // one they want. With a beat selected it is also
+                            // the choice.
+                            void new Audio(`/sfx/${snd.id}.mp3`).play().catch(() => { /* autoplay rules */ });
+                            if (editingBeat) setBeatSound(editingBeat.beatNumber, active ? null : snd.id);
+                          }}
+                          className="w-full py-2 px-2.5 rounded-xl text-left text-xs transition-all disabled:opacity-40 truncate"
+                          style={active ? {
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "var(--accent-purple-text)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                            color: "var(--c-60)",
+                          }}
+                        >
+                          {snd.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editingBeat?.soundEffect && (
+                    <button
+                      type="button"
+                      onClick={() => setBeatSound(editingBeat.beatNumber, null)}
+                      disabled={assembling}
+                      className="mt-2 text-xs underline underline-offset-2 disabled:opacity-40"
+                      style={{ color: "var(--c-50)" }}
+                    >
+                      No sound on this beat
+                    </button>
+                  )}
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
+                      Effects level · every beat
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={sfxVolume}
+                        disabled={assembling}
+                        onChange={(e) => setSfxVolume(Number(e.target.value))}
+                        className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                      />
+                      <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
+                        {Math.round(sfxVolume * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                </>
+                ) : effectsTab === "filters" ? (
                 <>
                   <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
                     Graded over every beat, under the captions and the logo
@@ -2474,14 +2600,8 @@ export default function AssemblePage({ params }: PageProps) {
                           {Math.round(videoFilterStrength * 100)}%
                         </span>
                       </div>
-                      <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
-                        Every look reaches nothing at all on the left and its full self on the right. The tiles follow the slider, so what you pick is what you see.
-                      </p>
                     </div>
                   )}
-                  <p className="text-xs mt-3" style={{ color: "var(--c-38)" }}>
-                    Kept gentle on purpose: a grade that looks striking on one frame is tiring across a whole video.
-                  </p>
                 </>
                 ) : effectsTab === "transitions" ? (
                 <>
@@ -3015,6 +3135,12 @@ export default function AssemblePage({ params }: PageProps) {
                           {b.imageMotion && (
                             <span className="absolute bottom-0 left-0 right-0 h-[3px]"
                               style={{ background: "oklch(0.72 0.25 285)" }} />
+                          )}
+                          {/* A sound on this beat. A dot rather than a label:
+                              the narrowest block here is 12px. */}
+                          {b.soundEffect && (
+                            <span className="absolute top-[3px] right-[3px] w-1.5 h-1.5 rounded-full"
+                              style={{ background: "oklch(0.66 0.14 60)", boxShadow: "0 0 3px oklch(0 0 0 / 0.6)" }} />
                           )}
                         </button>
                       );
