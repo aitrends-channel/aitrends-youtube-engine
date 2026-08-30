@@ -132,6 +132,41 @@ const MOTION_STRENGTHS = [
 ];
 
 /** The preview animation for each, matching what the assembler renders. */
+/** The CSS for the grade in force, at the strength in force. */
+function gradeCss(id: string, strength: number): string {
+  const f = VIDEO_FILTERS.find((x) => x.id === id);
+  return f ? f.css(Math.max(0, Math.min(1, strength))) : "none";
+}
+
+/** The vignette the render draws, approximated for the preview. */
+const VIGNETTE_SHADOW = "radial-gradient(ellipse at center, transparent 45%, oklch(0 0 0 / 0.55) 100%)";
+
+/** Colour grades, with the CSS that stands in for each in the browser. The
+ *  render uses ffmpeg's own chain; these are close enough to choose by. */
+const VIDEO_FILTERS = [
+  { id: "none",      label: "None",      css: () => "none" },
+  { id: "warm",      label: "Warm",      css: (k: number) => `sepia(${0.28 * k}) saturate(${1 + 0.15 * k}) hue-rotate(${-8 * k}deg)` },
+  { id: "cool",      label: "Cool",      css: (k: number) => `hue-rotate(${12 * k}deg) saturate(${1 + 0.05 * k}) brightness(${1 + 0.02 * k})` },
+  { id: "vivid",     label: "Vivid",     css: (k: number) => `saturate(${1 + 0.35 * k}) contrast(${1 + 0.08 * k})` },
+  { id: "muted",     label: "Muted",     css: (k: number) => `saturate(${1 - 0.28 * k}) contrast(${1 - 0.02 * k})` },
+  { id: "mono",      label: "Mono",      css: (k: number) => `grayscale(${k}) contrast(${1 + 0.05 * k})` },
+  { id: "sepia",     label: "Sepia",     css: (k: number) => `sepia(${0.85 * k})` },
+  { id: "vintage",   label: "Vintage",   css: (k: number) => `sepia(${0.35 * k}) contrast(${1 - 0.1 * k}) saturate(${1 - 0.15 * k}) brightness(${1 + 0.05 * k})` },
+  { id: "faded",     label: "Faded",     css: (k: number) => `contrast(${1 - 0.15 * k}) brightness(${1 + 0.08 * k}) saturate(${1 - 0.1 * k})` },
+  { id: "punch",     label: "Punch",     css: (k: number) => `contrast(${1 + 0.25 * k}) saturate(${1 + 0.08 * k})` },
+  { id: "cinematic", label: "Cinematic", css: (k: number) => `contrast(${1 + 0.12 * k}) saturate(${1 + 0.08 * k}) hue-rotate(${-6 * k}deg)` },
+  { id: "noir",      label: "Noir",      css: (k: number) => `grayscale(${k}) contrast(${1 + 0.4 * k})` },
+  { id: "golden",    label: "Golden",    css: (k: number) => `sepia(${0.32 * k}) saturate(${1 + 0.3 * k}) hue-rotate(${-14 * k}deg) brightness(${1 + 0.04 * k})` },
+  { id: "bleach",    label: "Bleach",    css: (k: number) => `saturate(${1 - 0.65 * k}) contrast(${1 + 0.35 * k})` },
+  { id: "cross",     label: "Cross",     css: (k: number) => `hue-rotate(${-14 * k}deg) saturate(${1 + 0.4 * k}) contrast(${1 + 0.15 * k})` },
+  { id: "matte",     label: "Matte",     css: (k: number) => `contrast(${1 - 0.08 * k}) brightness(${1 + 0.05 * k}) saturate(${1 - 0.15 * k}) sepia(${0.08 * k})` },
+  { id: "night",     label: "Night",     css: (k: number) => `brightness(${1 - 0.15 * k}) saturate(${1 - 0.1 * k}) hue-rotate(${12 * k}deg) contrast(${1 + 0.05 * k})` },
+  { id: "pastel",    label: "Pastel",    css: (k: number) => `saturate(${1 - 0.15 * k}) brightness(${1 + 0.06 * k}) contrast(${1 - 0.08 * k})` },
+  // Not a colour change: darkened corners, drawn as a shadow because CSS has
+  // no vignette function.
+  { id: "vignette",  label: "Vignette",  css: () => "none" },
+] as const;
+
 /** What happens at every beat boundary. Hard cut first: it is what every
  *  assembly has done, and a cut is the one join a viewer does not notice. */
 const TRANSITIONS = [
@@ -327,6 +362,8 @@ export default function AssemblePage({ params }: PageProps) {
       captions_style?:    string  | null;
       captions_size?:     string  | null;
       captions_position?: string  | null;
+      video_filter?:      string  | null;
+      video_filter_strength?: number | null;
       transition?:        string  | null;
       transition_seconds?: number | null;
       image_motion?:      string  | null;
@@ -338,6 +375,8 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_style    === "string" && cap.captions_style)    setCaptionsStyle(cap.captions_style);
     if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
+    if (typeof cap.video_filter      === "string" && cap.video_filter)      setVideoFilter(cap.video_filter);
+    if (typeof cap.video_filter_strength === "number")                      setVideoFilterStrength(cap.video_filter_strength);
     if (typeof cap.transition        === "string" && cap.transition)        setTransition(cap.transition);
     if (typeof cap.transition_seconds === "number" && cap.transition_seconds > 0) setTransitionSeconds(cap.transition_seconds);
     if (typeof cap.image_motion      === "string" && cap.image_motion)      setImageMotion(cap.image_motion);
@@ -551,7 +590,9 @@ export default function AssemblePage({ params }: PageProps) {
   const [imageMotion, setImageMotion] = useState("none");
   const [transition, setTransition] = useState("none");
   const [transitionSeconds, setTransitionSeconds] = useState(0.5);
-  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions">("effects");
+  const [videoFilter, setVideoFilter] = useState("none");
+  const [videoFilterStrength, setVideoFilterStrength] = useState(1);
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -887,11 +928,13 @@ export default function AssemblePage({ params }: PageProps) {
           image_motion_strength: imageMotionStrength,
           transition,
           transition_seconds: transition === "none" ? null : transitionSeconds,
+          video_filter: videoFilter,
+          video_filter_strength: videoFilterStrength,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -1207,6 +1250,8 @@ export default function AssemblePage({ params }: PageProps) {
           imageMotion,
           transition,
           transitionSeconds: transition === "none" ? null : transitionSeconds,
+          videoFilter,
+          videoFilterStrength,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUploadedUrl,
@@ -1357,6 +1402,8 @@ export default function AssemblePage({ params }: PageProps) {
           imageMotion,
           transition,
           transitionSeconds: transition === "none" ? null : transitionSeconds,
+          videoFilter,
+          videoFilterStrength,
           imageMotionSeconds: imageMotionSeconds || null,
           imageMotionStrength,
           backgroundMusicUrl: bgmUrl,
@@ -2195,7 +2242,8 @@ export default function AssemblePage({ params }: PageProps) {
                       transition === "none"
                         ? "hard cuts"
                         : `${TRANSITIONS.find((t) => t.id === transition)?.label.toLowerCase()} ${transitionSeconds.toFixed(1)}s`,
-                    ].join(" · ")}
+                      videoFilter === "none" ? null : `${VIDEO_FILTERS.find((f) => f.id === videoFilter)?.label.toLowerCase()} ${Math.round(videoFilterStrength * 100)}%`,
+                    ].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <span className="shrink-0" style={{ color: "var(--c-45)" }}>
@@ -2229,7 +2277,13 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     <div
                       className="relative w-full overflow-hidden"
-                      style={{ aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9" }}
+                      style={{
+                        aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
+                        // On the wrapper, not the frame: the grade is over the
+                        // whole picture, so it survives a seam where two frames
+                        // are on screen at once.
+                        filter: gradeCss(videoFilter, videoFilterStrength),
+                      }}
                     >
                       {/* On the transitions tab the preview shows the join
                           rather than the shot: this beat handing over to the
@@ -2237,6 +2291,10 @@ export default function AssemblePage({ params }: PageProps) {
                           tiles are too small to judge a soft wipe from a hard
                           one. Playback wins over both — while the timeline is
                           running, this is the playback view. */}
+                      {videoFilter === "vignette" && (
+                        <span className="absolute inset-0 z-10 pointer-events-none"
+                          style={{ background: VIGNETTE_SHADOW, opacity: videoFilterStrength }} />
+                      )}
                       {playbackSeam?.url && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -2340,12 +2398,12 @@ export default function AssemblePage({ params }: PageProps) {
                     than two stacked grids, which would put the second one below
                     the fold of a column sized to the preview. */}
                 <div className="flex gap-1 p-1 rounded-xl mb-3" style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"]] as const).map(([id, label]) => (
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"]] as const).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
                       onClick={() => setEffectsTab(id)}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all"
+                      className="flex-1 py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-all"
                       style={effectsTab === id ? {
                         background: "oklch(0.72 0.25 285 / 0.18)",
                         color: "var(--accent-purple-text)",
@@ -2355,7 +2413,77 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
-                {effectsTab === "transitions" ? (
+                {effectsTab === "filters" ? (
+                <>
+                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                    Graded over every beat, under the captions and the logo
+                  </p>
+                  <div className="min-w-0 grid grid-cols-3 lg:grid-cols-4 gap-2">
+                    {VIDEO_FILTERS.map((f) => {
+                      const active = videoFilter === f.id;
+                      return (
+                        <button key={f.id} onClick={() => setVideoFilter(f.id)} disabled={assembling}
+                          className="text-left transition-all disabled:opacity-40">
+                          <span className="block relative w-full aspect-video rounded-lg overflow-hidden"
+                            style={{
+                              background: "var(--bg-input)",
+                              border: `1px solid ${active ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
+                              boxShadow: active ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
+                            }}>
+                            {stillPreviewUrl ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                                  style={{ filter: f.css(videoFilterStrength) }} />
+                                {f.id === "vignette" && (
+                                  <span className="absolute inset-0" style={{ background: VIGNETTE_SHADOW, opacity: videoFilterStrength }} />
+                                )}
+                              </>
+                            ) : (
+                              <span className="absolute inset-0 flex items-center justify-center" style={{ color: "var(--c-32)" }}>
+                                <Ban size={16} />
+                              </span>
+                            )}
+                          </span>
+                          <span className="block mt-1 text-[11px] truncate"
+                            style={{ color: active ? "var(--accent-purple-text)" : "var(--c-55)" }}>
+                            {f.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {videoFilter !== "none" && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
+                        Intensity
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={1}
+                          step={0.05}
+                          value={videoFilterStrength}
+                          disabled={assembling}
+                          onChange={(e) => setVideoFilterStrength(Number(e.target.value))}
+                          className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                        />
+                        <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
+                          {Math.round(videoFilterStrength * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
+                        Every look reaches nothing at all on the left and its full self on the right. The tiles follow the slider, so what you pick is what you see.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs mt-3" style={{ color: "var(--c-38)" }}>
+                    Kept gentle on purpose: a grade that looks striking on one frame is tiring across a whole video.
+                  </p>
+                </>
+                ) : effectsTab === "transitions" ? (
                 <>
                   {/* Every boundary, not one of them: a transition set per seam
                       needs a control between two tiles on the timeline, which is

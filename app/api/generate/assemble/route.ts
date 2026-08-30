@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 /** The movements the worker knows how to render, and what the column's check
  *  constraint allows. */
 const IMAGE_MOTIONS = ["none", "zoom-in", "zoom-out", "pan-right", "pan-left", "drift", "auto", "random"];
+const VIDEO_FILTERS = ["none", "warm", "cool", "vivid", "muted", "mono", "sepia", "vintage", "faded", "punch",
+  "cinematic", "noir", "golden", "bleach", "cross", "matte", "night", "pastel", "vignette"];
 const TRANSITIONS = ["none", "dissolve", "fade-black", "fade-white", "fade-grays",
   "slide-left", "slide-up", "wipe-right", "wipe-up", "wipe-diagonal", "smooth-right",
   "circle-open", "circle-close", "zoom", "pixelize", "blur", "grain"];
@@ -43,6 +45,8 @@ export async function POST(req: Request) {
     imageMotionStrength?: string;
     transition?: string;
     transitionSeconds?: number;
+    videoFilter?: string;
+    videoFilterStrength?: number;
     // Opt-in flag set by the "Trim silences" button on the assemble
     // page. The worker only runs the per-beat silence trim when this
     // is true; a normal Assemble / Reassemble leaves audio untouched.
@@ -133,6 +137,11 @@ export async function POST(req: Request) {
         ? options.imageMotionStrength
         : "normal",
       transition: TRANSITIONS.includes(options.transition as string) ? options.transition : "none",
+      video_filter: VIDEO_FILTERS.includes(options.videoFilter as string) ? options.videoFilter : "none",
+      video_filter_strength: typeof options.videoFilterStrength === "number"
+        && options.videoFilterStrength >= 0 && options.videoFilterStrength <= 1
+        ? options.videoFilterStrength
+        : 1,
       transition_seconds: typeof options.transitionSeconds === "number"
         && options.transitionSeconds > 0 && options.transitionSeconds <= 2
         ? options.transitionSeconds
