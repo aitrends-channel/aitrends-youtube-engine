@@ -41,6 +41,8 @@ export async function GET(
       imageStatus: b.image_status,
       imageMotion: b.image_motion ?? null,
       soundEffect: b.sound_effect ?? null,
+      soundVolume: b.sound_volume ?? null,
+      soundPitch: b.sound_pitch ?? null,
       transition: b.transition ?? null,
       videoStatus: b.video_status,
       imageTaskId: b.image_task_id ?? undefined,

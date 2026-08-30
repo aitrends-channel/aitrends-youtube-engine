@@ -8,7 +8,7 @@ import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
-import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
@@ -907,6 +907,21 @@ export default function AssemblePage({ params }: PageProps) {
   // user has already left.
   useEffect(() => stopPlayback, [stopPlayback]);
 
+  /** Hear a sound the way the render will mix it: its own level against the
+   *  project's, and its own pitch. preservesPitch off is what makes playback
+   *  rate a pitch shift rather than a speed change. */
+  const playSound = useCallback((id: string, volume = 1, pitch = 1, audition = false) => {
+    const a = new Audio(`/sfx/${id}.mp3`);
+    const level = volume * sfxVolume;
+    a.volume = Math.max(0, Math.min(1, audition ? Math.max(0.5, level) : level));
+    type PitchyAudio = HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean };
+    const p = a as PitchyAudio;
+    p.preservesPitch = false;
+    p.mozPreservesPitch = false;
+    a.playbackRate = Math.max(0.5, Math.min(2, pitch));
+    void a.play().catch(() => { /* autoplay rules */ });
+  }, [sfxVolume]);
+
   const playFrom = useCallback((index: number, startAt = 0) => {
     const beat = playable[index];
     if (!beat?.voiceoverUrl) { stopPlayback(); setPlayhead(0); setPlayingBeat(null); return; }
@@ -921,9 +936,7 @@ export default function AssemblePage({ params }: PageProps) {
     // The beat's own sound, at its start, at the level the render will use. The
     // same file the worker mixes, so what is heard here is what is heard there.
     if (beat.soundEffect && startAt <= 0.01 && sfxVolume > 0) {
-      const cue = new Audio(`/sfx/${beat.soundEffect}.mp3`);
-      cue.volume = Math.max(0, Math.min(1, sfxVolume));
-      void cue.play().catch(() => { /* autoplay rules; the narration still plays */ });
+      playSound(beat.soundEffect, beat.soundVolume ?? 1, beat.soundPitch ?? 1);
     }
 
     const audio = new Audio(beat.voiceoverUrl);
@@ -950,7 +963,7 @@ export default function AssemblePage({ params }: PageProps) {
     };
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
-  }, [playable, stopPlayback, narrationPreviewVolume, sfxVolume]);
+  }, [playable, stopPlayback, narrationPreviewVolume, sfxVolume, playSound]);
 
   // Click anywhere on the timeline and the playhead goes there. This is most
   // of what makes it a timeline rather than a strip of pictures: a tester
@@ -1035,6 +1048,15 @@ export default function AssemblePage({ params }: PageProps) {
   }, [projectId, mutate]);
 
   const [shuffling, setShuffling] = useState(false);
+  const [pickedSound, setPickedSound] = useState<string | null>(null);
+  // Tuning per sound, for sounds not yet committed to a beat. A whoosh pitched
+  // down and a chime left alone are two different settings, and coming back to
+  // either should find it as it was left.
+  const [soundShapes, setSoundShapes] = useState<Record<string, { volume: number; pitch: number }>>({});
+  const shapeOf = (id: string | null) => (id ? soundShapes[id] : undefined) ?? { volume: 1, pitch: 1 };
+  const tuneSound = (id: string, patch: { volume?: number; pitch?: number }) =>
+    setSoundShapes((cur) => ({ ...cur, [id]: { ...shapeOf(id), ...patch } }));
+  const [applyingSound, setApplyingSound] = useState(false);
 
   /** Both buttons write real values rather than a mode, so the render and the
    *  preview agree and a re-render produces the same video. */
@@ -1091,17 +1113,48 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [projectId, mutate]);
 
-  const setBeatSound = useCallback(async (beatNumber: number, sound: string | null) => {
+  /** Put the sound in hand on every beat, or take them all off. Without this
+   *  the only way to use the tab was to select each beat in turn on a timeline
+   *  that might be two hundred beats long. */
+  const applySoundToAll = useCallback(async (sound: string | null, shape?: { volume: number; pitch: number }) => {
+    setApplyingSound(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/sound`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applyAll: sound, ...(sound ? shape : {}) }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? "Could not apply it");
+      await mutate();
+      toast.success(sound ? `On every beat` : "Sounds cleared");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not apply it");
+    } finally {
+      setApplyingSound(false);
+    }
+  }, [projectId, mutate]);
+
+  const setBeatSound = useCallback(async (
+    beatNumber: number,
+    sound: string | null,
+    shape?: { volume?: number; pitch?: number },
+  ) => {
     await mutate((cur: unknown) => {
       const c = cur as { beats?: Beat[] } | undefined;
       if (!c?.beats) return cur;
-      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, soundEffect: sound } : b) };
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? {
+        ...b,
+        soundEffect: sound,
+        soundVolume: sound === null ? null : (shape?.volume ?? b.soundVolume ?? null),
+        soundPitch: sound === null ? null : (shape?.pitch ?? b.soundPitch ?? null),
+      } : b) };
     }, { revalidate: false });
     try {
       const res = await fetch(`/api/projects/${projectId}/beats/sound`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ beatNumber, sound }),
+        body: JSON.stringify({ beatNumber, sound, ...shape }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the sound");
     } catch (err) {
@@ -1182,6 +1235,12 @@ export default function AssemblePage({ params }: PageProps) {
   // words for its whole length looked stuck. There are no word timings on this
   // side, so the line advances by the beat's own progress: an approximation,
   // and a much closer one than not moving at all.
+  /** How many beats use each sound, for the counts on the buttons. */
+  const usedCounts = beats.reduce<Record<string, number>>((acc, b) => {
+    if (b.soundEffect) acc[b.soundEffect] = (acc[b.soundEffect] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const previewCaption = (() => {
     if (!captionsEnabled) return "";
     const source = playingBeat !== null
@@ -2936,14 +2995,47 @@ export default function AssemblePage({ params }: PageProps) {
                   {/* A sound belongs to a beat, not to the project: it is an
                       accent on a moment. So this tab needs one selected, and
                       says so rather than quietly doing nothing. */}
-                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
-                    {editingBeat
-                      ? <>Plays at the start of <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
-                      : "Click to hear one. Select a beat on the timeline to give it that sound."}
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-xs min-w-0 truncate" style={{ color: "var(--c-45)" }}>
+                      {editingBeat
+                        ? <>Plays at the start of <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
+                        : Object.keys(usedCounts).length
+                          ? `${beats.filter((b) => b.soundEffect).length} beats have a sound`
+                          : "Click one to hear it"}
+                    </p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => applySoundToAll(
+                          editingBeat?.soundEffect ?? pickedSound,
+                          editingBeat
+                            ? { volume: editingBeat.soundVolume ?? 1, pitch: editingBeat.soundPitch ?? 1 }
+                            : shapeOf(pickedSound),
+                        )}
+                        disabled={assembling || applyingSound || !(editingBeat?.soundEffect ?? pickedSound)}
+                        title="Put this sound at the start of every beat"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                      >
+                        {applyingSound ? "Applying…" : "Apply to all"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applySoundToAll(null)}
+                        disabled={assembling || applyingSound || !beats.some((b) => b.soundEffect)}
+                        title="Take the sounds off every beat"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
                   <div className="min-w-0 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
                     {SOUND_EFFECTS.map((snd) => {
-                      const active = editingBeat?.soundEffect === snd.id;
+                      const active = editingBeat
+                        ? editingBeat.soundEffect === snd.id
+                        : pickedSound === snd.id;
                       return (
                         <button
                           key={snd.id}
@@ -2956,13 +3048,27 @@ export default function AssemblePage({ params }: PageProps) {
                             // hearing the library is how anyone decides which
                             // one they want. With a beat selected it is also
                             // the choice.
-                            void new Audio(`/sfx/${snd.id}.mp3`).play().catch(() => { /* autoplay rules */ });
-                            if (editingBeat) setBeatSound(editingBeat.beatNumber, active ? null : snd.id);
+                            // This sound's own tuning: what it was left at,
+                            // or untouched if it has never been tuned. A beat
+                            // already carrying it keeps what is on the beat.
+                            const own = shapeOf(snd.id);
+                            const onThisBeat = editingBeat?.soundEffect === snd.id;
+                            const volume = onThisBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
+                            const pitch = onThisBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
+                            playSound(snd.id, volume, pitch, true);
+                            setPickedSound(active ? null : snd.id);
+                            if (editingBeat) {
+                              setBeatSound(
+                                editingBeat.beatNumber,
+                                active ? null : snd.id,
+                                active ? undefined : { volume: own.volume, pitch: own.pitch },
+                              );
+                            }
                           }}
-                          className="w-full py-2 px-2.5 rounded-xl text-left text-xs transition-all disabled:opacity-40 truncate"
+                          className="w-full py-2 px-2.5 rounded-xl text-left text-xs transition-all disabled:opacity-40 flex items-center gap-1.5"
                           style={active ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            background: "oklch(0.72 0.25 285 / 0.18)",
+                            border: "1px solid oklch(0.72 0.25 285)",
                             color: "var(--accent-purple-text)",
                           } : {
                             background: "var(--bg-input)",
@@ -2970,7 +3076,16 @@ export default function AssemblePage({ params }: PageProps) {
                             color: "var(--c-60)",
                           }}
                         >
-                          {snd.label}
+                          <span className="truncate flex-1">{snd.label}</span>
+                          {active && <Check size={13} className="shrink-0" />}
+                          {/* How many other beats already use it, so the tab
+                              shows the shape of the whole video rather than
+                              only what was last clicked. */}
+                          {!active && usedCounts[snd.id] > 0 && (
+                            <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--c-38)" }}>
+                              {usedCounts[snd.id]}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -2986,6 +3101,83 @@ export default function AssemblePage({ params }: PageProps) {
                       No sound on this beat
                     </button>
                   )}
+                  {(() => {
+                    // Whatever is in hand: the selected beat's sound, or the
+                    // one just clicked. Tuning belongs to the sound, so it is
+                    // here either way — with a beat selected it writes to that
+                    // beat, without one it waits for Apply to all.
+                    const sound = editingBeat?.soundEffect ?? pickedSound;
+                    if (!sound) return null;
+                    const onBeat = !!editingBeat?.soundEffect;
+                    const own = shapeOf(sound);
+                    const volume = onBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
+                    const pitch = onBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
+                    const setVolume = (v: number) => onBeat
+                      ? setBeatSound(editingBeat!.beatNumber, sound, { volume: v })
+                      : tuneSound(sound, { volume: v });
+                    const setPitch = (v: number) => onBeat
+                      ? setBeatSound(editingBeat!.beatNumber, sound, { pitch: v })
+                      : tuneSound(sound, { pitch: v });
+                    const label = SOUND_EFFECTS.find((x) => x.id === sound)?.label ?? sound;
+                    return (
+                      <div className="mt-4 space-y-3 rounded-xl p-3"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
+                            {label}
+                            <span className="font-normal" style={{ color: "var(--c-40)" }}>
+                              {onBeat ? ` · beat ${editingBeat!.beatNumber}` : " · not applied yet"}
+                            </span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => playSound(sound, volume, pitch, true)}
+                            title="Play it as tuned"
+                            aria-label="Play it as tuned"
+                            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-85"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                          >
+                            <Play size={12} className="ml-[1px]" />
+                          </button>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--c-40)" }}>Level</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range" min={0} max={2} step={0.05}
+                              value={volume}
+                              disabled={assembling}
+                              onChange={(e) => setVolume(Number(e.target.value))}
+                              className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                            />
+                            <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
+                              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
+                              {Math.round(volume * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--c-40)" }}>Pitch</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range" min={0.5} max={2} step={0.05}
+                              value={pitch}
+                              disabled={assembling}
+                              onChange={(e) => setPitch(Number(e.target.value))}
+                              className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                            />
+                            <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
+                              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
+                              {pitch.toFixed(2)}×
+                            </span>
+                          </div>
+                          <p className="text-xs mt-1" style={{ color: "var(--c-38)" }}>
+                            The length stays the same, so a higher click is still a click.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="mt-4">
                     <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
                       Effects level · every beat
