@@ -47,6 +47,7 @@ export async function POST(req: Request) {
     transitionSeconds?: number;
     videoFilter?: string;
     videoFilterStrength?: number;
+    sfxVolume?: number;
     // Opt-in flag set by the "Trim silences" button on the assemble
     // page. The worker only runs the per-beat silence trim when this
     // is true; a normal Assemble / Reassemble leaves audio untouched.
@@ -138,6 +139,10 @@ export async function POST(req: Request) {
         : "normal",
       transition: TRANSITIONS.includes(options.transition as string) ? options.transition : "none",
       video_filter: VIDEO_FILTERS.includes(options.videoFilter as string) ? options.videoFilter : "none",
+      sfx_volume: typeof options.sfxVolume === "number"
+        && options.sfxVolume >= 0 && options.sfxVolume <= 1
+        ? options.sfxVolume
+        : 0.6,
       video_filter_strength: typeof options.videoFilterStrength === "number"
         && options.videoFilterStrength >= 0 && options.videoFilterStrength <= 1
         ? options.videoFilterStrength

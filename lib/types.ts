@@ -130,6 +130,8 @@ export interface Beat {
   /** This beat's own assembly effect, overriding the project's. Absent means it
    *  follows the project, which is every beat until somebody picks one. */
   imageMotion?: string | null;
+  /** A sound played at this beat's start during assembly. Null is silence. */
+  soundEffect?: string | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;
