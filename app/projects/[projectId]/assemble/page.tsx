@@ -141,18 +141,70 @@ function gradeCss(id: string, strength: number): string {
 /** The sound library, synthesised by the worker's scripts/make-sfx.sh and
  *  copied into public/sfx so the browser can play the same files. */
 const SOUND_EFFECTS = [
-  { id: "whoosh",   label: "Whoosh",   hint: "Something passing the camera" },
-  { id: "swish",    label: "Swish",    hint: "Shorter and higher, for a cut" },
-  { id: "sweep",    label: "Sweep",    hint: "Long, for a full cross-fade" },
-  { id: "click",    label: "Click",    hint: "A tick, the length of a keystroke" },
-  { id: "pop",      label: "Pop",      hint: "A rounded click with a pitch" },
-  { id: "zoom-in",  label: "Zoom in",  hint: "A tone sweeping up" },
-  { id: "zoom-out", label: "Zoom out", hint: "The same sweep, downward" },
-  { id: "riser",    label: "Riser",    hint: "Noise climbing to a reveal" },
-  { id: "impact",   label: "Impact",   hint: "A low hit with a short tail" },
-  { id: "thud",     label: "Thud",     hint: "Softer, for something landing" },
-  { id: "chime",    label: "Chime",    hint: "Two tones, for a point made" },
+  // Grouped the way somebody looks for them: movement, small clicks, tones
+  // that rise, weight, and things that land well.
+  { id: "whoosh",         label: "Whoosh",       hint: "Something passing the camera" },
+  { id: "reverse-whoosh", label: "Reverse",      hint: "A whoosh played backwards, before a cut" },
+  { id: "swish",          label: "Swish",        hint: "Shorter and higher, for a cut" },
+  { id: "sweep",          label: "Sweep",        hint: "Long, for a full cross-fade" },
+  { id: "page",           label: "Page",         hint: "Paper turning" },
+  { id: "click",          label: "Click",        hint: "A tick, the length of a keystroke" },
+  { id: "tick",           label: "Tick",         hint: "Quieter and drier than the click" },
+  { id: "pop",            label: "Pop",          hint: "A rounded click with a pitch" },
+  { id: "beep",           label: "Beep",         hint: "A flat tone, for a machine" },
+  { id: "glitch",         label: "Glitch",       hint: "Noise chopped fast, for an error" },
+  { id: "shutter",        label: "Shutter",      hint: "A camera taking the picture" },
+  { id: "zoom-in",        label: "Zoom in",      hint: "A tone sweeping up" },
+  { id: "zoom-out",       label: "Zoom out",     hint: "The same sweep, downward" },
+  { id: "riser",          label: "Riser",        hint: "Noise climbing to a reveal" },
+  { id: "impact",         label: "Impact",       hint: "A low hit with a short tail" },
+  { id: "boom",           label: "Boom",         hint: "Sub-bass falling away" },
+  { id: "thud",           label: "Thud",         hint: "Softer, for something landing" },
+  { id: "heartbeat",      label: "Heartbeat",    hint: "Two low thuds, for tension" },
+  { id: "chime",          label: "Chime",        hint: "Two tones, for a point made" },
+  { id: "ding",           label: "Ding",         hint: "One bell note with a long tail" },
+  { id: "sparkle",        label: "Sparkle",      hint: "Three rising notes" },
 ] as const;
+
+/**
+ * How a caption looks, for the preview.
+ *
+ * The render writes an ASS subtitle file and lets libass draw it; this is the
+ * same set of decisions in CSS. Font size is a fraction of the frame height in
+ * both, so a caption that fits the preview fits the video.
+ */
+function captionCss(style: string, size: string): React.CSSProperties {
+  // 3%, 4% and 5.2% of the frame height, matching buildAssStyle in the worker.
+  const scale = size === "small" ? 0.030 : size === "large" ? 0.052 : size === "xl" ? 0.065 : 0.040;
+  const base: React.CSSProperties = {
+    fontFamily: "Arial, Helvetica, sans-serif",
+    fontSize: `${scale * 100}cqh`,
+    lineHeight: 1.25,
+    textAlign: "center",
+  };
+  switch (style) {
+    case "bold":
+      return { ...base, color: "#ffff00", fontWeight: 700, WebkitTextStroke: "0.35cqh #000", paintOrder: "stroke fill" };
+    case "boxed":
+      return { ...base, color: "#fff", background: "oklch(0 0 0 / 0.5)", padding: "0.4cqh 0.9cqh", borderRadius: "0.3cqh" };
+    case "banner":
+      return { ...base, color: "#fff", background: "#000", padding: "0.5cqh 1.1cqh" };
+    case "highlight":
+      return { ...base, color: "#000", fontWeight: 700, background: "#ffff00", padding: "0.5cqh 1.1cqh" };
+    case "cinema":
+      return { ...base, color: "#fff", WebkitTextStroke: "0.6cqh #000", paintOrder: "stroke fill" };
+    case "neon":
+      return { ...base, color: "#00ffff", fontWeight: 700, WebkitTextStroke: "0.45cqh #002a70", paintOrder: "stroke fill" };
+    case "shadow":
+      return { ...base, color: "#fff", textShadow: "0.35cqh 0.35cqh 0.5cqh oklch(0 0 0 / 0.9)" };
+    case "soft":
+      return { ...base, color: "oklch(1 0 0 / 0.7)", WebkitTextStroke: "0.15cqh oklch(0 0 0 / 0.7)", paintOrder: "stroke fill" };
+    case "minimal":
+      return { ...base, color: "#fff", WebkitTextStroke: "0.18cqh #000", paintOrder: "stroke fill" };
+    default:
+      return { ...base, color: "#fff", WebkitTextStroke: "0.35cqh #000", paintOrder: "stroke fill", textShadow: "0.2cqh 0.2cqh 0.3cqh oklch(0 0 0 / 0.8)" };
+  }
+}
 
 /** The vignette the render draws, approximated for the preview. */
 const VIGNETTE_SHADOW = "radial-gradient(ellipse at center, transparent 45%, oklch(0 0 0 / 0.55) 100%)";
@@ -293,17 +345,44 @@ const MOTION_ANIMATION: Record<string, string> = {
 
 /** What Random draws from, mirroring RANDOM_POOL in the worker. The preview
  *  walks it so "a different effect per image" is shown rather than described. */
-const RANDOM_POOL = ["zoom-in", "zoom-out", "pan-right", "pan-left", "drift"];
+const RANDOM_POOL = [
+  "zoom-in", "zoom-out", "pan-right", "pan-left", "pan-up", "pan-down",
+  "drift", "drift-left", "diagonal",
+];
 
 const CAPTION_STYLES = [
-  { id: "classic", label: "Classic", hint: "White, black outline" },
-  { id: "bold",    label: "Bold",    hint: "Yellow, bold" },
-  { id: "boxed",   label: "Boxed",   hint: "White on dark box" },
-  { id: "minimal", label: "Minimal", hint: "White, thin outline" },
+  { id: "classic",   label: "Classic",   hint: "White, black outline" },
+  { id: "bold",      label: "Bold",      hint: "Yellow, bold" },
+  { id: "boxed",     label: "Boxed",     hint: "White on a dark box" },
+  { id: "banner",    label: "Banner",    hint: "White on a solid bar" },
+  { id: "highlight", label: "Highlight", hint: "Black on yellow" },
+  { id: "cinema",    label: "Cinema",    hint: "Heavy outline, no shadow" },
+  { id: "neon",      label: "Neon",      hint: "Cyan with a glow" },
+  { id: "shadow",    label: "Shadow",    hint: "No outline, soft shadow" },
+  { id: "minimal",   label: "Minimal",   hint: "White, thin outline" },
+  { id: "soft",      label: "Soft",      hint: "Held back, for support text" },
 ] as const;
 
-const CAPTION_SIZES     = [{ id: "small", label: "S" }, { id: "medium", label: "M" }, { id: "large", label: "L" }] as const;
-const CAPTION_POSITIONS = [{ id: "bottom", label: "Bottom" }, { id: "top", label: "Top" }] as const;
+/** How a caption arrives. The last two work word by word and need the
+ *  transcript's timings, which exist once a voiceover has been made. */
+const CAPTION_ANIMATIONS = [
+  { id: "none",       label: "None",       hint: "Cuts in with the words" },
+  { id: "fade",       label: "Fade",       hint: "Fades in and out" },
+  { id: "pop",        label: "Pop",        hint: "Arrives with a small scale" },
+  { id: "slide",      label: "Slide",      hint: "Comes up into place" },
+  { id: "grow",       label: "Grow",       hint: "Creeps outward the whole line" },
+  { id: "tilt",       label: "Tilt",       hint: "Straightens as it arrives" },
+  { id: "flash",      label: "Flash",      hint: "Lands in yellow, settles" },
+  { id: "karaoke",    label: "Karaoke",    hint: "Each word brightens as it is spoken" },
+  { id: "reveal",     label: "Reveal",     hint: "The line builds word by word" },
+  { id: "typewriter", label: "Typewriter", hint: "Letter by letter, in time with the speech" },
+] as const;
+
+/** The three that need the transcript's word timings. */
+const WORD_TIMED_CAPTIONS = ["karaoke", "reveal", "typewriter"];
+
+const CAPTION_SIZES     = [{ id: "small", label: "S" }, { id: "medium", label: "M" }, { id: "large", label: "L" }, { id: "xl", label: "XL" }] as const;
+const CAPTION_POSITIONS = [{ id: "bottom", label: "Bottom" }, { id: "middle", label: "Middle" }, { id: "top", label: "Top" }] as const;
 
 export default function AssemblePage({ params }: PageProps) {
   const { projectId } = params;
@@ -378,6 +457,7 @@ export default function AssemblePage({ params }: PageProps) {
       captions_style?:    string  | null;
       captions_size?:     string  | null;
       captions_position?: string  | null;
+      captions_animation?: string | null;
       video_filter?:      string  | null;
       video_filter_strength?: number | null;
       sfx_volume?: number | null;
@@ -392,6 +472,7 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_style    === "string" && cap.captions_style)    setCaptionsStyle(cap.captions_style);
     if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
+    if (typeof cap.captions_animation === "string" && cap.captions_animation) setCaptionsAnimation(cap.captions_animation);
     if (typeof cap.video_filter      === "string" && cap.video_filter)      setVideoFilter(cap.video_filter);
     if (typeof cap.video_filter_strength === "number")                      setVideoFilterStrength(cap.video_filter_strength);
     if (typeof cap.sfx_volume        === "number")                          setSfxVolume(cap.sfx_volume);
@@ -591,6 +672,12 @@ export default function AssemblePage({ params }: PageProps) {
   const [captionsStyle, setCaptionsStyle] = useState("classic");
   const [captionsSize, setCaptionsSize] = useState("medium");
   const [captionsPosition, setCaptionsPosition] = useState("bottom");
+  const [captionsAnimation, setCaptionsAnimation] = useState("none");
+  // Closed by default: both are picked once, and their headers name the choice.
+  const [captionStyleOpen, setCaptionStyleOpen] = useState(false);
+  const [captionAnimOpen, setCaptionAnimOpen] = useState(false);
+  const [captionLangOpen, setCaptionLangOpen] = useState(false);
+  const [captionPlacementOpen, setCaptionPlacementOpen] = useState(false);
   // Collapsed by default. Captions carry five settings and most assemblies do
   // not touch them, so open they push the timeline off the screen.
   const [captionsOpen, setCaptionsOpen] = useState(false);
@@ -969,6 +1056,7 @@ export default function AssemblePage({ params }: PageProps) {
           captions_style: captionsStyle,
           captions_size: captionsSize,
           captions_position: captionsPosition,
+          captions_animation: captionsAnimation,
           image_motion: imageMotion,
           image_motion_seconds: imageMotionSeconds || null,
           image_motion_strength: imageMotionStrength,
@@ -981,7 +1069,7 @@ export default function AssemblePage({ params }: PageProps) {
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, sfxVolume, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, captionsAnimation, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, sfxVolume, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -1293,6 +1381,7 @@ export default function AssemblePage({ params }: PageProps) {
           captionsStyle,
           captionsSize,
           captionsPosition,
+          captionsAnimation,
           trimSilenceEnabled: trimSilence,
           imageMotion,
           transition,
@@ -1446,6 +1535,7 @@ export default function AssemblePage({ params }: PageProps) {
           captionsStyle,
           captionsSize,
           captionsPosition,
+          captionsAnimation,
           trimSilenceEnabled: trimSilence,
           imageMotion,
           transition,
@@ -1692,208 +1782,55 @@ export default function AssemblePage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Music and logo together.
-                Two uploads that decorate the video rather than change what it
-                says, both used on a minority of assemblies, and each was its
-                own full-width card. One section, closed by default, gives the
-                steps that matter the room instead. */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={brandingOpen}
-                onClick={() => setBrandingOpen((v) => !v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBrandingOpen((v) => !v); }
-                }}
-                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${brandingOpen ? "mb-4" : ""}`}
-              >
-                <div>
-                  <p className="text-sm font-semibold">Background music & logo</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    {[
-                      bgmPreviewUrl ? (bgmVolume > 0 ? `Music at ${Math.round(bgmVolume * 100)}%` : "Music muted") : null,
-                      logoUploadedUrl || logoFile ? "Logo added" : null,
-                    ].filter(Boolean).join(" · ") || "None added"}
-                  </p>
-                </div>
-                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
-                  {brandingOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
-              </div>
-              {brandingOpen && (
-              <div className="space-y-4">
-              {/* Background music — compact single-bar picker. Pre-pick
-                  shows label + Choose file. Post-pick collapses every
-                  control (filename, size, upload status, volume slider,
-                  remove ×) into one horizontal row to keep the assemble
-                  page dense. The chip + play-with-preview toggle still
-                  renders inside each preview card. */}
-              <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
-                {!bgmFile && !bgmUploadedUrl ? (
-                  <>
-                    <p className="text-sm font-semibold flex-1">Background music</p>
-                    <button
-                      onClick={() => bgmInputRef.current?.click()}
-                      disabled={assembling}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
-                    >
-                      Choose file
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Play/pause preview — appears once a track is
-                        selected/uploaded so the user can hear it before
-                        assembling. Uses the local blob when available,
-                        else the saved R2 URL. */}
-                    {(() => {
-                      const bgmPreviewSrc = bgmObjectUrl ?? bgmUploadedUrl;
-                      if (!bgmPreviewSrc) return null;
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const a = bgmAudioRef.current;
-                              if (!a) return;
-                              if (a.paused) {
-                                a.volume = Math.max(0, Math.min(1, bgmVolume));
-                                a.play().catch(() => {});
-                              } else {
-                                a.pause();
-                              }
-                            }}
-                            title={bgmPlaying ? "Pause preview" : "Play preview"}
-                            aria-label={bgmPlaying ? "Pause background music" : "Play background music"}
-                            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
-                            style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
-                          >
-                            {bgmPlaying ? (
-                              <span className="flex gap-[2px]">
-                                <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
-                                <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
-                              </span>
-                            ) : (
-                              <span
-                                className="block w-0 h-0 ml-[2px]"
-                                style={{ borderLeft: "8px solid currentColor", borderTop: "5px solid transparent", borderBottom: "5px solid transparent" }}
-                              />
-                            )}
-                          </button>
-                          <audio
-                            ref={bgmAudioRef}
-                            src={bgmPreviewSrc}
-                            preload="none"
-                            onPlay={() => setBgmPlaying(true)}
-                            onPause={() => setBgmPlaying(false)}
-                            onEnded={() => setBgmPlaying(false)}
-                          />
-                        </>
-                      );
-                    })()}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                        Background music
-                      </p>
-                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile?.name ?? bgmUploadedUrl ?? ""}>
-                        {bgmFile ? bgmFile.name : (bgmUploadedUrl?.split("/").pop() ?? "Saved track")}
-                      </p>
-                      <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                        {bgmFile
-                          ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
-                          : "Saved from a previous run"}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setBgmDisclaimerOpen(true)}
-                        className="text-[10px] underline underline-offset-2 hover:opacity-80"
-                        style={{ color: "oklch(0.7 0.22 25)" }}
-                      >
-                        Disclaimer
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
-                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={bgmVolume}
-                        onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
-                        disabled={assembling}
-                        aria-label="Background music volume"
-                        className="flex-1 sm:flex-none sm:w-32"
-                      />
-                      <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
-                        {Math.round(bgmVolume * 100)}%
-                      </span>
-                      <button
-                        onClick={clearBgm}
-                        disabled={assembling || bgmUploading}
-                        title="Remove background music"
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
-                        style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-end gap-2 w-full">
-                      <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
-                      <button
-                        type="button"
-                        onClick={toggleUseAlwaysBgm}
-                        aria-pressed={useAlwaysBgm}
-                        title="Reuse this background music on future videos"
-                        className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
-                        style={{ background: useAlwaysBgm ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
-                      >
-                        <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                          style={{ background: "oklch(0.95 0 0)", left: useAlwaysBgm ? "calc(100% - 1.125rem)" : "0.125rem" }} />
-                      </button>
-                    </div>
-                  </>
-                )}
-                <input
-                  ref={bgmInputRef}
-                  type="file"
-                  accept="audio/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    if (!f) return;
-                    setBgmFile(f);
-                    // New file → invalidate any previously-uploaded URL
-                    // and immediately upload + persist so a refresh
-                    // doesn't lose the selection. Fire-and-forget
-                    // since the user may continue tweaking other
-                    // settings while the upload runs in the background.
-                    setBgmUploadedUrl(null);
-                    void uploadAndPersist(f, "bgm");
+            {/* Two collapsed rows, side by side. Both are closed most of the
+                time and their summaries are one line each, so stacking them
+                spent a screen of height on two sentences. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+              {/* Music and logo together.
+                  Two uploads that decorate the video rather than change what it
+                  says, both used on a minority of assemblies, and each was its
+                  own full-width card. One section, closed by default, gives the
+                  steps that matter the room instead. */}
+              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={brandingOpen}
+                  onClick={() => setBrandingOpen((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBrandingOpen((v) => !v); }
                   }}
-                />
-              </div>
-
-              {/* Channel logo — single-bar picker matching the bgm
-                  section. Pre-pick shows label + Choose file. Once a
-                  file is selected, the bar expands with an aspect-
-                  ratio drag surface where the user positions the logo,
-                  a width slider, and the × clear. Position and size
-                  are stored as 0–1 fractions of video dimensions so
-                  they're resolution-agnostic. */}
-              <div className="rounded-2xl px-4 py-2.5 space-y-3"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
-                  {!logoFile && !logoUploadedUrl ? (
+                  className={`flex items-center justify-between gap-3 cursor-pointer select-none ${brandingOpen ? "mb-4" : ""}`}
+                >
+                  <div>
+                    <p className="text-sm font-semibold">Background music & logo</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                      {[
+                        bgmPreviewUrl ? (bgmVolume > 0 ? `Music at ${Math.round(bgmVolume * 100)}%` : "Music muted") : null,
+                        logoUploadedUrl || logoFile ? "Logo added" : null,
+                      ].filter(Boolean).join(" · ") || "None added"}
+                    </p>
+                  </div>
+                  <span className="shrink-0" style={{ color: "var(--c-45)" }}>
+                    {brandingOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                </div>
+                {brandingOpen && (
+                <div className="space-y-4">
+                {/* Background music — compact single-bar picker. Pre-pick
+                    shows label + Choose file. Post-pick collapses every
+                    control (filename, size, upload status, volume slider,
+                    remove ×) into one horizontal row to keep the assemble
+                    page dense. The chip + play-with-preview toggle still
+                    renders inside each preview card. */}
+                <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
+                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                  <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
+                  {!bgmFile && !bgmUploadedUrl ? (
                     <>
-                      <p className="text-sm font-semibold flex-1">Channel logo</p>
+                      <p className="text-sm font-semibold flex-1">Background music</p>
                       <button
-                        onClick={() => logoInputRef.current?.click()}
+                        onClick={() => bgmInputRef.current?.click()}
                         disabled={assembling}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
                         style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
@@ -1903,39 +1840,96 @@ export default function AssemblePage({ params }: PageProps) {
                     </>
                   ) : (
                     <>
+                      {/* Play/pause preview — appears once a track is
+                          selected/uploaded so the user can hear it before
+                          assembling. Uses the local blob when available,
+                          else the saved R2 URL. */}
+                      {(() => {
+                        const bgmPreviewSrc = bgmObjectUrl ?? bgmUploadedUrl;
+                        if (!bgmPreviewSrc) return null;
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const a = bgmAudioRef.current;
+                                if (!a) return;
+                                if (a.paused) {
+                                  a.volume = Math.max(0, Math.min(1, bgmVolume));
+                                  a.play().catch(() => {});
+                                } else {
+                                  a.pause();
+                                }
+                              }}
+                              title={bgmPlaying ? "Pause preview" : "Play preview"}
+                              aria-label={bgmPlaying ? "Pause background music" : "Play background music"}
+                              className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
+                            >
+                              {bgmPlaying ? (
+                                <span className="flex gap-[2px]">
+                                  <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                                  <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                                </span>
+                              ) : (
+                                <span
+                                  className="block w-0 h-0 ml-[2px]"
+                                  style={{ borderLeft: "8px solid currentColor", borderTop: "5px solid transparent", borderBottom: "5px solid transparent" }}
+                                />
+                              )}
+                            </button>
+                            <audio
+                              ref={bgmAudioRef}
+                              src={bgmPreviewSrc}
+                              preload="none"
+                              onPlay={() => setBgmPlaying(true)}
+                              onPause={() => setBgmPlaying(false)}
+                              onEnded={() => setBgmPlaying(false)}
+                            />
+                          </>
+                        );
+                      })()}
                       <div className="min-w-0 flex-1">
                         <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                          Channel logo
+                          Background music
                         </p>
-                        <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile?.name ?? logoUploadedUrl ?? ""}>
-                          {logoFile ? logoFile.name : (logoUploadedUrl?.split("/").pop() ?? "Saved logo")}
+                        <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile?.name ?? bgmUploadedUrl ?? ""}>
+                          {bgmFile ? bgmFile.name : (bgmUploadedUrl?.split("/").pop() ?? "Saved track")}
                         </p>
                         <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                          {logoFile
-                            ? `${(logoFile.size / 1024).toFixed(0)} KB${logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                          {bgmFile
+                            ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
                             : "Saved from a previous run"}
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => setBgmDisclaimerOpen(true)}
+                          className="text-[10px] underline underline-offset-2 hover:opacity-80"
+                          style={{ color: "oklch(0.7 0.22 25)" }}
+                        >
+                          Disclaimer
+                        </button>
                       </div>
                       <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
-                        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
+                        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
                         <input
                           type="range"
-                          min={0.03}
-                          max={0.4}
+                          min={0}
+                          max={1}
                           step={0.01}
-                          value={logoSize}
-                          onChange={(e) => setLogoSize(parseFloat(e.target.value))}
+                          value={bgmVolume}
+                          onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
                           disabled={assembling}
-                          aria-label="Logo size"
+                          aria-label="Background music volume"
                           className="flex-1 sm:flex-none sm:w-32"
                         />
                         <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
-                          {Math.round(logoSize * 100)}%
+                          {Math.round(bgmVolume * 100)}%
                         </span>
                         <button
-                          onClick={clearLogo}
-                          disabled={assembling || logoUploading}
-                          title="Remove channel logo"
+                          onClick={clearBgm}
+                          disabled={assembling || bgmUploading}
+                          title="Remove background music"
                           className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
                           style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
                         >
@@ -1946,321 +1940,615 @@ export default function AssemblePage({ params }: PageProps) {
                         <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
                         <button
                           type="button"
-                          onClick={toggleUseAlwaysLogo}
-                          aria-pressed={useAlwaysLogo}
-                          title="Reuse this logo on future videos"
+                          onClick={toggleUseAlwaysBgm}
+                          aria-pressed={useAlwaysBgm}
+                          title="Reuse this background music on future videos"
                           className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
-                          style={{ background: useAlwaysLogo ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                          style={{ background: useAlwaysBgm ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
                         >
                           <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                            style={{ background: "oklch(0.95 0 0)", left: useAlwaysLogo ? "calc(100% - 1.125rem)" : "0.125rem" }} />
+                            style={{ background: "oklch(0.95 0 0)", left: useAlwaysBgm ? "calc(100% - 1.125rem)" : "0.125rem" }} />
                         </button>
                       </div>
                     </>
                   )}
                   <input
-                    ref={logoInputRef}
+                    ref={bgmInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="audio/*"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
                       if (!f) return;
-                      setLogoFile(f);
-                      setLogoUploadedUrl(null);
-                      // Immediately upload + persist (same reasoning as bgm above).
-                      void uploadAndPersist(f, "logo");
+                      setBgmFile(f);
+                      // New file → invalidate any previously-uploaded URL
+                      // and immediately upload + persist so a refresh
+                      // doesn't lose the selection. Fire-and-forget
+                      // since the user may continue tweaking other
+                      // settings while the upload runs in the background.
+                      setBgmUploadedUrl(null);
+                      void uploadAndPersist(f, "bgm");
                     }}
                   />
                 </div>
-                {(logoObjectUrl || logoUploadedUrl) && (() => {
-                  // Draggable preview surface. The surface holds the
-                  // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
-                  // an absolutely positioned img the user drags around.
-                  // Position is stored as 0–1 fractions of the surface
-                  // dimensions, mirroring how the worker interprets
-                  // logoX / logoY against the actual video.
-                  // Source: blob URL for a freshly-picked File, otherwise
-                  // the persisted R2 URL hydrated from the project row.
-                  const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
-                  const aspect = aspectRatio.replace(":", " / ");
-                  function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const surface = (e.currentTarget.parentElement?.parentElement as HTMLElement | null);
-                    if (!surface) return;
-                    const img = e.currentTarget;
-                    img.setPointerCapture(e.pointerId);
-                    const startBox = surface.getBoundingClientRect();
-                    const offsetX = e.clientX - img.getBoundingClientRect().left;
-                    const offsetY = e.clientY - img.getBoundingClientRect().top;
-                    function move(ev: PointerEvent) {
-                      const localX = ev.clientX - startBox.left - offsetX;
-                      const localY = ev.clientY - startBox.top - offsetY;
-                      // Clamp so the logo can't be dragged outside the
-                      // visible video area. We don't know the rendered
-                      // logo width yet (it depends on size %), but the
-                      // worker also clamps via overlay's auto, so a
-                      // simple [0, 1 - logoSize] keeps it sensible.
-                      const maxX = 1 - logoSize;
-                      const surfaceAspect = startBox.height / startBox.width;
-                      // Approx maxY using the logo's render height ≈
-                      // logoSize * surface width / image natural ratio.
-                      const approxLogoHpct = (img.offsetHeight / startBox.height);
-                      const maxY = Math.max(0, 1 - approxLogoHpct);
-                      const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
-                      const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
-                      setLogoX(nextX);
-                      setLogoY(nextY);
-                      void surfaceAspect;
+
+                {/* Channel logo — single-bar picker matching the bgm
+                    section. Pre-pick shows label + Choose file. Once a
+                    file is selected, the bar expands with an aspect-
+                    ratio drag surface where the user positions the logo,
+                    a width slider, and the × clear. Position and size
+                    are stored as 0–1 fractions of video dimensions so
+                    they're resolution-agnostic. */}
+                <div className="rounded-2xl px-4 py-2.5 space-y-3"
+                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
+                    {!logoFile && !logoUploadedUrl ? (
+                      <>
+                        <p className="text-sm font-semibold flex-1">Channel logo</p>
+                        <button
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={assembling}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
+                          style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                        >
+                          Choose file
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                            Channel logo
+                          </p>
+                          <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile?.name ?? logoUploadedUrl ?? ""}>
+                            {logoFile ? logoFile.name : (logoUploadedUrl?.split("/").pop() ?? "Saved logo")}
+                          </p>
+                          <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                            {logoFile
+                              ? `${(logoFile.size / 1024).toFixed(0)} KB${logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                              : "Saved from a previous run"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
+                          <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
+                          <input
+                            type="range"
+                            min={0.03}
+                            max={0.4}
+                            step={0.01}
+                            value={logoSize}
+                            onChange={(e) => setLogoSize(parseFloat(e.target.value))}
+                            disabled={assembling}
+                            aria-label="Logo size"
+                            className="flex-1 sm:flex-none sm:w-32"
+                          />
+                          <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
+                            {Math.round(logoSize * 100)}%
+                          </span>
+                          <button
+                            onClick={clearLogo}
+                            disabled={assembling || logoUploading}
+                            title="Remove channel logo"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                            style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 w-full">
+                          <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
+                          <button
+                            type="button"
+                            onClick={toggleUseAlwaysLogo}
+                            aria-pressed={useAlwaysLogo}
+                            title="Reuse this logo on future videos"
+                            className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
+                            style={{ background: useAlwaysLogo ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                          >
+                            <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                              style={{ background: "oklch(0.95 0 0)", left: useAlwaysLogo ? "calc(100% - 1.125rem)" : "0.125rem" }} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        if (!f) return;
+                        setLogoFile(f);
+                        setLogoUploadedUrl(null);
+                        // Immediately upload + persist (same reasoning as bgm above).
+                        void uploadAndPersist(f, "logo");
+                      }}
+                    />
+                  </div>
+                  {(logoObjectUrl || logoUploadedUrl) && (() => {
+                    // Draggable preview surface. The surface holds the
+                    // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
+                    // an absolutely positioned img the user drags around.
+                    // Position is stored as 0–1 fractions of the surface
+                    // dimensions, mirroring how the worker interprets
+                    // logoX / logoY against the actual video.
+                    // Source: blob URL for a freshly-picked File, otherwise
+                    // the persisted R2 URL hydrated from the project row.
+                    const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
+                    const aspect = aspectRatio.replace(":", " / ");
+                    function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const surface = (e.currentTarget.parentElement?.parentElement as HTMLElement | null);
+                      if (!surface) return;
+                      const img = e.currentTarget;
+                      img.setPointerCapture(e.pointerId);
+                      const startBox = surface.getBoundingClientRect();
+                      const offsetX = e.clientX - img.getBoundingClientRect().left;
+                      const offsetY = e.clientY - img.getBoundingClientRect().top;
+                      function move(ev: PointerEvent) {
+                        const localX = ev.clientX - startBox.left - offsetX;
+                        const localY = ev.clientY - startBox.top - offsetY;
+                        // Clamp so the logo can't be dragged outside the
+                        // visible video area. We don't know the rendered
+                        // logo width yet (it depends on size %), but the
+                        // worker also clamps via overlay's auto, so a
+                        // simple [0, 1 - logoSize] keeps it sensible.
+                        const maxX = 1 - logoSize;
+                        const surfaceAspect = startBox.height / startBox.width;
+                        // Approx maxY using the logo's render height ≈
+                        // logoSize * surface width / image natural ratio.
+                        const approxLogoHpct = (img.offsetHeight / startBox.height);
+                        const maxY = Math.max(0, 1 - approxLogoHpct);
+                        const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
+                        const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
+                        setLogoX(nextX);
+                        setLogoY(nextY);
+                        void surfaceAspect;
+                      }
+                      function up(ev: PointerEvent) {
+                        img.releasePointerCapture(ev.pointerId);
+                        window.removeEventListener("pointermove", move);
+                        window.removeEventListener("pointerup", up);
+                      }
+                      window.addEventListener("pointermove", move);
+                      window.addEventListener("pointerup", up);
                     }
-                    function up(ev: PointerEvent) {
-                      img.releasePointerCapture(ev.pointerId);
-                      window.removeEventListener("pointermove", move);
-                      window.removeEventListener("pointerup", up);
+                    // Resize via dragging the bottom-right handle. Stops
+                    // pointer propagation so the move handler on the img
+                    // doesn't also fire. New width = pointer x − logo
+                    // left edge, expressed as fraction of surface width.
+                    // Clamped to the same 0.03–0.40 range as the slider.
+                    function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const handle = e.currentTarget;
+                      const surface = handle.parentElement?.parentElement as HTMLElement | null;
+                      if (!surface) return;
+                      handle.setPointerCapture(e.pointerId);
+                      const startBox = surface.getBoundingClientRect();
+                      // Capture current logo left edge in px so we measure
+                      // from there regardless of where the pointer lands.
+                      const logoLeftPx = startBox.left + logoX * startBox.width;
+                      function move(ev: PointerEvent) {
+                        const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
+                        const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
+                        // Don't push past the right edge: if the new size
+                        // would overflow given the current x, clamp size.
+                        const maxSize = Math.max(0.03, 1 - logoX);
+                        setLogoSize(Math.min(newSize, maxSize));
+                      }
+                      function up(ev: PointerEvent) {
+                        handle.releasePointerCapture(ev.pointerId);
+                        window.removeEventListener("pointermove", move);
+                        window.removeEventListener("pointerup", up);
+                      }
+                      window.addEventListener("pointermove", move);
+                      window.addEventListener("pointerup", up);
                     }
-                    window.addEventListener("pointermove", move);
-                    window.addEventListener("pointerup", up);
-                  }
-                  // Resize via dragging the bottom-right handle. Stops
-                  // pointer propagation so the move handler on the img
-                  // doesn't also fire. New width = pointer x − logo
-                  // left edge, expressed as fraction of surface width.
-                  // Clamped to the same 0.03–0.40 range as the slider.
-                  function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const handle = e.currentTarget;
-                    const surface = handle.parentElement?.parentElement as HTMLElement | null;
-                    if (!surface) return;
-                    handle.setPointerCapture(e.pointerId);
-                    const startBox = surface.getBoundingClientRect();
-                    // Capture current logo left edge in px so we measure
-                    // from there regardless of where the pointer lands.
-                    const logoLeftPx = startBox.left + logoX * startBox.width;
-                    function move(ev: PointerEvent) {
-                      const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
-                      const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
-                      // Don't push past the right edge: if the new size
-                      // would overflow given the current x, clamp size.
-                      const maxSize = Math.max(0.03, 1 - logoX);
-                      setLogoSize(Math.min(newSize, maxSize));
-                    }
-                    function up(ev: PointerEvent) {
-                      handle.releasePointerCapture(ev.pointerId);
-                      window.removeEventListener("pointermove", move);
-                      window.removeEventListener("pointerup", up);
-                    }
-                    window.addEventListener("pointermove", move);
-                    window.addEventListener("pointerup", up);
-                  }
-                  return (
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                        Drag to position · drag corner to resize
+                    return (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                          Drag to position · drag corner to resize
+                        </p>
+                        <div
+                          className="relative w-full rounded-lg overflow-hidden select-none"
+                          style={{
+                            aspectRatio: aspect,
+                            maxWidth: "320px",
+                            background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
+                            border: "1px solid var(--bd-card)",
+                          }}
+                        >
+                          <div
+                            className="absolute group"
+                            style={{
+                              left: `${logoX * 100}%`,
+                              top: `${logoY * 100}%`,
+                              width: `${logoSize * 100}%`,
+                            }}
+                          >
+                            <img
+                              src={logoSrc}
+                              alt={logoFile?.name ?? "Channel logo"}
+                              draggable={false}
+                              onPointerDown={assembling ? undefined : onDragLogo}
+                              className="touch-none block w-full h-auto"
+                              style={{
+                                cursor: assembling ? "default" : "grab",
+                                opacity: 0.95,
+                                filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))",
+                              }}
+                            />
+                            {/* Bottom-right resize handle. Visible at all
+                                times so it's discoverable; sized small so
+                                it doesn't obscure tiny logos. */}
+                            {!assembling && (
+                              <span
+                                onPointerDown={onResizeLogo}
+                                aria-label="Resize logo"
+                                title="Drag to resize"
+                                className="absolute touch-none flex items-center justify-center"
+                                style={{
+                                  right: "-6px",
+                                  bottom: "-6px",
+                                  width: "14px",
+                                  height: "14px",
+                                  borderRadius: "9999px",
+                                  background: "oklch(0.72 0.25 285)",
+                                  border: "2px solid #ffffff",
+                                  cursor: "nwse-resize",
+                                  boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
+                          x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                </div>
+                )}
+              </div>
+
+              {/* Captions */}
+              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                {/* The whole row opens the section, so the target is the row
+                    rather than the words. The switch only appears once it is
+                    open: collapsed, the summary already says on or off, and a
+                    switch sitting on a clickable row is a thing to hit by
+                    accident while trying to expand it. */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={captionsOpen}
+                  onClick={() => setCaptionsOpen((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCaptionsOpen((v) => !v); }
+                  }}
+                  className={`flex items-center justify-between gap-3 cursor-pointer select-none ${captionsOpen ? "mb-4" : ""}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">Captions</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                        {captionsEnabled
+                          ? `On · ${captionsStyle}, ${captionsSize}, ${captionsPosition}${captionsAnimation === "none" ? "" : `, ${captionsAnimation}`}`
+                          : "Off · burned into the video when on"}
                       </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                  {captionsOpen && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setCaptionsEnabled((v) => !v); }}
+                      disabled={assembling}
+                      aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
+                      className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
+                      style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                    >
+                      <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                        style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+                    </button>
+                  )}
+                  {/* The arrow lives at the far edge, where the eye goes to find
+                      out whether a row opens. Left of the title it competed with
+                      the heading; here it reads as the affordance for the row. */}
+                  <span style={{ color: "var(--c-45)" }}>
+                    {captionsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                  </div>
+                </div>
+
+                {captionsOpen && captionsEnabled && (
+                  <div className="space-y-4">
+                    {/* What the choices add up to, on one of the project's own
+                        frames. Style, size and position are three lists of
+                        words otherwise, and nobody can tell "classic" from
+                        "minimal" by reading them. Sized in container units, so
+                        the caption occupies the same fraction of this box as it
+                        will of the video. */}
+                    {/* On a wide screen the frame leaves half the card empty, so what is currently selected reads out beside it. Read-only on purpose: the controls for these are below, and a second set of them here would be two places to change the same thing. */}
+                    <div className="lg:flex lg:gap-4 lg:items-start">
+                    {stillPreviewUrl && (
                       <div
-                        className="relative w-full rounded-lg overflow-hidden select-none"
+                        className="relative w-full max-w-[320px] rounded-lg overflow-hidden"
                         style={{
-                          aspectRatio: aspect,
-                          maxWidth: "320px",
-                          background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
+                          aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
+                          containerType: "size",
                           border: "1px solid var(--bd-card)",
                         }}
                       >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
+                          style={{ filter: gradeCss(videoFilter, videoFilterStrength) }} />
                         <div
-                          className="absolute group"
-                          style={{
-                            left: `${logoX * 100}%`,
-                            top: `${logoY * 100}%`,
-                            width: `${logoSize * 100}%`,
-                          }}
+                          className="absolute inset-x-0 flex justify-center px-[6%]"
+                          style={captionsPosition === "top" ? { top: "3%" }
+                            : captionsPosition === "middle" ? { top: "50%", transform: "translateY(-50%)" }
+                            : { bottom: "3%" }}
                         >
-                          <img
-                            src={logoSrc}
-                            alt={logoFile?.name ?? "Channel logo"}
-                            draggable={false}
-                            onPointerDown={assembling ? undefined : onDragLogo}
-                            className="touch-none block w-full h-auto"
-                            style={{
-                              cursor: assembling ? "default" : "grab",
-                              opacity: 0.95,
-                              filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))",
-                            }}
-                          />
-                          {/* Bottom-right resize handle. Visible at all
-                              times so it's discoverable; sized small so
-                              it doesn't obscure tiny logos. */}
-                          {!assembling && (
-                            <span
-                              onPointerDown={onResizeLogo}
-                              aria-label="Resize logo"
-                              title="Drag to resize"
-                              className="absolute touch-none flex items-center justify-center"
-                              style={{
-                                right: "-6px",
-                                bottom: "-6px",
-                                width: "14px",
-                                height: "14px",
-                                borderRadius: "9999px",
-                                background: "oklch(0.72 0.25 285)",
-                                border: "2px solid #ffffff",
-                                cursor: "nwse-resize",
-                                boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
-                              }}
-                            />
-                          )}
+                          {(() => {
+                            const words = (previewBeat?.scriptSegment?.trim().split(/\s+/).slice(0, 8)
+                              ?? "The quick brown fox jumps over the lazy dog".split(" "));
+                            const css = captionCss(captionsStyle, captionsSize);
+                            // Word by word for the two that work that way, one
+                            // block for the rest. Re-keyed on the choice so
+                            // switching restarts the loop rather than joining
+                            // it halfway.
+                            if (captionsAnimation === "typewriter") {
+                              // Per letter rather than per word, which is the
+                              // only difference between this and reveal.
+                              const letters = words.join(" ").split("");
+                              const per = 2.6 / letters.length;
+                              return (
+                                <span key={captionsAnimation} style={css}>
+                                  {letters.map((ch, i) => (
+                                    <span key={i} style={{
+                                      animation: `caption-word-in 0.05s linear ${(i * per).toFixed(2)}s infinite alternate both`,
+                                      opacity: 0,
+                                    }}>{ch}</span>
+                                  ))}
+                                </span>
+                              );
+                            }
+                            if (captionsAnimation === "karaoke" || captionsAnimation === "reveal") {
+                              const per = 2.6 / words.length;
+                              return (
+                                <span key={captionsAnimation} style={css}>
+                                  {words.map((word, i) => (
+                                    <span
+                                      key={i}
+                                      style={{
+                                        animation: `${captionsAnimation === "karaoke" ? "caption-word-lit" : "caption-word-in"} 0.25s ease-out ${(i * per).toFixed(2)}s infinite alternate both`,
+                                        opacity: captionsAnimation === "karaoke" ? 0.45 : 0,
+                                      }}
+                                    >
+                                      {word}{i < words.length - 1 ? " " : ""}
+                                    </span>
+                                  ))}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                key={captionsAnimation}
+                                style={{
+                                  ...css,
+                                  animation: captionsAnimation === "fade" ? "caption-fade 3s ease-in-out infinite"
+                                    : captionsAnimation === "pop" ? "caption-pop 3s ease-in-out infinite"
+                                    : captionsAnimation === "slide" ? "caption-slide 3s ease-out infinite"
+                                    : captionsAnimation === "grow" ? "caption-grow 3s ease-in-out infinite alternate"
+                                    : captionsAnimation === "tilt" ? "caption-tilt 3s ease-out infinite"
+                                    : captionsAnimation === "flash" ? "caption-flash 3s ease-out infinite"
+                                    : undefined,
+                                }}
+                              >
+                                {words.join(" ")}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
-                      <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
-                        x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
-                      </p>
+                    )}
+                    <dl className="hidden lg:block lg:flex-1 min-w-0 space-y-1.5 text-xs">
+                      {([
+                        ["Style", CAPTION_STYLES.find((x) => x.id === captionsStyle)?.label ?? captionsStyle],
+                        ["Size", CAPTION_SIZES.find((x) => x.id === captionsSize)?.label ?? captionsSize],
+                        ["Position", CAPTION_POSITIONS.find((x) => x.id === captionsPosition)?.label ?? captionsPosition],
+                        ["Animation", CAPTION_ANIMATIONS.find((x) => x.id === captionsAnimation)?.label ?? captionsAnimation],
+                        ["Language", CAPTION_LANGUAGES.find((x) => x.code === captionsLanguage)?.label ?? captionsLanguage],
+                      ] as [string, string][]).map(([label, value]) => (
+                        <div key={label} className="flex items-baseline justify-between gap-3">
+                          <dt style={{ color: "var(--c-40)" }}>{label}</dt>
+                          <dd className="truncate" style={{ color: "var(--c-65)" }}>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
                     </div>
-                  );
-                })()}
-              </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setCaptionStyleOpen((v) => !v)}
+                        aria-expanded={captionStyleOpen}
+                        className="w-full flex items-center justify-between gap-2 mb-2"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Style</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {CAPTION_STYLES.find((x) => x.id === captionsStyle)?.label ?? captionsStyle}
+                          </span>
+                          <span style={{ color: "var(--c-45)" }}>
+                            {captionStyleOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </span>
+                      </button>
+                      <div className={`grid grid-cols-2 xl:grid-cols-3 gap-1.5 ${captionStyleOpen ? "" : "hidden"}`}>
+                        {CAPTION_STYLES.map((s) => (
+                          <button key={s.id} onClick={() => setCaptionsStyle(s.id)} disabled={assembling}
+                            className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
+                            style={captionsStyle === s.id ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                            }}>
+                            <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-              </div>
-              )}
-            </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setCaptionPlacementOpen((v) => !v)}
+                        aria-expanded={captionPlacementOpen}
+                        className="w-full flex items-center justify-between gap-2 mb-2"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Size & position</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {CAPTION_SIZES.find((x) => x.id === captionsSize)?.label ?? captionsSize}
+                            {" · "}
+                            {CAPTION_POSITIONS.find((x) => x.id === captionsPosition)?.label ?? captionsPosition}
+                          </span>
+                          <span style={{ color: "var(--c-45)" }}>
+                            {captionPlacementOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </span>
+                      </button>
+                    <div className={`flex gap-4 ${captionPlacementOpen ? "" : "hidden"}`}>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
+                        <div className="flex gap-1.5">
+                          {CAPTION_SIZES.map((s) => (
+                            <button key={s.id} onClick={() => setCaptionsSize(s.id)} disabled={assembling}
+                              className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                              style={captionsSize === s.id ? {
+                                background: "oklch(0.72 0.25 285 / 0.15)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                                color: "var(--accent-purple-text)",
+                              } : {
+                                background: "var(--bg-input)",
+                                border: "1px solid var(--bd-card)",
+                                color: "var(--c-50)",
+                              }}>
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-            {/* Captions */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              {/* The whole row opens the section, so the target is the row
-                  rather than the words. The switch only appears once it is
-                  open: collapsed, the summary already says on or off, and a
-                  switch sitting on a clickable row is a thing to hit by
-                  accident while trying to expand it. */}
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={captionsOpen}
-                onClick={() => setCaptionsOpen((v) => !v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCaptionsOpen((v) => !v); }
-                }}
-                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${captionsOpen ? "mb-4" : ""}`}
-              >
-                <div className="flex items-center gap-2">
-                  <div>
-                    <p className="text-sm font-semibold">Captions</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                      {captionsEnabled
-                        ? `On · ${captionsStyle}, ${captionsSize}, ${captionsPosition}`
-                        : "Off · burned into the video when on"}
-                    </p>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
+                        <div className="flex gap-1.5">
+                          {CAPTION_POSITIONS.map((p) => (
+                            <button key={p.id} onClick={() => setCaptionsPosition(p.id)} disabled={assembling}
+                              className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                              style={captionsPosition === p.id ? {
+                                background: "oklch(0.72 0.25 285 / 0.15)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                                color: "var(--accent-purple-text)",
+                              } : {
+                                background: "var(--bg-input)",
+                                border: "1px solid var(--bd-card)",
+                                color: "var(--c-50)",
+                              }}>
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setCaptionAnimOpen((v) => !v)}
+                        aria-expanded={captionAnimOpen}
+                        className="w-full flex items-center justify-between gap-2 mb-2"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Animation</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {CAPTION_ANIMATIONS.find((x) => x.id === captionsAnimation)?.label ?? captionsAnimation}
+                          </span>
+                          <span style={{ color: "var(--c-45)" }}>
+                            {captionAnimOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </span>
+                      </button>
+                      <div className={`grid grid-cols-2 xl:grid-cols-3 gap-1.5 ${captionAnimOpen ? "" : "hidden"}`}>
+                        {CAPTION_ANIMATIONS.map((a) => (
+                          <button key={a.id} onClick={() => setCaptionsAnimation(a.id)} disabled={assembling}
+                            title={a.hint}
+                            className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
+                            style={captionsAnimation === a.id ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                            }}>
+                            <p className="text-xs font-medium" style={{ color: captionsAnimation === a.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{a.label}</p>
+                          </button>
+                        ))}
+                      </div>
+                      {WORD_TIMED_CAPTIONS.includes(captionsAnimation) && captionsLanguage !== "source" && (
+                        <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
+                          Translated captions no longer line up with the spoken words, so this renders as a fade.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setCaptionLangOpen((v) => !v)}
+                        aria-expanded={captionLangOpen}
+                        className="w-full flex items-center justify-between gap-2 mb-2"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Language</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {CAPTION_LANGUAGES.find((x) => x.code === captionsLanguage)?.label ?? captionsLanguage}
+                          </span>
+                          <span style={{ color: "var(--c-45)" }}>
+                            {captionLangOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </span>
+                      </button>
+                      <div className={`flex flex-wrap gap-1.5 ${captionLangOpen ? "" : "hidden"}`}>
+                        {CAPTION_LANGUAGES.map((lang) => (
+                          <button key={lang.code} onClick={() => setCaptionsLanguage(lang.code)} disabled={assembling}
+                            className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                            style={captionsLanguage === lang.code ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                              color: "var(--accent-purple-text)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                              color: "var(--c-50)",
+                            }}>
+                            {lang.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                {captionsOpen && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setCaptionsEnabled((v) => !v); }}
-                    disabled={assembling}
-                    aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
-                    className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
-                    style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
-                  >
-                    <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                      style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
-                  </button>
                 )}
-                {/* The arrow lives at the far edge, where the eye goes to find
-                    out whether a row opens. Left of the title it competed with
-                    the heading; here it reads as the affordance for the row. */}
-                <span style={{ color: "var(--c-45)" }}>
-                  {captionsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
-                </div>
               </div>
-
-              {captionsOpen && captionsEnabled && (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {CAPTION_STYLES.map((s) => (
-                        <button key={s.id} onClick={() => setCaptionsStyle(s.id)} disabled={assembling}
-                          className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
-                          style={captionsStyle === s.id ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                          }}>
-                          <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
-                          <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
-                      <div className="flex gap-1.5">
-                        {CAPTION_SIZES.map((s) => (
-                          <button key={s.id} onClick={() => setCaptionsSize(s.id)} disabled={assembling}
-                            className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                            style={captionsSize === s.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.15)",
-                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "var(--accent-purple-text)",
-                            } : {
-                              background: "var(--bg-input)",
-                              border: "1px solid var(--bd-card)",
-                              color: "var(--c-50)",
-                            }}>
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
-                      <div className="flex gap-1.5">
-                        {CAPTION_POSITIONS.map((p) => (
-                          <button key={p.id} onClick={() => setCaptionsPosition(p.id)} disabled={assembling}
-                            className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                            style={captionsPosition === p.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.15)",
-                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "var(--accent-purple-text)",
-                            } : {
-                              background: "var(--bg-input)",
-                              border: "1px solid var(--bd-card)",
-                              color: "var(--c-50)",
-                            }}>
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CAPTION_LANGUAGES.map((lang) => (
-                        <button key={lang.code} onClick={() => setCaptionsLanguage(lang.code)} disabled={assembling}
-                          className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                          style={captionsLanguage === lang.code ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            color: "var(--accent-purple-text)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                            color: "var(--c-50)",
-                          }}>
-                          {lang.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Movement, and the preview the timeline plays through.
@@ -2729,7 +3017,7 @@ export default function AssemblePage({ params }: PageProps) {
                         onClick={() => editingBeat ? setBeatMotion(editingBeat.beatNumber, m.id) : setImageMotion(m.id)}
                         disabled={assembling}
                         title={m.hint}
-                        className="group text-left transition-all disabled:opacity-40">
+                        className="group text-left transition-all disabled:opacity-40 flex flex-col">
                         <span
                           className="block relative w-full aspect-video rounded-lg overflow-hidden"
                           style={{
@@ -2763,18 +3051,23 @@ export default function AssemblePage({ params }: PageProps) {
                             </span>
                           )}
                         </span>
-                        <span className="block mt-1 text-[11px] truncate"
-                          style={{ color: active ? "var(--accent-purple-text)" : "var(--c-55)" }}>
-                          {m.label}
-                        </span>
-                        {/* Auto and Random are the two a thumbnail cannot say:
-                            one tile shows a move, and what these do is differ
-                            from beat to beat. They keep their line of text. */}
-                        {(m.id === "auto" || m.id === "random") && (
-                          <span className="block text-[10px] leading-tight" style={{ color: "var(--c-38)" }}>
-                            {m.hint}
+                        {/* Fixed height under every tile. Two of these carry a
+                            second line and the rest do not, and without a floor
+                            the labels sat at different heights across the row. */}
+                        <span className="block mt-1 min-h-[2.1rem]">
+                          <span className="block text-[11px] truncate"
+                            style={{ color: active ? "var(--accent-purple-text)" : "var(--c-55)" }}>
+                            {m.label}
                           </span>
-                        )}
+                          {/* Auto and Random are the two a thumbnail cannot say:
+                              one tile shows a move, and what these do is differ
+                              from beat to beat. They keep their line of text. */}
+                          {(m.id === "auto" || m.id === "random") && (
+                            <span className="block text-[10px] leading-tight" style={{ color: "var(--c-38)" }}>
+                              {m.hint}
+                            </span>
+                          )}
+                        </span>
                       </button>
                     );
                   })}

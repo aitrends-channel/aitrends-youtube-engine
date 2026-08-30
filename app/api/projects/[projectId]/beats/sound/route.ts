@@ -12,7 +12,11 @@ import type { User } from "@supabase/supabase-js";
 
 /** Must stay in step with the column's check constraint and with the files in
  *  the worker's assets/sfx, which scripts/make-sfx.sh generates. */
-const SOUNDS = ["whoosh", "swish", "sweep", "click", "pop", "zoom-in", "zoom-out", "riser", "impact", "thud", "chime"];
+const SOUNDS = ["whoosh", "reverse-whoosh", "swish", "sweep", "page",
+  "click", "tick", "pop", "beep", "glitch", "shutter",
+  "zoom-in", "zoom-out", "riser",
+  "impact", "boom", "thud", "heartbeat",
+  "chime", "ding", "sparkle"];
 
 export async function PATCH(
   req: Request,

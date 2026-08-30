@@ -20,7 +20,11 @@ import type { User } from "@supabase/supabase-js";
 /** Must stay in step with the column's check constraint and with ImageMotion
  *  in the worker. A value that passes here and fails there would surface as a
  *  clip that quietly rendered without the effect. */
-const MOTIONS = ["none", "zoom-in", "zoom-out", "pan-right", "pan-left", "drift", "auto", "random"];
+const MOTIONS = ["none", "zoom-in", "zoom-out",
+  "pan-right", "pan-left", "pan-up", "pan-down",
+  "drift", "drift-left", "diagonal",
+  "sway", "float", "handheld",
+  "auto", "random"];
 
 export async function PATCH(
   req: Request,
