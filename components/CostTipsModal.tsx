@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Lightbulb, ScrollText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { useOnCreditsPlan } from "@/lib/admin-view";
-import { isAdminEmail } from "@/lib/admin";
+import { useViewerPlan } from "@/lib/admin-view";
 
 // Mirrors the website's "How do I keep my generation costs down?" answer
 // (heclus-landing-page lib/faq-data.ts) so support, the marketing site and
@@ -71,19 +69,9 @@ export function CostTipsModal() {
   // Credit-funded accounts get a way into the usage log from wherever they are.
   // Read off the auth metadata rather than fetched: it is already in the
   // session, and this component renders on nine pages.
-  const [plan, setPlan] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    void supabase.auth.getUser().then(({ data }) => {
-      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
-      if (typeof meta.plan === "string") setPlan(meta.plan);
-      if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
-    });
-  }, []);
   // Follows the admin switch in the wizard header, so flipping to Old hides
   // this the way it is hidden for an account that really is on an old plan.
-  const onCredits = useOnCreditsPlan(plan, isAdmin);
+  const { onCredits } = useViewerPlan();
   // The log lives under the project, so the wizard nav has something to render
   // beside it. Without a project in the URL there is nothing to link to.
   const params = useParams<{ projectId?: string }>();

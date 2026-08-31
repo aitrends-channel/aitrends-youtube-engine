@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { isAdminEmail } from "@/lib/admin";
 
 // Let an admin look at the app as either kind of account.
 //
@@ -72,4 +73,33 @@ export function useOnCreditsPlan(plan: string | null | undefined, isAdmin: boole
   const override = useAdminPlanView();
   if (isAdmin && override) return override === "new";
   return isHeclusCreditsPlan(plan);
+}
+
+
+/**
+ * The viewer's plan and admin status, and whether to render the credit-plan
+ * version of a surface.
+ *
+ * Three components were each running the same auth read to answer the same
+ * question, and each was one edit away from disagreeing with the others about
+ * what an admin is. getUser resolves from the cached session, so this costs a
+ * render rather than a request.
+ */
+export function useViewerPlan(): { plan: string | null; isAdmin: boolean; onCredits: boolean } {
+  const [plan, setPlan] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void import("@/lib/supabase/browser").then(({ createSupabaseBrowserClient }) =>
+      createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+        if (!live) return;
+        const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
+        if (typeof meta.plan === "string") setPlan(meta.plan);
+        if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
+      }),
+    );
+    return () => { live = false; };
+  }, []);
+  const onCredits = useOnCreditsPlan(plan, isAdmin);
+  return { plan, isAdmin, onCredits };
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
+import { useViewerPlan } from "@/lib/admin-view";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { TopUpOptions } from "@/components/TopUpOptions";
@@ -129,7 +130,10 @@ export function StepBalanceCard() {
     </span>
   );
 
-  const wallet = data?.fundingMode === "wallet" ? data?.wallet : undefined;
+  // In Old mode the wallet chip gives way to the provider balances below,
+  // which is the pair an account on an old plan actually spends against.
+  const { onCredits } = useViewerPlan();
+  const wallet = onCredits && data?.fundingMode === "wallet" ? data?.wallet : undefined;
   if (!data) {
     return (
       <span className="inline-block h-[26px] w-40 rounded-md animate-pulse align-middle"
