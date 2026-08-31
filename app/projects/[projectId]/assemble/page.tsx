@@ -1181,6 +1181,10 @@ export default function AssemblePage({ params }: PageProps) {
    *  page describes, so it leaves the preview and the only thing left of it is
    *  a download. Cleared when a new render arrives. */
   const [renderStale, setRenderStale] = useState(false);
+  /** The render the mode was last set against. A genuinely new render should
+   *  put the page back into Final mode; the same one arriving again, from SWR
+   *  or from a reload, should not quietly undo an Edit. */
+  const [seenRender, setSeenRender] = useState<string | null>(null);
   /** Watch the finished video in the preview, or go back to editing it. */
   const [showFinished, setShowFinished] = useState(true);
 
@@ -1272,6 +1276,9 @@ export default function AssemblePage({ params }: PageProps) {
         filterStrengths?: Record<string, number>;
         transitionLengths?: Record<string, number>;
         motionShapes?: Record<string, { strength: string; seconds: number }>;
+        showFinished?: boolean;
+        renderStale?: boolean;
+        seenRender?: string | null;
       };
       if (saved.tab && ["effects", "transitions", "filters", "sound", "elements"].includes(saved.tab)) {
         setEffectsTab(saved.tab as typeof effectsTab);
@@ -1283,6 +1290,12 @@ export default function AssemblePage({ params }: PageProps) {
       if (saved.filterStrengths && typeof saved.filterStrengths === "object") setFilterStrengths(saved.filterStrengths);
       if (saved.transitionLengths && typeof saved.transitionLengths === "object") setTransitionLengths(saved.transitionLengths);
       if (saved.motionShapes && typeof saved.motionShapes === "object") setMotionShapes(saved.motionShapes);
+      // Which mode the page was in is editing state too. Coming back to a
+      // project mid-edit and being handed the finished video instead was the
+      // page forgetting what you were doing.
+      if (typeof saved.showFinished === "boolean") setShowFinished(saved.showFinished);
+      if (typeof saved.renderStale === "boolean") setRenderStale(saved.renderStale);
+      if (typeof saved.seenRender === "string" || saved.seenRender === null) setSeenRender(saved.seenRender ?? null);
     } catch { /* private mode, cleared storage, corrupt value: start fresh */ }
   }, [localKey]);
 
@@ -1291,9 +1304,11 @@ export default function AssemblePage({ params }: PageProps) {
     try {
       window.localStorage.setItem(localKey, JSON.stringify({
         tab: effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes,
+        showFinished, renderStale, seenRender,
       }));
     } catch { /* storage full or blocked: the page still works */ }
-  }, [localKey, effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes]);
+  }, [localKey, effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes,
+      showFinished, renderStale, seenRender]);
   const shapeOf = (id: string | null) => (id ? soundShapes[id] : undefined) ?? { volume: 1, pitch: 1 };
   const tuneSound = (id: string, patch: { volume?: number; pitch?: number }) =>
     setSoundShapes((cur) => ({ ...cur, [id]: { ...shapeOf(id), ...patch } }));
@@ -1710,10 +1725,14 @@ export default function AssemblePage({ params }: PageProps) {
   const [previewLoadError, setPreviewLoadError] = useState(false);
   useEffect(() => { setPreviewLoadError(false); }, [previewUrl]);
   useEffect(() => {
-    if (!previewUrl) return;
+    // Wait for the restore, or this fires first on mount with the defaults and
+    // overwrites the mode that was just read back.
+    if (!previewUrl || !localLoaded.current) return;
+    if (seenRender === previewUrl) return;
+    setSeenRender(previewUrl);
     setRenderStale(false);
     setShowFinished(true);
-  }, [previewUrl]);
+  }, [previewUrl, seenRender]);
 
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
@@ -3301,14 +3320,17 @@ export default function AssemblePage({ params }: PageProps) {
                       )}
                       {/* Every element on screen at this moment, over the
                           picture and under the logo, exactly as the render
-                          stacks them. Draggable while the tab is open, because
-                          a position typed as two numbers is a position nobody
-                          gets right. */}
+                          stacks them. Draggable because a position typed
+                          as two numbers is a position nobody gets right. */}
                       {[...projectElements]
                         .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
                         .filter((el) => playhead >= el.start_sec && playhead < el.end_sec)
                         .map((el) => {
-                          const editable = effectsTab === "elements" && !assembling;
+                          // Not gated on the tab any more: the overlay only
+                          // draws when the page is off the finished render, and
+                          // an element you can see on the preview is one you
+                          // expect to be able to drag, whichever tab is open.
+                          const editable = !assembling;
                           const picked = selectedElement === el.id;
                           return (
                             <div
@@ -3785,9 +3807,12 @@ export default function AssemblePage({ params }: PageProps) {
                       ? `${projectElements.length} placed · drag one onto the preview to add another`
                       : "Drag one onto the preview, or onto the timeline"}
                   </p>
-                  {/* Bigger than the sound buttons: these are pictures, and a
-                      64px pill is unreadable. */}
-                  <div className="min-w-0 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                  {/* A row that wraps, not a grid. These are different widths
+                      by nature — a pill is three times the width of a tile — and
+                      a column wide enough for the widest one leaves the square
+                      ones swimming in it. Each takes the width its artwork needs
+                      at a common height and the row wraps when it runs out. */}
+                  <div className="min-w-0 flex flex-wrap gap-2">
                     {ELEMENTS.map((el) => (
                       <button
                         key={el.id}
@@ -3847,14 +3872,13 @@ export default function AssemblePage({ params }: PageProps) {
                           window.addEventListener("pointermove", move);
                           window.addEventListener("pointerup", up);
                         }}
-                        className="rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
-                        style={{
-                          background: "var(--bg-input)",
-                          border: `1px solid ${pickedElement === el.id ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
-                        }}
+                        className="h-[60px] rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
+                        style={pickedElement === el.id
+                          ? { background: "oklch(0.72 0.25 285 / 0.18)" }
+                          : undefined}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/elements/${el.id}.png`} alt={el.label} className="w-full h-auto" />
+                        <img src={`/elements/${el.id}.png`} alt={el.label} className="h-11 w-auto" />
                       </button>
                     ))}
                   </div>
