@@ -8,9 +8,9 @@ import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
-import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban, Check, X } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight, Ban, Check, X, Plus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import type { Beat, ProjectElement } from "@/lib/types";
+import type { Beat, ProjectElement, ProjectText, ProjectSound } from "@/lib/types";
 import useSWR from "swr";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
 import { presignedUpload } from "@/lib/upload-client";
@@ -167,6 +167,174 @@ const ELEMENTS = [
 ] as const;
 
 const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.14 };
+
+/** Every treatment the worker can draw. Not a font list: variety in an editor
+ *  like CapCut is mostly typeface, and the worker ships one face, so a preset
+ *  naming a font it does not have would render as the same face renamed. */
+const TEXT_STYLES = [
+  { id: "plain",         label: "Plain" },
+  { id: "thin",          label: "Thin" },
+  { id: "outline",       label: "Outline" },
+  { id: "heavy",         label: "Heavy" },
+  { id: "outline-white", label: "White edge" },
+  { id: "glow",          label: "Glow" },
+  { id: "glow-warm",     label: "Warm glow" },
+  { id: "shadow",        label: "Shadow" },
+  { id: "shadow-soft",   label: "Soft drop" },
+  { id: "shadow-hard",   label: "Hard drop" },
+  { id: "poster",        label: "Poster" },
+  { id: "lift",          label: "Lift" },
+  { id: "side",          label: "Side" },
+  { id: "glow-cool",     label: "Cool glow" },
+  { id: "edge-red",      label: "Red edge" },
+  { id: "faded",         label: "Faded" },
+] as const;
+
+type TextStyleId = typeof TEXT_STYLES[number]["id"];
+
+/**
+ * The same treatment in CSS, for the preview and the template tiles.
+ *
+ * Widths are in em so a style holds its proportions at any size, which is how
+ * the worker does it too: there the stroke is a fraction of the font size, so
+ * the two stay in step from a caption to a title card.
+ */
+function textStyleCss(style: string, bgColour?: string | null, bgOpacity = 0.55): React.CSSProperties {
+  const panel: React.CSSProperties = bgColour
+    ? { background: hexToRgba(bgColour, bgOpacity), padding: "0.12em 0.25em" }
+    // What box and box-light meant, for a row written before the columns did.
+    : style === "box" ? { background: "rgba(0,0,0,0.55)", padding: "0.12em 0.25em" }
+    : style === "box-light" ? { background: "rgba(255,255,255,0.85)", padding: "0.12em 0.25em" }
+    : {};
+  return { ...panel, ...glyphCss(style) };
+}
+
+/** #RGB or #RRGGBB plus an alpha, because CSS cannot take ffmpeg's colour@a. */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return `rgba(0,0,0,${alpha})`;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
+function glyphCss(style: string): React.CSSProperties {
+  switch (style) {
+    case "thin":          return { WebkitTextStroke: "0.03em rgba(0,0,0,0.7)", paintOrder: "stroke fill" };
+    case "outline":       return { WebkitTextStroke: "0.06em rgba(0,0,0,0.85)", paintOrder: "stroke fill" };
+    case "heavy":         return { WebkitTextStroke: "0.12em rgba(0,0,0,0.9)", paintOrder: "stroke fill" };
+    case "outline-white": return { WebkitTextStroke: "0.06em rgba(255,255,255,0.9)", paintOrder: "stroke fill" };
+    case "glow":          return { WebkitTextStroke: "0.10em rgba(255,255,255,0.55)", paintOrder: "stroke fill" };
+    case "glow-warm":     return { WebkitTextStroke: "0.10em rgba(255,212,0,0.6)", paintOrder: "stroke fill" };
+    case "shadow":        return { textShadow: "0.05em 0.05em 0 rgba(0,0,0,0.75)" };
+    case "shadow-soft":   return { textShadow: "0.025em 0.025em 0 rgba(0,0,0,0.45)" };
+    case "shadow-hard":   return { textShadow: "0.09em 0.09em 0 rgba(0,0,0,0.95)" };
+    case "lift":          return { textShadow: "0 0.07em 0 rgba(0,0,0,0.7)" };
+    case "side":          return { textShadow: "0.07em 0 0 rgba(0,0,0,0.7)" };
+    case "glow-cool":     return { WebkitTextStroke: "0.10em rgba(0,199,190,0.6)", paintOrder: "stroke fill" };
+    case "edge-red":      return { WebkitTextStroke: "0.06em rgba(211,47,47,0.9)", paintOrder: "stroke fill" };
+    // Both at once, which is the whole point of it.
+    case "poster":        return {
+      WebkitTextStroke: "0.055em rgba(0,0,0,0.95)", paintOrder: "stroke fill",
+      textShadow: "0.09em 0.09em 0 rgba(0,0,0,0.6)",
+    };
+    // Opacity, not a paler colour, so it fades against whatever is behind it
+    // rather than turning grey on a dark shot.
+    case "faded":         return { opacity: 0.6 };
+    default:          return {};
+  }
+}
+
+/** What a text overlay can be. A short list rather than a colour well: these
+ *  read on footage, and a free picker mostly produces text nobody can see. */
+/**
+ * How long each sound actually is, in seconds.
+ *
+ * Measured off the files in the worker's assets/sfx. Held here so a block can
+ * be drawn at its real length before anything has been played: the browser
+ * only learns a duration once it has fetched and decoded the audio, and a
+ * timeline that resizes its blocks after the fact is worse than one that never
+ * sized them.
+ *
+ * Decoded length, not the container's: an mp3 reports a duration that includes
+ * encoder padding. Regenerating a sound changes its length, so this list is
+ * refreshed the same way its ids are.
+ */
+const SOUND_SECONDS: Record<string, number> = {
+  alert: 0.375, beep: 0.120, bell: 1.800, boom: 0.900, chime: 0.590,
+  click: 0.045, ding: 1.100, glitch: 0.250, heartbeat: 0.840, impact: 0.500,
+  notification: 0.550, page: 0.280, pop: 0.090, "reverse-whoosh": 0.600,
+  riser: 1.200, shutter: 0.140, sparkle: 0.440, sweep: 0.800, swish: 0.320,
+  thud: 0.260, tick: 0.030, whoosh: 0.500, "zoom-in": 0.600, "zoom-out": 0.600,
+};
+
+/** The natural length of a sound, or a fallback for one this list has not
+ *  caught up with. */
+const soundSeconds = (id: string): number => SOUND_SECONDS[id] ?? 0.5;
+
+const TEXT_COLOURS = [
+  // Forty, eight to a row, and the row is what makes it readable: neutrals
+  // first because most text is one of them, then warm, green, blue and purple
+  // runs, each going light to dark. A flat bag of forty swatches is a search;
+  // a row you can predict is a choice.
+  //
+  // The same set serves the words and the panel behind them. Two palettes
+  // would be two things to extend, and the pairing people reach for is dark
+  // text on a light panel or the reverse, which needs both ends of one set.
+  "#FFFFFF", "#EDEDED", "#C7C7C7", "#9A9A9A", "#6B6B6B", "#3F3F3F", "#1C1C1C", "#000000",
+  "#FFEB3B", "#FFD400", "#FFB020", "#FF9500", "#FF6B35", "#FF3B30", "#D32F2F", "#7F1D1D",
+  "#DCFCE7", "#A3E635", "#7ED957", "#34C759", "#1FA84A", "#2DD4BF", "#00C7BE", "#065F46",
+  "#DBEAFE", "#60A5FA", "#3B82F6", "#0A84FF", "#0066CC", "#1E3A8A", "#0EA5E9", "#0C4A6E",
+  "#F5D0FE", "#F472B6", "#FF2D95", "#EC4899", "#AF52DE", "#7C3AED", "#4338CA", "#8B5E3C",
+];
+
+/**
+ * Ways a line is usually used, as a starting point.
+ *
+ * Placement, size and treatment together, because those are what somebody
+ * would otherwise set one control at a time to arrive at the same four or five
+ * arrangements. The words are a placeholder to be typed over, not a suggestion.
+ *
+ * x and y are the top-left corner, which is where drawtext puts a line, so a
+ * template cannot centre itself: the render does not know how wide the words
+ * are until it draws them. The left-hand positions here are chosen to look
+ * deliberate rather than to look centred and miss.
+ */
+const TEXT_TEMPLATES: {
+  id: string; group: "Bold" | "Classic" | "Subtle"; label: string; content: string;
+  x: number; y: number; size: number; colour: string; style: TextStyleId;
+  bg?: string; bgOpacity?: number;
+}[] = [
+  // Bold: made to be seen first, over footage that is not helping.
+  { id: "callout",  group: "Bold", label: "Callout",  content: "50% off",
+    x: 0.58, y: 0.14, size: 0.085, colour: "#FFD400", style: "heavy" },
+  { id: "shout",    group: "Bold", label: "Shout",    content: "WATCH THIS",
+    x: 0.07, y: 0.12, size: 0.12,  colour: "#FFFFFF", style: "heavy" },
+  { id: "alert",    group: "Bold", label: "Alert",    content: "Don't miss it",
+    x: 0.07, y: 0.14, size: 0.08,  colour: "#FF3B30", style: "outline" },
+  { id: "neon",     group: "Bold", label: "Neon",     content: "NEW",
+    x: 0.62, y: 0.12, size: 0.10,  colour: "#0A84FF", style: "glow" },
+
+  // Classic: the arrangements a video uses without anyone noticing them.
+  { id: "title",    group: "Classic", label: "Title",       content: "Your title",
+    x: 0.07, y: 0.10, size: 0.11,  colour: "#FFFFFF", style: "outline" },
+  { id: "sub",      group: "Classic", label: "Subtitle",    content: "Your subtitle",
+    x: 0.07, y: 0.24, size: 0.055, colour: "#FFFFFF", style: "outline" },
+  { id: "lower",    group: "Classic", label: "Lower third", content: "Name or source",
+    x: 0.06, y: 0.80, size: 0.045, colour: "#FFFFFF", style: "plain", bg: "#000000", bgOpacity: 0.55 },
+  { id: "banner",   group: "Classic", label: "Banner",      content: "Subscribe for more",
+    x: 0.06, y: 0.88, size: 0.05,  colour: "#FFFFFF", style: "plain", bg: "#000000", bgOpacity: 0.7 },
+  { id: "tag",      group: "Classic", label: "Tag",         content: "SPECIAL OFFER",
+    x: 0.06, y: 0.14, size: 0.05,  colour: "#000000", style: "plain", bg: "#FFFFFF", bgOpacity: 0.85 },
+
+  // Subtle: present without taking the shot over.
+  { id: "quote",    group: "Subtle", label: "Quote",   content: "“Something said”",
+    x: 0.08, y: 0.44, size: 0.055, colour: "#FFFFFF", style: "shadow" },
+  { id: "caption",  group: "Subtle", label: "Note",    content: "A quiet note",
+    x: 0.07, y: 0.78, size: 0.042, colour: "#FFFFFF", style: "shadow" },
+  { id: "credit",   group: "Subtle", label: "Credit",  content: "Source: somewhere",
+    x: 0.06, y: 0.90, size: 0.035, colour: "#FFFFFF", style: "plain" },
+];
 
 /**
  * How wide an element lands, as a fraction of the frame.
@@ -861,7 +1029,7 @@ export default function AssemblePage({ params }: PageProps) {
   const [videoFilter, setVideoFilter] = useState("none");
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
   const [sfxVolume, setSfxVolume] = useState(0.6);
-  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements">("effects");
+  const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements" | "text">("effects");
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -1175,6 +1343,13 @@ export default function AssemblePage({ params }: PageProps) {
   const [pickedSound, setPickedSound] = useState<string | null>(null);
   const [pickedElement, setPickedElement] = useState<string | null>(null);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [selectedSound, setSelectedSound] = useState<string | null>(null);
+  /** A sound following the pointer, so a drop lands where it looked. */
+  const [draggingSound, setDraggingSound] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** Which of the text panel's option sets is open. One at a time: three grids
+   *  unfolded at once is the tall panel these sections exist to avoid. */
+  const [textSection, setTextSection] = useState<"style" | "colour" | "bg" | null>(null);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [editConfirmOpen, setEditConfirmOpen] = useState(false);
   /** Set when Edit is confirmed: the render on screen is no longer what the
@@ -1233,8 +1408,180 @@ export default function AssemblePage({ params }: PageProps) {
     }, 250);
   }, [projectId, mutateElements]);
 
-  const LANE_H = 35;
+  const { data: textData, mutate: mutateTexts } = useSWR<{ texts: ProjectText[] }>(
+    `/api/projects/${projectId}/texts`,
+    (url: string) => fetch(url).then((r) => r.json()),
+    { revalidateOnFocus: false },
+  );
+  const projectTexts: ProjectText[] = textData?.texts ?? [];
+
+  const addText = useCallback(async (t: {
+    content: string; start_sec: number; end_sec: number; x: number; y: number;
+    size: number; colour?: string; style?: string; lane?: number;
+  }) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/texts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? "Could not add it");
+      await mutateTexts();
+      setSelectedText(out.text?.id ?? null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add it");
+    }
+  }, [projectId, mutateTexts]);
+
+  // Optimistic and debounced, like the elements: typing and dragging are both
+  // continuous, and a round trip per keystroke would make either crawl.
+  const textPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateText = useCallback((id: string, patch: Partial<ProjectText>, commit = true) => {
+    void mutateTexts((cur) => cur && ({
+      texts: cur.texts.map((t) => t.id === id ? { ...t, ...patch } : t),
+    }), { revalidate: false });
+    if (!commit) return;
+    if (textPatch.current) clearTimeout(textPatch.current);
+    textPatch.current = setTimeout(() => {
+      void fetch(`/api/projects/${projectId}/texts`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      }).catch(() => { /* the next edit re-sends it */ });
+    }, 350);
+  }, [projectId, mutateTexts]);
+
+  const removeText = useCallback(async (id: string) => {
+    void mutateTexts((cur) => cur && ({ texts: cur.texts.filter((t) => t.id !== id) }), { revalidate: false });
+    setSelectedText((cur) => (cur === id ? null : cur));
+    await fetch(`/api/projects/${projectId}/texts?id=${id}`, { method: "DELETE" }).catch(() => {});
+    await mutateTexts();
+  }, [projectId, mutateTexts]);
+
+  // Placed sounds: same shape as the elements and texts beside them.
+  const { data: soundData, mutate: mutateSounds } = useSWR<{ sounds: ProjectSound[] }>(
+    `/api/projects/${projectId}/sounds`,
+    (url: string) => fetch(url).then((r) => r.json()),
+    { revalidateOnFocus: false },
+  );
+  const projectSounds: ProjectSound[] = soundData?.sounds ?? [];
+
+  const addSound = useCallback(async (snd: {
+    sound: string; at_sec: number; volume?: number; pitch?: number; lane?: number;
+  }) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/sounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snd),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? "Could not add it");
+      await mutateSounds();
+      setSelectedSound(out.sound?.id ?? null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add it");
+    }
+  }, [projectId, mutateSounds]);
+
+  const soundPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateSound = useCallback((id: string, patch: Partial<ProjectSound>, commit = true) => {
+    void mutateSounds((cur) => cur && ({
+      sounds: cur.sounds.map((x) => x.id === id ? { ...x, ...patch } : x),
+    }), { revalidate: false });
+    if (!commit) return;
+    if (soundPatch.current) clearTimeout(soundPatch.current);
+    soundPatch.current = setTimeout(() => {
+      void fetch(`/api/projects/${projectId}/sounds`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      }).catch(() => { /* the next drag re-sends it */ });
+    }, 250);
+  }, [projectId, mutateSounds]);
+
+  const removeSound = useCallback(async (id: string) => {
+    void mutateSounds((cur) => cur && ({ sounds: cur.sounds.filter((x) => x.id !== id) }), { revalidate: false });
+    setSelectedSound((cur) => (cur === id ? null : cur));
+    await fetch(`/api/projects/${projectId}/sounds?id=${id}`, { method: "DELETE" }).catch(() => {});
+    await mutateSounds();
+  }, [projectId, mutateSounds]);
+
+  // Placed sounds during playback.
+  //
+  // A beat's sound fires when its beat starts, which is the only moment the
+  // playback loop knows about. A placed one sits at an arbitrary second, so it
+  // has to be watched for: as the playhead passes it, it plays once.
+  //
+  // Once, hence the set. The playhead updates every frame, so without it a
+  // sound at 4.0s would retrigger about sixty times a second while the head sat
+  // on it. The set clears on stop and on any jump backwards, which is what a
+  // seek looks like from here, so scrubbing back over a sound plays it again.
+  const firedSounds = useRef<Set<string>>(new Set());
+  const lastPlayhead = useRef(0);
+  useEffect(() => {
+    if (!playing) { firedSounds.current.clear(); lastPlayhead.current = playhead; return; }
+    if (playhead < lastPlayhead.current - 0.05) firedSounds.current.clear();
+    lastPlayhead.current = playhead;
+    if (sfxVolume <= 0) return;
+    for (const snd of projectSounds) {
+      if (firedSounds.current.has(snd.id)) continue;
+      // A window, not an equality: at sixty frames a second the playhead lands
+      // near a cue rather than on it, and a slow frame can step right over one.
+      if (playhead >= snd.at_sec && playhead < snd.at_sec + 0.4) {
+        firedSounds.current.add(snd.id);
+        playSound(snd.sound, snd.volume, snd.pitch);
+      }
+    }
+  }, [playhead, playing, projectSounds, sfxVolume, playSound]);
+
+  // Track height. Enough for a block with a label in it and no more: five
+  // sections stacked is what makes the timeline tall, so this number is
+  // multiplied by everything.
+  const LANE_H = 26;
+
+  /**
+   * Close gaps in a section's tracks.
+   *
+   * Dragging the last block off track 2 leaves an empty track 2 with track 3
+   * still above it, and nothing ever cleans that up: the lane is a number on a
+   * row, not a thing that exists. So the used lanes are renumbered to run from
+   * zero with no holes, and the rows follow.
+   *
+   * Written back rather than only displayed. The worker draws from the stored
+   * lane, so a timeline that quietly renumbered for the eye would stack the
+   * render differently from the preview.
+   */
+  function compactLanes<T extends { id: string; lane: number }>(
+    items: T[],
+    patch: (id: string, p: { lane: number }) => void,
+  ) {
+    const used = [...new Set(items.map((x) => x.lane ?? 0))].sort((a, b) => a - b);
+    // Already contiguous from zero: nothing to do, and saying so here is what
+    // stops this from writing on every render.
+    if (used.every((lane, i) => lane === i)) return;
+    const moved = new Map(used.map((lane, i) => [lane, i]));
+    for (const item of items) {
+      const to = moved.get(item.lane ?? 0);
+      if (to !== undefined && to !== item.lane) patch(item.id, { lane: to });
+    }
+  }
   const elementLaneCount = Math.min(10, Math.max(1, ...projectElements.map((el) => (el.lane ?? 0) + 1)) + (projectElements.length ? 1 : 0));
+  const textLaneCount = Math.min(10, Math.max(1, ...projectTexts.map((t) => (t.lane ?? 0) + 1)) + (projectTexts.length ? 1 : 0));
+  const soundLaneCount = Math.min(10, Math.max(1, ...projectSounds.map((x) => (x.lane ?? 0) + 1)) + (projectSounds.length ? 1 : 0));
+
+  // After anything moves between tracks, close the gaps it left behind. Each
+  // section on its own, since their tracks are unrelated.
+  useEffect(() => {
+    compactLanes(projectTexts, (id, p) => updateText(id, p));
+  }, [projectTexts, updateText]);
+  useEffect(() => {
+    compactLanes(projectElements, (id, p) => updateElement(id, p));
+  }, [projectElements, updateElement]);
+  useEffect(() => {
+    compactLanes(projectSounds, (id, p) => updateSound(id, p));
+  }, [projectSounds, updateSound]);
 
   const removeElement = useCallback(async (id: string) => {
     void mutateElements((cur) => cur && ({ elements: cur.elements.filter((el) => el.id !== id) }), { revalidate: false });
@@ -1244,10 +1591,14 @@ export default function AssemblePage({ params }: PageProps) {
   }, [projectId, mutateElements]);
   /** What is under the pointer mid-drag, so it can be drawn following it. */
   const [draggingElement, setDraggingElement] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** A template following the pointer, so a drop lands where it looked. */
+  const [draggingText, setDraggingText] = useState<{ id: string; x: number; y: number } | null>(null);
   const previewFrameRef = useRef<HTMLDivElement | null>(null);
   /** The strip itself, in timeline pixels, for dropping an element at a time. */
   const timelineStripRef = useRef<HTMLDivElement | null>(null);
   const elementRowsRef = useRef<HTMLDivElement | null>(null);
+  const textRowsRef = useRef<HTMLDivElement | null>(null);
+  const soundRowsRef = useRef<HTMLDivElement | null>(null);
   // Tuning per sound, for sounds not yet committed to a beat. A whoosh pitched
   // down and a chime left alone are two different settings, and coming back to
   // either should find it as it was left.
@@ -1280,7 +1631,7 @@ export default function AssemblePage({ params }: PageProps) {
         renderStale?: boolean;
         seenRender?: string | null;
       };
-      if (saved.tab && ["effects", "transitions", "filters", "sound", "elements"].includes(saved.tab)) {
+      if (saved.tab && ["effects", "transitions", "filters", "sound", "elements", "text"].includes(saved.tab)) {
         setEffectsTab(saved.tab as typeof effectsTab);
       }
       if (typeof saved.pickedSound === "string" || saved.pickedSound === null) {
@@ -1633,12 +1984,70 @@ export default function AssemblePage({ params }: PageProps) {
           video_filter: videoFilter,
           video_filter_strength: videoFilterStrength,
           sfx_volume: sfxVolume,
+          // These were only written when Assemble was clicked, so moving the
+          // logo or the music level and then reloading lost the change. They
+          // are settings like the rest and save like the rest.
+          logo_x: logoX,
+          logo_y: logoY,
+          logo_size: logoSize,
+          background_music_volume: bgmVolume,
+          video_resolution: selectedResolution,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, captionsAnimation, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, sfxVolume, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, captionsAnimation, imageMotion, imageMotionSeconds, imageMotionStrength, transition, transitionSeconds, videoFilter, videoFilterStrength, sfxVolume, logoX, logoY, logoSize, bgmVolume, selectedResolution, projectId]);
   const [assembling, setAssembling] = useState(false);
+
+  // A press anywhere that is not the selected overlay drops the selection,
+  // taking its outline and handles with it.
+  //
+  // On the document, in the capture phase, rather than on the preview frame.
+  // An overlay stops the event to run its own drag, so nothing bubbled to the
+  // frame from one, and a handler on the frame only sees presses that reach
+  // that particular div. This sees every press and decides from the target.
+  //
+  // The controls are exempt: the panel is where the words are typed and the
+  // style is picked, and deselecting on a press there would close the thing
+  // being edited.
+  useEffect(() => {
+    if (!selectedText && !selectedElement && !selectedSound) return;
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest) return;
+      if (el.closest("[data-overlay-keep]")) return;
+      const id = el.closest("[data-overlay]")?.getAttribute("data-overlay");
+      if (id && (id === selectedText || id === selectedElement || id === selectedSound)) return;
+      setSelectedElement(null);
+      setSelectedText(null);
+      setSelectedSound(null);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [selectedText, selectedElement, selectedSound]);
+
+  // Backspace removes whatever is selected, text or element.
+  //
+  // Not while typing: the content field is a text input and the same key is
+  // how you correct a word in it, so a keystroke aimed at the words must never
+  // delete the line they belong to. Same for any other field on the page.
+  useEffect(() => {
+    if (!selectedText && !selectedElement && !selectedSound) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Backspace" && e.key !== "Delete") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (assembling) return;
+      e.preventDefault();
+      if (selectedText) void removeText(selectedText);
+      else if (selectedSound) void removeSound(selectedSound);
+      else if (selectedElement) void removeElement(selectedElement);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedText, selectedElement, selectedSound, assembling, removeText, removeElement, removeSound]);
+
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
   // from the worker doesn't drop the visible step back to 1 before
@@ -3156,6 +3565,41 @@ export default function AssemblePage({ params }: PageProps) {
                   </span>
                 </div>
               </div>
+              {draggingSound && (
+                <span
+                  className="fixed z-50 pointer-events-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium"
+                  style={{
+                    left: draggingSound.x,
+                    top: draggingSound.y,
+                    transform: "translate(-50%, -50%)",
+                    background: "oklch(0.65 0.15 145 / 0.3)",
+                    border: "1px solid oklch(0.65 0.15 145)",
+                    color: "var(--c-80)",
+                  }}
+                >
+                  <Volume2 size={10} />
+                  {SOUND_EFFECTS.find((x) => x.id === draggingSound.id)?.label ?? draggingSound.id}
+                </span>
+              )}
+              {draggingText && (() => {
+                const tpl = TEXT_TEMPLATES.find((t) => t.id === draggingText.id);
+                if (!tpl) return null;
+                return (
+                  <span
+                    className="fixed z-50 pointer-events-none font-bold whitespace-nowrap"
+                    style={{
+                      left: draggingText.x,
+                      top: draggingText.y,
+                      transform: "translate(-50%, -50%)",
+                      color: tpl.colour,
+                      fontSize: 20,
+                      ...textStyleCss(tpl.style, tpl.bg, tpl.bgOpacity),
+                    }}
+                  >
+                    {tpl.content}
+                  </span>
+                );
+              })()}
               {draggingElement && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
@@ -3199,7 +3643,6 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     <div
                       ref={previewFrameRef}
-                      onPointerDown={() => setSelectedElement(null)}
                       className="relative w-full overflow-hidden"
                       style={{
                         aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
@@ -3335,6 +3778,7 @@ export default function AssemblePage({ params }: PageProps) {
                           return (
                             <div
                               key={el.id}
+                              data-overlay={el.id}
                               className="absolute touch-none"
                               style={{
                                 left: `${el.x * 100}%`,
@@ -3408,6 +3852,114 @@ export default function AssemblePage({ params }: PageProps) {
                             </div>
                           );
                         })}
+                      {/* Text on the preview, over the picture and under the
+                          logo, the way the render stacks it. Only the lines
+                          whose span covers the playhead: drawing the rest would
+                          show a frame the video never has. */}
+                      {[...projectTexts]
+                        .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
+                        .filter((t) => playhead >= t.start_sec && playhead < t.end_sec)
+                        .map((t) => {
+                          const editable = !assembling;
+                          const picked = selectedText === t.id;
+                          return (
+                            <div
+                              key={t.id}
+                              data-overlay={t.id}
+                              className="absolute touch-none whitespace-nowrap"
+                              style={{
+                                left: `${t.x * 100}%`,
+                                top: `${t.y * 100}%`,
+                                // cqh, not px: the preview box declares
+                                // containerType size, so the text scales with
+                                // the frame exactly as the render scales it
+                                // against the video height.
+                                fontSize: `${t.size * 100}cqh`,
+                                lineHeight: 1.1,
+                                fontWeight: 700,
+                                color: t.colour,
+                                cursor: editable ? "grab" : "default",
+                                outline: picked && editable ? "1px dashed oklch(0.72 0.25 285)" : undefined,
+                                outlineOffset: 3,
+                                ...textStyleCss(t.style, t.bg_colour, t.bg_opacity),
+                              }}
+                              onPointerDown={!editable ? undefined : (ev) => {
+                                ev.preventDefault();
+                                ev.stopPropagation();
+                                setSelectedText(t.id);
+                                const frame = previewFrameRef.current;
+                                if (!frame) return;
+                                const r = frame.getBoundingClientRect();
+                                // Where inside the line the drag began, so it
+                                // stays under the pointer rather than jumping
+                                // its own corner there.
+                                const grabX = (ev.clientX - r.left) / r.width - t.x;
+                                const grabY = (ev.clientY - r.top) / r.height - t.y;
+                                const move = (m: PointerEvent) => {
+                                  updateText(t.id, {
+                                    x: Math.max(0, Math.min(1, (m.clientX - r.left) / r.width - grabX)),
+                                    y: Math.max(0, Math.min(1, (m.clientY - r.top) / r.height - grabY)),
+                                  }, false);
+                                };
+                                const up = (m: PointerEvent) => {
+                                  window.removeEventListener("pointermove", move);
+                                  window.removeEventListener("pointerup", up);
+                                  updateText(t.id, {
+                                    x: Math.max(0, Math.min(1, (m.clientX - r.left) / r.width - grabX)),
+                                    y: Math.max(0, Math.min(1, (m.clientY - r.top) / r.height - grabY)),
+                                  });
+                                };
+                                window.addEventListener("pointermove", move);
+                                window.addEventListener("pointerup", up);
+                              }}
+                            >
+                              {t.content}
+                              {picked && editable && (
+                                <>
+                                  {/* Drag the corner to size it. Vertical
+                                      distance from the top of the line, because
+                                      a font is a height and the render sizes it
+                                      against the frame height too. */}
+                                  <span
+                                    onPointerDown={(ev) => {
+                                      ev.preventDefault();
+                                      ev.stopPropagation();
+                                      const frame = previewFrameRef.current;
+                                      if (!frame) return;
+                                      const r = frame.getBoundingClientRect();
+                                      const topPx = t.y * r.height;
+                                      const sizeAt = (m: PointerEvent) => Math.max(0.02, Math.min(0.2,
+                                        ((m.clientY - r.top) - topPx) / r.height / 1.1));
+                                      const move = (m: PointerEvent) => updateText(t.id, { size: sizeAt(m) }, false);
+                                      const up = (m: PointerEvent) => {
+                                        window.removeEventListener("pointermove", move);
+                                        window.removeEventListener("pointerup", up);
+                                        updateText(t.id, { size: sizeAt(m) });
+                                      };
+                                      window.addEventListener("pointermove", move);
+                                      window.addEventListener("pointerup", up);
+                                    }}
+                                    className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 rounded-full cursor-nwse-resize touch-none"
+                                    style={{ background: "oklch(0.72 0.25 285)", border: "2px solid white" }}
+                                  />
+                                  {/* Removing the line you are looking at,
+                                      without going back to the panel to find
+                                      which of them it was. */}
+                                  <button
+                                    type="button"
+                                    aria-label="Remove this text"
+                                    onPointerDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+                                    onClick={(ev) => { ev.stopPropagation(); void removeText(t.id); }}
+                                    className="absolute -top-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center cursor-pointer"
+                                    style={{ background: "oklch(0.58 0.22 25)", border: "2px solid white", color: "white" }}
+                                  >
+                                    <X size={8} strokeWidth={4} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       {(logoUploadedUrl || logoObjectUrl) && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
@@ -3475,7 +4027,7 @@ export default function AssemblePage({ params }: PageProps) {
                    was set is not changing it. */
                 <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
                   style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"]] as const).map(([id, label]) => (
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"], ["text", "Text"]] as const).map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -3800,7 +4352,372 @@ export default function AssemblePage({ params }: PageProps) {
                   onPointerDownCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
                   onClickCapture={finalMode ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
                 >
-                {effectsTab === "elements" ? (
+                {effectsTab === "text" ? (
+                <>
+                  {projectTexts.length === 0 && (
+                    <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                      Add a line, then drag it where you want it on the preview
+                    </p>
+                  )}
+                  {/* Two ways in, the way an editor usually offers them: a
+                      plain line to type into, or an arrangement already made.
+                      A template is a placement, a size, a colour and a
+                      treatment at once, which is four controls otherwise. */}
+                  {([["Add heading", 0.11, "outline", "#FFFFFF", 0.10],
+                     ["Add body text", 0.05, "shadow", "#FFFFFF", 0.72]] as const).map(
+                    ([label, size, style, colour, y]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={assembling}
+                      onClick={() => void addText({
+                        content: label === "Add heading" ? "Your heading" : "Your body text",
+                        start_sec: playhead,
+                        end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
+                        x: 0.07, y, size, colour, style,
+                        lane: Math.min(9, projectTexts.length),
+                      })}
+                      className="w-full mb-2 px-3 py-2.5 rounded-lg font-bold transition-all disabled:opacity-40 cursor-pointer"
+                      style={{
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-card)",
+                        color: "var(--c-80)",
+                        fontSize: label === "Add heading" ? 17 : 13,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+
+                  {(["Bold", "Classic", "Subtle"] as const).map((group) => (
+                    <div key={group} className="mt-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider mb-1.5"
+                        style={{ color: "var(--c-40)" }}>
+                        {group}
+                      </p>
+                      <div className="min-w-0 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {TEXT_TEMPLATES.filter((t) => t.group === group).map((tpl) => (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            disabled={assembling}
+                            title={`Drag ${tpl.label} onto the preview or the timeline`}
+                            // A press starts a drag and a plain click still
+                            // adds it at the template's own placement, so the
+                            // tile works either way round.
+                            onPointerDown={(e) => {
+                              if (assembling) return;
+                              e.preventDefault();
+                              setDraggingText({ id: tpl.id, x: e.clientX, y: e.clientY });
+                              const move = (ev: PointerEvent) => setDraggingText({ id: tpl.id, x: ev.clientX, y: ev.clientY });
+                              const up = (ev: PointerEvent) => {
+                                window.removeEventListener("pointermove", move);
+                                window.removeEventListener("pointerup", up);
+                                setDraggingText(null);
+                                const common = {
+                                  content: tpl.content, size: tpl.size,
+                                  colour: tpl.colour, style: tpl.style,
+                                  bg_colour: tpl.bg ?? null, bg_opacity: tpl.bgOpacity ?? 0.55,
+                                };
+                                const frame = previewFrameRef.current;
+                                const strip = timelineStripRef.current;
+                                // Dropped on the preview: it lands where it was
+                                // dropped and runs from the playhead.
+                                if (frame) {
+                                  const r = frame.getBoundingClientRect();
+                                  if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+                                    void addText({
+                                      ...common,
+                                      start_sec: playhead,
+                                      end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
+                                      x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+                                      y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
+                                      lane: Math.min(9, projectTexts.length),
+                                    });
+                                    return;
+                                  }
+                                }
+                                // Dropped on the timeline: it lands at that
+                                // moment, at the template's own placement.
+                                //
+                                // Hit-tested against the viewport and timed off
+                                // the strip. The strip is as wide as the whole
+                                // video, so when it is scrolled its box starts
+                                // off-screen and a drop that looked like it
+                                // landed on the timeline fell outside it.
+                                const view = timelineViewportRef.current;
+                                if (view && strip) {
+                                  const v = view.getBoundingClientRect();
+                                  const r = strip.getBoundingClientRect();
+                                  if (ev.clientX >= v.left && ev.clientX <= v.right && ev.clientY >= v.top && ev.clientY <= v.bottom) {
+                                    const at = Math.max(0, (ev.clientX - r.left) / pxPerSecond);
+                                    // The track it was dropped over, measured
+                                    // from the text rows rather than the whole
+                                    // strip, which starts at the ruler.
+                                    const rowsTop = textRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
+                                    const lane = Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H)));
+                                    void addText({
+                                      ...common,
+                                      start_sec: at,
+                                      end_sec: Math.min(timelineTotal || at + 3, at + 3),
+                                      x: tpl.x, y: tpl.y,
+                                      lane,
+                                    });
+                                    return;
+                                  }
+                                }
+                                // Dropped nowhere in particular: treat it as a
+                                // click, which is what it looked like.
+                                void addText({
+                                  ...common,
+                                  start_sec: playhead,
+                                  end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
+                                  x: tpl.x, y: tpl.y,
+                                  lane: Math.min(9, projectTexts.length),
+                                });
+                              };
+                              window.addEventListener("pointermove", move);
+                              window.addEventListener("pointerup", up);
+                            }}
+                            className="h-[62px] px-2 rounded-lg flex items-center justify-center overflow-hidden transition-all disabled:opacity-40 cursor-grab"
+                            style={{ background: "oklch(0.18 0.01 285)", border: "1px solid var(--bd-card)" }}
+                          >
+                            {/* The line as it will look, on a dark tile. Six
+                                buttons reading Title, Subtitle, Banner all look
+                                identical; the thing itself does not. */}
+                            <span className="truncate"
+                              style={{
+                                color: tpl.colour,
+                                fontWeight: 700,
+                                fontSize: `${Math.max(11, Math.round(tpl.size * 145))}px`,
+                                ...textStyleCss(tpl.style, tpl.bg, tpl.bgOpacity),
+                              }}>
+                              {tpl.content}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Every line, so one can be picked without hunting for it on
+                      the preview, which is where a line placed off-playhead is
+                      not drawn at all. */}
+                  {projectTexts.length > 0 && (
+                    <div className="mt-3 space-y-1.5">
+                      {projectTexts.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setSelectedText(t.id === selectedText ? null : t.id)}
+                          disabled={assembling}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs truncate transition-all disabled:opacity-40 cursor-pointer"
+                          style={selectedText === t.id
+                            ? { background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }
+                            : { background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+                        >
+                          {t.content}
+                          <span style={{ color: "var(--c-40)" }}>
+                            {` · ${fmtClock(t.start_sec)} to ${fmtClock(t.end_sec)}`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedText && (() => {
+                    const t = projectTexts.find((x) => x.id === selectedText);
+                    if (!t) return null;
+                    return (
+                      <div data-overlay-keep className="mt-3 rounded-xl px-3 py-2.5 space-y-2.5"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
+                            Selected line
+                          </p>
+                          <button type="button" onClick={() => void removeText(t.id)} disabled={assembling}
+                            className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+                            Remove
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={t.content}
+                          maxLength={200}
+                          disabled={assembling}
+                          onChange={(e) => updateText(t.id, { content: e.target.value })}
+                          placeholder="Type your text…"
+                          className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none disabled:opacity-40"
+                          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)", color: "var(--c-80)" }}
+                        />
+
+                        {/* Style, colour and background fold away.
+                            Unfolded they are three grids of options for a
+                            choice already made, and the panel is taller than
+                            the preview it describes. The header carries the
+                            current value, so folded still answers "what is it
+                            set to". One open at a time, for the same reason. */}
+                        {(() => {
+                          const rowCls = "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-40 cursor-pointer";
+                          const rowStyle = { background: "var(--bg-card)", border: "1px solid var(--bd-card)" };
+                          const labelCls = "text-[11px] uppercase tracking-wider font-semibold";
+                          const styleName = TEXT_STYLES.find((x) => x.id === t.style)?.label ?? t.style;
+                          const toggle = (k: "style" | "colour" | "bg") =>
+                            setTextSection((cur) => (cur === k ? null : k));
+                          return (
+                            <div className="space-y-1.5">
+                              <button type="button" disabled={assembling} className={rowCls} style={rowStyle}
+                                onClick={() => toggle("style")}>
+                                <span className={labelCls} style={{ color: "var(--c-40)" }}>Style</span>
+                                <span className="flex items-center gap-1.5">
+                                  {/* The name in its own treatment, so the row
+                                      shows the thing rather than naming it. */}
+                                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded"
+                                    style={{ background: "oklch(0.18 0.01 285)", color: "#FFFFFF", ...glyphCss(t.style) }}>
+                                    {styleName}
+                                  </span>
+                                  {textSection === "style" ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                </span>
+                              </button>
+                              {textSection === "style" && (
+                                <div className="flex flex-wrap gap-1.5 px-0.5 pb-1">
+                                  {TEXT_STYLES.map(({ id, label }) => (
+                                    <button key={id} type="button" disabled={assembling}
+                                      onClick={() => updateText(t.id, { style: id })}
+                                      title={label}
+                                      className="px-2 py-1 rounded-lg text-[11px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+                                      style={{
+                                        background: "oklch(0.18 0.01 285)",
+                                        border: `1px solid ${t.style === id ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
+                                        color: "#FFFFFF",
+                                        ...glyphCss(id),
+                                      }}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              <button type="button" disabled={assembling} className={rowCls} style={rowStyle}
+                                onClick={() => toggle("colour")}>
+                                <span className={labelCls} style={{ color: "var(--c-40)" }}>Colour</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-4 h-4 rounded"
+                                    style={{ background: t.colour, border: "1px solid var(--bd-card)" }} />
+                                  {textSection === "colour" ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                </span>
+                              </button>
+                              {textSection === "colour" && (
+                                <div className="grid grid-cols-10 gap-1 px-0.5 pb-1">
+                                  {TEXT_COLOURS.map((c) => (
+                                    <button key={c} type="button" disabled={assembling}
+                                      onClick={() => updateText(t.id, { colour: c })}
+                                      aria-label={`Colour ${c}`}
+                                      className="w-full aspect-square rounded-md transition-all disabled:opacity-40 cursor-pointer"
+                                      style={{
+                                        background: c,
+                                        border: t.colour.toLowerCase() === c.toLowerCase()
+                                          ? "2px solid oklch(0.72 0.25 285)"
+                                          : "1px solid var(--bd-card)",
+                                      }} />
+                                  ))}
+                                </div>
+                              )}
+
+                              <button type="button" disabled={assembling} className={rowCls} style={rowStyle}
+                                onClick={() => toggle("bg")}>
+                                <span className={labelCls} style={{ color: "var(--c-40)" }}>Background</span>
+                                <span className="flex items-center gap-1.5">
+                                  {t.bg_colour ? (
+                                    <span className="w-4 h-4 rounded"
+                                      style={{ background: hexToRgba(t.bg_colour, t.bg_opacity), border: "1px solid var(--bd-card)" }} />
+                                  ) : (
+                                    <span className="text-[11px]" style={{ color: "var(--c-50)" }}>None</span>
+                                  )}
+                                  {textSection === "bg" ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                </span>
+                              </button>
+                              {textSection === "bg" && (
+                                <div className="px-0.5 pb-1 space-y-2">
+                                  <div className="grid grid-cols-10 gap-1">
+                                    {/* None first: most text wants none, and it
+                                        is the only option that is an absence
+                                        rather than a colour. */}
+                                    <button type="button" disabled={assembling}
+                                      onClick={() => updateText(t.id, { bg_colour: null })}
+                                      aria-label="No background"
+                                      className="w-full aspect-square rounded-md text-[9px] font-medium transition-all disabled:opacity-40 cursor-pointer"
+                                      style={{
+                                        background: "var(--bg-card)",
+                                        border: `1px solid ${t.bg_colour ? "var(--bd-card)" : "oklch(0.72 0.25 285)"}`,
+                                        color: "var(--c-55)",
+                                      }}>
+                                      None
+                                    </button>
+                                    {TEXT_COLOURS.map((c) => (
+                                      <button key={`bg-${c}`} type="button" disabled={assembling}
+                                        onClick={() => updateText(t.id, { bg_colour: c })}
+                                        aria-label={`Background ${c}`}
+                                        className="w-full aspect-square rounded-md transition-all disabled:opacity-40 cursor-pointer"
+                                        style={{
+                                          background: c,
+                                          border: t.bg_colour?.toLowerCase() === c.toLowerCase()
+                                            ? "2px solid oklch(0.72 0.25 285)"
+                                            : "1px solid var(--bd-card)",
+                                        }} />
+                                    ))}
+                                  </div>
+                                  {/* Only once there is a panel to be more or
+                                      less solid. */}
+                                  {t.bg_colour && (
+                                    <div className="flex items-center gap-2">
+                                      <span className={labelCls} style={{ color: "var(--c-40)" }}>Opacity</span>
+                                      <input
+                                        type="range" min={0} max={1} step={0.05}
+                                        value={t.bg_opacity}
+                                        disabled={assembling}
+                                        onChange={(e) => updateText(t.id, { bg_opacity: Number(e.target.value) }, false)}
+                                        onPointerUp={(e) => updateText(t.id, { bg_opacity: Number((e.target as HTMLInputElement).value) })}
+                                        className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                                      />
+                                      <span className="shrink-0 w-9 text-right text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                                        {Math.round(t.bg_opacity * 100)}%
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Size stays open. It is one control, it is the
+                                  one most often reached for, and folding it
+                                  would cost a click to save no height. */}
+                              <div className="flex items-center gap-2 px-2.5 pt-1">
+                                <span className={labelCls} style={{ color: "var(--c-40)" }}>Size</span>
+                                <input
+                                  type="range" min={0.02} max={0.2} step={0.005}
+                                  value={t.size}
+                                  disabled={assembling}
+                                  onChange={(e) => updateText(t.id, { size: Number(e.target.value) }, false)}
+                                  onPointerUp={(e) => updateText(t.id, { size: Number((e.target as HTMLInputElement).value) })}
+                                  className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                                />
+                                <span className="shrink-0 w-9 text-right text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                                  {Math.round(t.size * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        <p className="text-xs" style={{ color: "var(--c-38)" }}>
+                          Drag it on the preview to move it, or its block on the timeline to retime it.
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </>
+                ) : effectsTab === "elements" ? (
                 <>
                   {/* Only while the tab has nothing on it. Once elements are
                       placed the timeline below is showing them, and a count of
@@ -3927,6 +4844,61 @@ export default function AssemblePage({ params }: PageProps) {
                 </>
                 ) : effectsTab === "sound" ? (
                 <>
+                  {selectedSound && (() => {
+                    const snd = projectSounds.find((x) => x.id === selectedSound);
+                    if (!snd) return null;
+                    const name = SOUND_EFFECTS.find((x) => x.id === snd.sound)?.label ?? snd.sound;
+                    return (
+                      <div data-overlay-keep className="mb-3 rounded-xl px-3 py-2.5 space-y-2.5"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold" style={{ color: "oklch(0.75 0.15 145)" }}>
+                            {name}
+                            <span className="font-normal" style={{ color: "var(--c-40)" }}>
+                              {` · at ${fmtClock(snd.at_sec)}`}
+                            </span>
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => playSound(snd.sound, snd.volume, snd.pitch)}
+                              disabled={assembling}
+                              className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+                              Play
+                            </button>
+                            <button type="button" onClick={() => void removeSound(snd.id)} disabled={assembling}
+                              className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                        {/* Level and pitch, the two things a placed sound has
+                            beyond when it happens. Committed on release, so a
+                            drag is not a write per frame. */}
+                        {([["Level", "volume", 0, 2, snd.volume],
+                           ["Pitch", "pitch", 0.5, 2, snd.pitch]] as const).map(([label, key, lo, hi, val]) => (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="shrink-0 w-10 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                              {label}
+                            </span>
+                            <input
+                              type="range" min={lo} max={hi} step={0.05}
+                              value={val}
+                              disabled={assembling}
+                              onChange={(e) => updateSound(snd.id, { [key]: Number(e.target.value) }, false)}
+                              onPointerUp={(e) => {
+                                const v = Number((e.target as HTMLInputElement).value);
+                                updateSound(snd.id, { [key]: v });
+                                playSound(snd.sound, key === "volume" ? v : snd.volume, key === "pitch" ? v : snd.pitch);
+                              }}
+                              className="flex-1 min-w-0 accent-[oklch(0.65_0.15_145)] disabled:opacity-40"
+                            />
+                            <span className="shrink-0 w-10 text-right text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                              {key === "volume" ? `${Math.round(val * 100)}%` : `${val.toFixed(2)}x`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {/* A sound belongs to a beat, not to the project: it is an
                       accent on a moment. So this tab needs one selected, and
                       says so rather than quietly doing nothing. */}
@@ -3991,6 +4963,7 @@ export default function AssemblePage({ params }: PageProps) {
                     </div>
                   </div>
                   <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))" }}>
+                    {/* placed-sound editor renders above; tiles follow */}
                     {SOUND_EFFECTS.map((snd) => {
                       const active = editingBeat
                         ? editingBeat.soundEffect === snd.id
@@ -4000,7 +4973,41 @@ export default function AssemblePage({ params }: PageProps) {
                           key={snd.id}
                           type="button"
                           disabled={assembling}
-                          title={snd.hint}
+                          title={`${snd.hint} · drag onto the timeline to place it`}
+                          // Dragging places the sound at a moment; clicking
+                          // still auditions it and still sets the selected
+                          // beat's sound. A tile that only did one of those
+                          // would lose the other.
+                          onPointerDown={(e) => {
+                            if (assembling) return;
+                            setDraggingSound({ id: snd.id, x: e.clientX, y: e.clientY });
+                            const move = (ev: PointerEvent) => setDraggingSound({ id: snd.id, x: ev.clientX, y: ev.clientY });
+                            const up = (ev: PointerEvent) => {
+                              window.removeEventListener("pointermove", move);
+                              window.removeEventListener("pointerup", up);
+                              setDraggingSound(null);
+                              const view = timelineViewportRef.current;
+                              const strip = timelineStripRef.current;
+                              if (!view || !strip) return;
+                              const v = view.getBoundingClientRect();
+                              if (ev.clientX < v.left || ev.clientX > v.right || ev.clientY < v.top || ev.clientY > v.bottom) return;
+                              // Timed off the strip, which is as wide as the
+                              // whole video, and hit-tested against the
+                              // viewport, which is what is on screen.
+                              const r = strip.getBoundingClientRect();
+                              const own = shapeOf(snd.id);
+                              const rowsTop = soundRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
+                              void addSound({
+                                sound: snd.id,
+                                at_sec: Math.max(0, (ev.clientX - r.left) / pxPerSecond),
+                                volume: own.volume,
+                                pitch: own.pitch,
+                                lane: Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H))),
+                              });
+                            };
+                            window.addEventListener("pointermove", move);
+                            window.addEventListener("pointerup", up);
+                          }}
                           onClick={() => {
                             // Always playable, even with nothing selected: a
                             // greyed-out row of names reads as broken, and
@@ -4682,13 +5689,20 @@ export default function AssemblePage({ params }: PageProps) {
 
               <div
                 ref={timelineViewportRef}
-                className={`overflow-x-auto rounded-xl px-2 pt-1 pb-2 ${timelineLocked ? "cursor-not-allowed select-none" : ""}`}
+                className={`overflow-auto rounded-xl px-2 pt-1 pb-2 ${timelineLocked ? "cursor-not-allowed select-none" : ""}`}
                 onPointerDownCapture={timelineLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
                 onClickCapture={timelineLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
                 style={{
                   background: "oklch(1 0 0 / 0.11)",
                   border: "1px solid oklch(1 0 0 / 0.13)",
                   opacity: timelineLocked ? 0.55 : 1,
+                  // Text, elements, clips and sound stacked can run past a
+                  // screen, and a timeline you have to scroll the page to see
+                  // the end of is not a timeline. It scrolls inside itself now,
+                  // both ways, and the ruler goes with it: a fixed header would
+                  // need the rows to scroll in a separate box, which then has
+                  // to be kept in step horizontally with the header.
+                  maxHeight: "min(calc(50vh - 80px), 340px)",
                 }}
               >
                 <div ref={timelineStripRef} style={{ width: stripWidth }}>
@@ -4747,6 +5761,203 @@ export default function AssemblePage({ params }: PageProps) {
                     })()}
                   </div>
 
+                  {/* Elements and text sit above the clips, not below them.
+                      They are drawn over the picture, so the track order now
+                      matches the stacking order: what is on top on screen is
+                      on top here. */}
+                  {/* Text on its own tracks, above the elements. Same block,
+                      same drag, because retiming a line and retiming a button
+                      are the same gesture. */}
+                  {projectTexts.length > 0 && (
+                    <div ref={textRowsRef} className="relative mt-[3px]" style={{ height: textLaneCount * LANE_H - 3 }}>
+                      {Array.from({ length: textLaneCount }, (_, i) => (
+                        <div key={i} className="absolute inset-x-0 rounded-md"
+                          style={{
+                            top: i * LANE_H, height: LANE_H - 3,
+                            background: "oklch(0.75 0.17 60 / 0.06)",
+                            borderLeft: "2px solid oklch(0.75 0.17 60 / 0.45)",
+                            // Hatched like the sound tracks, but leaning the
+                            // other way. Same angle in both would make the two
+                            // sections read as one long striped band.
+                            backgroundImage:
+                              "repeating-linear-gradient(-45deg, oklch(0.75 0.17 60 / 0.08) 0 6px, transparent 6px 12px)",
+                          }} />
+                      ))}
+                      {projectTexts.map((t) => {
+                        const left = t.start_sec * pxPerSecond;
+                        const width = Math.max(12, (t.end_sec - t.start_sec) * pxPerSecond);
+                        const picked = selectedText === t.id;
+                        const drag = (mode: "move" | "start" | "end") => (ev: React.PointerEvent) => {
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          setSelectedText(t.id);
+                          if (assembling) return;
+                          const originX = ev.clientX;
+                          const originY = ev.clientY;
+                          const from = t.start_sec;
+                          const to = t.end_sec;
+                          const lane0 = t.lane ?? 0;
+                          const at = (m: PointerEvent) => {
+                            const delta = (m.clientX - originX) / pxPerSecond;
+                            if (mode === "move") {
+                              const span = to - from;
+                              const start = Math.max(0, Math.min(timelineTotal - span, from + delta));
+                              // Vertical movement changes the track, so one
+                              // gesture both retimes and restacks.
+                              const lane = Math.max(0, Math.min(9, lane0 + Math.round((m.clientY - originY) / LANE_H)));
+                              return { start_sec: start, end_sec: start + span, lane };
+                            }
+                            if (mode === "start") {
+                              // Never past its own end: a block dragged inside
+                              // out is rejected by the table anyway.
+                              return { start_sec: Math.max(0, Math.min(to - 0.3, from + delta)) };
+                            }
+                            return { end_sec: Math.max(from + 0.3, Math.min(timelineTotal, to + delta)) };
+                          };
+                          const move = (m: PointerEvent) => updateText(t.id, at(m), false);
+                          const up = (m: PointerEvent) => {
+                            window.removeEventListener("pointermove", move);
+                            window.removeEventListener("pointerup", up);
+                            updateText(t.id, at(m));
+                          };
+                          window.addEventListener("pointermove", move);
+                          window.addEventListener("pointerup", up);
+                        };
+                        return (
+                          <div
+                            key={t.id}
+                            className="absolute flex items-center gap-1 px-1.5 rounded-md touch-none cursor-grab overflow-hidden"
+                            style={{
+                              left, width,
+                              top: (t.lane ?? 0) * LANE_H,
+                              height: LANE_H - 3,
+                              // Orange for words, green for sound, purple for
+                              // the elements: the track a block is on says what
+                              // kind of thing it is before its label is read.
+                              background: picked ? "oklch(0.72 0.18 60 / 0.34)" : "oklch(0.72 0.18 60 / 0.18)",
+                              border: `1px solid ${picked ? "oklch(0.75 0.17 60)" : "oklch(0.75 0.17 60 / 0.45)"}`,
+                            }}
+                            onPointerDown={drag("move")}
+                          >
+                            <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
+                              {t.content}
+                            </span>
+                            {/* Trim handles, wide enough to hit at any zoom. */}
+                            <span onPointerDown={drag("start")}
+                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none" />
+                            <span onPointerDown={drag("end")}
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Elements, on their own tracks below the text: they are
+                      pictures over the video, so they belong nearer it than the
+                      sound does. Each block is draggable along the strip and
+                      trimmable at either end. */}
+                  {projectElements.length > 0 && (
+                    <div ref={elementRowsRef} className="relative mt-[3px]" style={{ height: elementLaneCount * LANE_H - 3 }}>
+                      {/* One faint row per track, so an empty one still reads
+                          as somewhere a block can be dropped. */}
+                      {Array.from({ length: elementLaneCount }, (_, i) => (
+                        <div key={i} className="absolute inset-x-0 rounded-md"
+                          style={{
+                            top: i * LANE_H, height: LANE_H - 3,
+                            background: "oklch(0.72 0.25 285 / 0.05)",
+                            borderLeft: "2px solid oklch(0.72 0.25 285 / 0.4)",
+                          }} />
+                      ))}
+                      {projectElements.map((el) => {
+                        const left = el.start_sec * pxPerSecond;
+                        const width = Math.max(12, (el.end_sec - el.start_sec) * pxPerSecond);
+                        const picked = selectedElement === el.id;
+                        const drag = (mode: "move" | "start" | "end") => (ev: React.PointerEvent) => {
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          setSelectedElement(el.id);
+                          if (assembling) return;
+                          const originX = ev.clientX;
+                          const originY = ev.clientY;
+                          const from = el.start_sec;
+                          const to = el.end_sec;
+                          const lane0 = el.lane ?? 0;
+                          const at = (m: PointerEvent) => {
+                            const delta = (m.clientX - originX) / pxPerSecond;
+                            if (mode === "move") {
+                              const span = to - from;
+                              const start = Math.max(0, Math.min(timelineTotal - span, from + delta));
+                              // Vertical movement changes the track, so one
+                              // gesture both retimes and restacks.
+                              const lane = Math.max(0, Math.min(9, lane0 + Math.round((m.clientY - originY) / LANE_H)));
+                              return { start_sec: start, end_sec: start + span, lane };
+                            }
+                            if (mode === "start") {
+                              const start = Math.max(0, Math.min(to - 0.3, from + delta));
+                              return { start_sec: start, end_sec: to };
+                            }
+                            const end = Math.max(from + 0.3, Math.min(timelineTotal, to + delta));
+                            return { start_sec: from, end_sec: end };
+                          };
+                          const move = (m: PointerEvent) => updateElement(el.id, at(m), false);
+                          const up = (m: PointerEvent) => {
+                            window.removeEventListener("pointermove", move);
+                            window.removeEventListener("pointerup", up);
+                            updateElement(el.id, at(m));
+                          };
+                          window.addEventListener("pointermove", move);
+                          window.addEventListener("pointerup", up);
+                        };
+                        return (
+                          <div
+                            key={el.id}
+                            onPointerDown={drag("move")}
+                            title={`${ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element} · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
+                            className="absolute h-8 rounded-md flex items-center gap-1.5 px-2 cursor-grab touch-none overflow-hidden"
+                            style={{
+                              left, width,
+                              // Its own row when it overlaps another: two blocks
+                              // on one line would hide each other, and stacking
+                              // is what "layers" means on a timeline.
+                              top: (el.lane ?? 0) * LANE_H,
+                              background: picked ? "oklch(0.72 0.25 285 / 0.3)" : "oklch(0.72 0.25 285 / 0.16)",
+                              border: `1px solid ${picked ? "oklch(0.72 0.25 285)" : "oklch(0.72 0.25 285 / 0.4)"}`,
+                            }}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/elements/${el.element}.png`} alt="" className="h-4 w-auto shrink-0 pointer-events-none" />
+                            <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
+                              {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                            </span>
+                            {/* Trim handles, wide enough to hit at any zoom. */}
+                            <span onPointerDown={drag("start")}
+                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
+                            <span onPointerDown={drag("end")}
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
+                            {/* Remove, on the block itself. Shown on the
+                                selected one and on hover, because a × on every
+                                block at once is a row of noise. Delete works
+                                too, once one is selected. */}
+                            {width > 44 && (
+                              <button
+                                type="button"
+                                onPointerDown={(ev) => ev.stopPropagation()}
+                                onClick={(ev) => { ev.stopPropagation(); void removeElement(el.id); }}
+                                title="Remove this element"
+                                aria-label="Remove this element"
+                                className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity ${picked ? "" : "opacity-0 hover:opacity-100"}`}
+                                style={{ background: "oklch(0 0 0 / 0.65)", color: "white" }}
+                              >
+                                <X size={9} strokeWidth={3} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   {/* The beats themselves. The playhead spans this and the
                       audio below it, so the tracks read as one thing at one
                       moment in time. */}
@@ -4894,102 +6105,120 @@ export default function AssemblePage({ params }: PageProps) {
                     }); })()}
                   </div>
 
-                  {/* Elements, on their own track above the audio: they are
-                      pictures over the video, so they belong nearer it than the
-                      sound does. Each block is draggable along the strip and
-                      trimmable at either end. */}
-                  {projectElements.length > 0 && (
-                    <div ref={elementRowsRef} className="relative mt-[3px]" style={{ height: elementLaneCount * LANE_H - 3 }}>
-                      {/* One faint row per track, so an empty one still reads
-                          as somewhere a block can be dropped. */}
-                      {Array.from({ length: elementLaneCount }, (_, i) => (
+                  {/* Placed sounds, under the text. A moment rather than a
+                      span: a sound has a length of its own that the timeline
+                      does not get to change, so the block is a marker and only
+                      moves sideways. */}
+                  {projectSounds.length > 0 && (
+                    <div ref={soundRowsRef} className="relative mt-[3px]" style={{ height: soundLaneCount * LANE_H - 3 }}>
+                      {Array.from({ length: soundLaneCount }, (_, i) => (
                         <div key={i} className="absolute inset-x-0 rounded-md"
-                          style={{ top: i * LANE_H, height: LANE_H - 3, background: "oklch(1 0 0 / 0.03)" }} />
+                          style={{
+                            top: i * LANE_H, height: LANE_H - 3,
+                            background: "oklch(0.65 0.15 145 / 0.05)",
+                            borderLeft: "2px solid oklch(0.65 0.15 145 / 0.5)",
+                            // Hatched, so an audio track is not mistaken for a
+                            // picture track at a glance. The stripes are faint
+                            // enough to read under a block sitting on them.
+                            backgroundImage:
+                              "repeating-linear-gradient(45deg, oklch(0.65 0.15 145 / 0.07) 0 6px, transparent 6px 12px)",
+                          }} />
                       ))}
-                      {projectElements.map((el) => {
-                        const left = el.start_sec * pxPerSecond;
-                        const width = Math.max(12, (el.end_sec - el.start_sec) * pxPerSecond);
-                        const picked = selectedElement === el.id;
-                        const drag = (mode: "move" | "start" | "end") => (ev: React.PointerEvent) => {
-                          ev.preventDefault();
-                          ev.stopPropagation();
-                          setSelectedElement(el.id);
-                          if (assembling) return;
-                          const originX = ev.clientX;
-                          const originY = ev.clientY;
-                          const from = el.start_sec;
-                          const to = el.end_sec;
-                          const lane0 = el.lane ?? 0;
-                          const at = (m: PointerEvent) => {
-                            const delta = (m.clientX - originX) / pxPerSecond;
-                            if (mode === "move") {
-                              const span = to - from;
-                              const start = Math.max(0, Math.min(timelineTotal - span, from + delta));
-                              // Vertical movement changes the track, so one
-                              // gesture both retimes and restacks.
-                              const lane = Math.max(0, Math.min(9, lane0 + Math.round((m.clientY - originY) / LANE_H)));
-                              return { start_sec: start, end_sec: start + span, lane };
-                            }
-                            if (mode === "start") {
-                              const start = Math.max(0, Math.min(to - 0.3, from + delta));
-                              return { start_sec: start, end_sec: to };
-                            }
-                            const end = Math.max(from + 0.3, Math.min(timelineTotal, to + delta));
-                            return { start_sec: from, end_sec: end };
-                          };
-                          const move = (m: PointerEvent) => updateElement(el.id, at(m), false);
-                          const up = (m: PointerEvent) => {
-                            window.removeEventListener("pointermove", move);
-                            window.removeEventListener("pointerup", up);
-                            updateElement(el.id, at(m));
-                          };
-                          window.addEventListener("pointermove", move);
-                          window.addEventListener("pointerup", up);
-                        };
+                      {projectSounds.map((snd) => {
+                        const picked = selectedSound === snd.id;
+                        const natural = soundSeconds(snd.sound);
+                        const plays = snd.duration_sec ?? natural;
+                        // Drawn at what it plays for, with a floor so a 78ms
+                        // tick is still something you can grab.
+                        const width = Math.max(28, plays * pxPerSecond);
                         return (
                           <div
-                            key={el.id}
-                            onPointerDown={drag("move")}
-                            title={`${ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element} · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
-                            className="absolute h-8 rounded-md flex items-center gap-1.5 px-2 cursor-grab touch-none overflow-hidden"
+                            key={snd.id}
+                            data-overlay={snd.id}
+                            className="absolute flex items-center gap-1 px-1.5 rounded-md touch-none cursor-grab overflow-hidden"
                             style={{
-                              left, width,
-                              // Its own row when it overlaps another: two blocks
-                              // on one line would hide each other, and stacking
-                              // is what "layers" means on a timeline.
-                              top: (el.lane ?? 0) * LANE_H,
-                              background: picked ? "oklch(0.72 0.25 285 / 0.3)" : "oklch(0.72 0.25 285 / 0.16)",
-                              border: `1px solid ${picked ? "oklch(0.72 0.25 285)" : "oklch(0.72 0.25 285 / 0.4)"}`,
+                              left: snd.at_sec * pxPerSecond,
+                              width,
+                              top: (snd.lane ?? 0) * LANE_H,
+                              height: LANE_H - 3,
+                              background: picked ? "oklch(0.65 0.15 145 / 0.3)" : "oklch(0.65 0.15 145 / 0.16)",
+                              border: `1px solid ${picked ? "oklch(0.65 0.15 145)" : "oklch(0.65 0.15 145 / 0.4)"}`,
+                            }}
+                            onPointerDown={(ev) => {
+                              ev.preventDefault();
+                              ev.stopPropagation();
+                              setSelectedSound(snd.id);
+                              if (assembling) return;
+                              const originX = ev.clientX;
+                              const originY = ev.clientY;
+                              const from = snd.at_sec;
+                              const lane0 = snd.lane ?? 0;
+                              const at = (m: PointerEvent) => ({
+                                at_sec: Math.max(0, Math.min(timelineTotal, from + (m.clientX - originX) / pxPerSecond)),
+                                lane: Math.max(0, Math.min(9, lane0 + Math.round((m.clientY - originY) / LANE_H))),
+                              });
+                              const move = (m: PointerEvent) => updateSound(snd.id, at(m), false);
+                              const up = (m: PointerEvent) => {
+                                window.removeEventListener("pointermove", move);
+                                window.removeEventListener("pointerup", up);
+                                updateSound(snd.id, at(m));
+                              };
+                              window.addEventListener("pointermove", move);
+                              window.addEventListener("pointerup", up);
                             }}
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={`/elements/${el.element}.png`} alt="" className="h-4 w-auto shrink-0 pointer-events-none" />
+                            <Volume2 size={10} className="shrink-0 pointer-events-none" style={{ color: "oklch(0.75 0.15 145)" }} />
                             <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
-                              {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                              {SOUND_EFFECTS.find((x) => x.id === snd.sound)?.label ?? snd.sound}
                             </span>
-                            {/* Trim handles, wide enough to hit at any zoom. */}
-                            <span onPointerDown={drag("start")}
-                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
-                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
-                            <span onPointerDown={drag("end")}
-                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
-                              style={{ background: "oklch(0.72 0.25 285 / 0.6)" }} />
-                            {/* Remove, on the block itself. Shown on the
-                                selected one and on hover, because a × on every
-                                block at once is a row of noise. Delete works
-                                too, once one is selected. */}
-                            {width > 44 && (
-                              <button
-                                type="button"
-                                onPointerDown={(ev) => ev.stopPropagation()}
-                                onClick={(ev) => { ev.stopPropagation(); void removeElement(el.id); }}
-                                title="Remove this element"
-                                aria-label="Remove this element"
-                                className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full flex items-center justify-center transition-opacity ${picked ? "" : "opacity-0 hover:opacity-100"}`}
-                                style={{ background: "oklch(0 0 0 / 0.65)", color: "white" }}
-                              >
-                                <X size={9} strokeWidth={3} />
-                              </button>
+                            {picked && !assembling && (
+                              <>
+                                {/* The right edge sets how long it plays for.
+                                    In from the file's own length is a trim; out
+                                    past it is a stretch, which the worker does
+                                    with atempo so a longer sound is not also a
+                                    lower one. Four times is where slowing an
+                                    effect stops sounding like the effect.
+                                    Double-click restores the file's length. */}
+                                <span
+                                  onPointerDown={(ev) => {
+                                    ev.preventDefault();
+                                    ev.stopPropagation();
+                                    const originX = ev.clientX;
+                                    const at = (m: PointerEvent) => Math.max(0.05, Math.min(Math.min(30, natural * 4),
+                                      plays + (m.clientX - originX) / pxPerSecond));
+                                    const move = (m: PointerEvent) => updateSound(snd.id, { duration_sec: at(m) }, false);
+                                    const up = (m: PointerEvent) => {
+                                      window.removeEventListener("pointermove", move);
+                                      window.removeEventListener("pointerup", up);
+                                      // Back to null at full length, so a
+                                      // regenerated sound gets its new length
+                                      // rather than yesterday's number.
+                                      // Null only at exactly the file's own
+                                      // length, so a regenerated sound gets its
+                                      // new length rather than yesterday's.
+                                      const v = at(m);
+                                      updateSound(snd.id, { duration_sec: Math.abs(v - natural) < 0.02 ? null : v });
+                                    };
+                                    window.addEventListener("pointermove", move);
+                                    window.addEventListener("pointerup", up);
+                                  }}
+                                  onDoubleClick={(ev) => { ev.stopPropagation(); updateSound(snd.id, { duration_sec: null }); }}
+                                  title="Drag to change how long it plays"
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize touch-none"
+                                  style={{ background: "oklch(0.65 0.15 145 / 0.7)" }}
+                                />
+                                <button
+                                  type="button"
+                                  aria-label="Remove this sound"
+                                  onPointerDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+                                  onClick={(ev) => { ev.stopPropagation(); void removeSound(snd.id); }}
+                                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center cursor-pointer"
+                                  style={{ background: "oklch(0.58 0.22 25)", border: "2px solid white", color: "white" }}
+                                >
+                                  <X size={8} strokeWidth={4} />
+                                </button>
+                              </>
                             )}
                           </div>
                         );
@@ -5268,6 +6497,8 @@ export default function AssemblePage({ params }: PageProps) {
             <p>
               {captionsEnabled ? `Captions on · ${captionsStyle}` : "No captions"}
               {projectElements.length ? ` · ${projectElements.length} element${projectElements.length === 1 ? "" : "s"}` : ""}
+              {projectTexts.length ? ` · ${projectTexts.length} text${projectTexts.length === 1 ? "" : "s"}` : ""}
+              {projectSounds.length ? ` · ${projectSounds.length} placed sound${projectSounds.length === 1 ? "" : "s"}` : ""}
               {beats.some((b) => b.soundEffect) ? ` · ${beats.filter((b) => b.soundEffect).length} sound${beats.filter((b) => b.soundEffect).length === 1 ? "" : "s"}` : ""}
             </p>
           </div>

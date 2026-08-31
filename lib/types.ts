@@ -126,6 +126,44 @@ export interface ProjectElement {
   lane: number;
 }
 
+/** A line of text placed on the assembled video. Shares the timeline with
+ *  ProjectElement, and differs by carrying content rather than a name. */
+export interface ProjectText {
+  id: string;
+  content: string;
+  start_sec: number;
+  end_sec: number;
+  x: number;
+  y: number;
+  /** Font height as a fraction of the frame height. */
+  size: number;
+  colour: string;
+  /** Kept as the union rather than a bare string so a treatment the worker
+   *  cannot draw is a type error here, not a silent fallback there. */
+  style: "plain" | "outline" | "box" | "shadow" | "box-light" | "glow" | "heavy"
+    | "thin" | "outline-white" | "glow-warm" | "shadow-soft" | "shadow-hard"
+    | "poster" | "lift" | "side" | "faded" | "glow-cool" | "edge-red";
+  /** Panel behind the text. Null is no panel. */
+  bg_colour: string | null;
+  bg_opacity: number;
+  /** Which track it sits on. Higher draws over lower. */
+  lane: number;
+}
+
+/** A sound placed at a moment on the finished video, rather than owned by a
+ *  beat. Shares the timeline with elements and text. */
+export interface ProjectSound {
+  id: string;
+  sound: string;
+  at_sec: number;
+  /** Relative to the project's sfx_volume, which stays the master. */
+  volume: number;
+  pitch: number;
+  /** Seconds of the file to play. Null plays all of it. */
+  duration_sec: number | null;
+  lane: number;
+}
+
 export interface Beat {
   beatNumber: number;
   scriptSegment: string;
