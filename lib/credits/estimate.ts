@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCreditRates, creditsForUnits, roundCredits } from "@/lib/pricing";
 import { getPoyoImageModel, poyoResolutionCredits } from "@/lib/poyo/imageModels";
+import { seedPrice } from "@/lib/pricing/seed-prices";
 import { getMinKieCreditsByModel, getMinCostPerSecByModel, observedFor } from "@/lib/costs";
 import { relativeResolutionMultiplier } from "@/lib/pricing/resolution";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -115,6 +116,26 @@ function scaleFor(input: RunEstimateInput): number {
   return relativeResolutionMultiplier(input.kind, input.resolution, offeredResolutions(input));
 }
 
+/**
+ * Pick between what the ledger measured and what the seed table lists.
+ *
+ * Both can be exact for this resolution or a blend to be scaled, and an exact
+ * figure of either kind beats a scaled one. Between two exact figures the
+ * measurement wins, because it is what was charged rather than what was
+ * published. Returns the units to bill, already scaled where scaling applies.
+ */
+function pickUnits(
+  observed: { value: number; exact: boolean } | null | undefined,
+  seed: { value: number; exact: boolean } | null | undefined,
+  scale: number,
+): number | null {
+  if (observed?.exact) return observed.value;
+  if (seed?.exact) return seed.value;
+  if (observed) return observed.value * scale;
+  if (seed) return seed.value * scale;
+  return null;
+}
+
 async function perUnitCredits(
   input: RunEstimateInput,
 ): Promise<{ perUnit: number | null; source: RunEstimate["source"] }> {
@@ -141,13 +162,17 @@ async function perUnitCredits(
       ? observedFor(await getMinCostPerSecByModel("video_gen", "poyo"), input.modelId, input.resolution)
       : undefined)
       ?? observedFor(await getMinCostPerSecByModel("video_gen", "kie"), input.modelId, input.resolution);
-    if (!observed || !(seconds > 0)) return { perUnit: null, source: "unknown" };
-    const perSec = observed.exact ? observed.value : observed.value * scaleFor(input);
+    const videoSeed = seedPrice(onPoyo ? "poyo" : "kie", "video", input.modelId, input.resolution);
+    const perSec = pickUnits(observed, videoSeed, scaleFor(input));
+    if (perSec === null || !(seconds > 0)) return { perUnit: null, source: "unknown" };
     // The unit follows whose figure was actually read. observedFor tells us
     // whether the PoYo lookup produced it, so the currency and the rate agree.
-    const fromPoyo = onPoyo && !!observedFor(
+    // The unit follows whose figure was read, and a seed row is filed under the
+    // operator that will serve the run, so PoYo credits are never valued at
+    // KIE's rate or the reverse.
+    const fromPoyo = onPoyo && (!!videoSeed || !!observedFor(
       await getMinCostPerSecByModel("video_gen", "poyo"), input.modelId, input.resolution,
-    );
+    ));
     return {
       perUnit: fromPoyo
         ? creditsForUnits("poyo_credits", perSec * seconds, rates, { model: input.modelId, provider: "poyo" })
@@ -177,7 +202,9 @@ async function perUnitCredits(
     // the flat figure is a cheapest-resolution one that has to be scaled up,
     // and scaling a listed figure would charge twice for the same step.
     const listed = poyoResolutionCredits(model, input.resolution);
-    const units = listed ?? model.credits * scaleFor(input);
+    const units = listed
+      ?? pickUnits(null, seedPrice("poyo", "image", input.modelId, input.resolution), scaleFor(input))
+      ?? model.credits * scaleFor(input);
     return {
       perUnit: creditsForUnits(
         "poyo_credits", units, rates,
@@ -192,9 +219,10 @@ async function perUnitCredits(
     input.modelId,
     input.resolution,
   );
-  if (!observed) return { perUnit: null, source: "unknown" };
-  // Measured at this resolution, or the blend scaled up to it.
-  const units = observed.exact ? observed.value : observed.value * scaleFor(input);
+  const kieSeed = seedPrice("kie", "image", input.modelId, input.resolution);
+  // Measured at this resolution, seeded at it, or a blend scaled up to it.
+  const units = pickUnits(observed, kieSeed, scaleFor(input));
+  if (units === null) return { perUnit: null, source: "unknown" };
   return {
     perUnit: creditsForUnits("kie_credits", units, rates, { model: input.modelId }),
     source: "kie-observed",
