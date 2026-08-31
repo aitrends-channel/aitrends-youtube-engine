@@ -288,3 +288,36 @@ export async function addHeclusCredits(opts: {
   }
   return data === true;
 }
+
+
+/**
+ * Credits refunded to this user in the last few seconds.
+ *
+ * For the balance chip, which flashes a refund rather than letting the number
+ * quietly climb. A balance that goes up on its own is the one movement a
+ * customer has no explanation for, and "held" used to be that explanation:
+ * they could watch the reserve and see it come back. With the reserve no
+ * longer on screen the refund has to announce itself.
+ *
+ * Read from the ledger rather than inferred from a rising balance, because a
+ * top-up raises it too and calling that a refund would be a lie about money.
+ */
+export async function getRecentRefunds(
+  userId: string, withinSeconds = 90,
+): Promise<{ credits: number; at: string } | null> {
+  const since = new Date(Date.now() - withinSeconds * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("credit_ledger")
+    .select("credits, created_at")
+    .eq("user_id", userId)
+    .eq("kind", "refund")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false });
+  if (error || !data?.length) return null;
+  const rows = data as { credits: number; created_at: string }[];
+  const credits = rows.reduce((sum, r) => sum + Number(r.credits || 0), 0);
+  if (!(credits > 0)) return null;
+  // The newest timestamp identifies this batch, so the chip can tell a second
+  // refund from the same one arriving again on the next poll.
+  return { credits, at: rows[0].created_at };
+}

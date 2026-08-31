@@ -160,7 +160,7 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
             <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>
-              credit{credits === 1 ? "" : "s"}{reserved > 0 ? ` · ${reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} in use right now` : ""}
+              credit{credits === 1 ? "" : "s"}
             </span>
           </p>
           {/* The button is always here, so the wallet reads the same as the one

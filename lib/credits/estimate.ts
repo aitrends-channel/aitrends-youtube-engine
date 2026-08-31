@@ -62,6 +62,15 @@ export interface RunEstimate {
   /** False only when the balance is known to be short. Unknown prices and BYO
    *  accounts both report true: neither is a reason to block work. */
   sufficient: boolean;
+  /**
+   * True when the figure came from a price recorded against this exact model
+   * and resolution, rather than a blend scaled by the resolution ladder.
+   *
+   * The hold reads this. An exact figure needs no padding, because there is
+   * nothing to pad against: the number is what the vendor charges. A scaled
+   * one is a guess and keeps its cushion.
+   */
+  exact?: boolean;
   /** What the estimate was built from, for the message and for debugging. */
   source: "poyo-catalog" | "poyo-observed" | "kie-observed" | "video-observed" | "characters" | "step-history" | "unknown" | "byo";
   /** The best model the balance can actually afford for this run, when the
@@ -128,17 +137,17 @@ function pickUnits(
   observed: { value: number; exact: boolean } | null | undefined,
   seed: { value: number; exact: boolean } | null | undefined,
   scale: number,
-): number | null {
-  if (observed?.exact) return observed.value;
-  if (seed?.exact) return seed.value;
-  if (observed) return observed.value * scale;
-  if (seed) return seed.value * scale;
+): { units: number; exact: boolean } | null {
+  if (observed?.exact) return { units: observed.value, exact: true };
+  if (seed?.exact) return { units: seed.value, exact: true };
+  if (observed) return { units: observed.value * scale, exact: false };
+  if (seed) return { units: seed.value * scale, exact: false };
   return null;
 }
 
 async function perUnitCredits(
   input: RunEstimateInput,
-): Promise<{ perUnit: number | null; source: RunEstimate["source"] }> {
+): Promise<{ perUnit: number | null; source: RunEstimate["source"]; exact?: boolean }> {
   const rates = await getCreditRates();
 
   if (input.kind === "video") {
@@ -163,8 +172,9 @@ async function perUnitCredits(
       : undefined)
       ?? observedFor(await getMinCostPerSecByModel("video_gen", "kie"), input.modelId, input.resolution);
     const videoSeed = seedPrice(onPoyo ? "poyo" : "kie", "video", input.modelId, input.resolution);
-    const perSec = pickUnits(observed, videoSeed, scaleFor(input));
-    if (perSec === null || !(seconds > 0)) return { perUnit: null, source: "unknown" };
+    const perSecPick = pickUnits(observed, videoSeed, scaleFor(input));
+    if (perSecPick === null || !(seconds > 0)) return { perUnit: null, source: "unknown" };
+    const perSec = perSecPick.units;
     // The unit follows whose figure was actually read. observedFor tells us
     // whether the PoYo lookup produced it, so the currency and the rate agree.
     // The unit follows whose figure was read, and a seed row is filed under the
@@ -178,6 +188,7 @@ async function perUnitCredits(
         ? creditsForUnits("poyo_credits", perSec * seconds, rates, { model: input.modelId, provider: "poyo" })
         : creditsForUnits("kie_credits", perSec * seconds, rates, { model: input.modelId }),
       source: "video-observed",
+      exact: perSecPick.exact,
     };
   }
 
@@ -194,6 +205,7 @@ async function perUnitCredits(
       return {
         perUnit: creditsForUnits("poyo_credits", units, rates, { model: input.modelId, provider: "poyo" }),
         source: "poyo-observed",
+        exact: measured.exact,
       };
     }
     const model = getPoyoImageModel(input.modelId);
@@ -202,15 +214,16 @@ async function perUnitCredits(
     // the flat figure is a cheapest-resolution one that has to be scaled up,
     // and scaling a listed figure would charge twice for the same step.
     const listed = poyoResolutionCredits(model, input.resolution);
-    const units = listed
-      ?? pickUnits(null, seedPrice("poyo", "image", input.modelId, input.resolution), scaleFor(input))
-      ?? model.credits * scaleFor(input);
+    const seeded = pickUnits(null, seedPrice("poyo", "image", input.modelId, input.resolution), scaleFor(input));
+    const units = listed ?? seeded?.units ?? model.credits * scaleFor(input);
+    const unitsExact = listed !== null || !!seeded?.exact;
     return {
       perUnit: creditsForUnits(
         "poyo_credits", units, rates,
         { model: input.modelId, provider: "poyo" },
       ),
       source: "poyo-catalog",
+      exact: unitsExact,
     };
   }
 
@@ -221,11 +234,13 @@ async function perUnitCredits(
   );
   const kieSeed = seedPrice("kie", "image", input.modelId, input.resolution);
   // Measured at this resolution, seeded at it, or a blend scaled up to it.
-  const units = pickUnits(observed, kieSeed, scaleFor(input));
-  if (units === null) return { perUnit: null, source: "unknown" };
+  const pick = pickUnits(observed, kieSeed, scaleFor(input));
+  if (pick === null) return { perUnit: null, source: "unknown" };
+  const units = pick.units;
   return {
     perUnit: creditsForUnits("kie_credits", units, rates, { model: input.modelId }),
     source: "kie-observed",
+    exact: pick.exact,
   };
 }
 
@@ -267,7 +282,7 @@ export async function estimateRun(input: RunEstimateInput): Promise<RunEstimate>
     return { perUnit: null, total: null, balance: 0, sufficient: true, source: "byo", alternative: null, affordableCount: 0 };
   }
 
-  const [{ perUnit, source }, balance] = await Promise.all([
+  const [{ perUnit, source, exact }, balance] = await Promise.all([
     perUnitCredits(input),
     spendableCredits(input.userId),
   ]);
@@ -282,6 +297,7 @@ export async function estimateRun(input: RunEstimateInput): Promise<RunEstimate>
     balance,
     sufficient,
     source,
+    exact,
     alternative: sufficient ? null : await bestAffordable(input, balance, count),
     affordableCount: perUnit && perUnit > 0 ? Math.floor(balance / perUnit) : 0,
   };

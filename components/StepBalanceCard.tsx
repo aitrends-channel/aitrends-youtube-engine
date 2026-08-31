@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
-import { Plus, RotateCcw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { TopUpOptions } from "@/components/TopUpOptions";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -28,7 +28,6 @@ export function StepBalanceCard() {
   // and ElevenLabs /user hits.
   const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const [picking, setPicking] = useState(false);
-  const [reclaiming, setReclaiming] = useState(false);
   const { data, mutate } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
@@ -69,38 +68,67 @@ export function StepBalanceCard() {
     wasActive.current = hasActivity;
   }, [hasActivity, mutate]);
 
-  // Hand back credits held by runs that never reported anything.
+  // Sweep on the quiet, rather than asking the customer to.
   //
-  // The same sweep the cron runs and the workflow pages fire on a timer, so it
-  // obeys the same windows: a hold from a generation still in flight is not
-  // touched. The button exists because "held" is the one number on this chip a
-  // user cannot act on, and being told to wait for a cron is not an answer when
-  // it is blocking their next step.
-  async function reclaim() {
-    setReclaiming(true);
-    try {
-      const res = await fetch("/api/credits/sweep", { method: "POST" });
-      const out = await res.json() as { released?: number; credits?: number };
-      if (out.released && out.credits) {
-        toast.success(`${out.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits returned to your balance`);
-        await mutate();
-      } else {
-        // Not a failure. The holds are simply still young enough to belong to
-        // work that might yet finish, and saying so is more useful than a
-        // silent no-op.
-        toast.info("Nothing to reclaim yet. Credits held by a run that is still going are released once it is clear the run has stopped.");
-      }
-    } catch {
-      toast.error("Could not reclaim held credits. Try again shortly.");
-    } finally {
-      setReclaiming(false);
-    }
-  }
+  // The reserve is no longer on the chip, so nobody can see a stuck hold to
+  // press a button about. The same sweep runs here on mount, obeying the same
+  // windows the cron does: a hold from a generation still in flight is not
+  // touched. A refund it produces surfaces through the flash below like any
+  // other, so the credits coming back are still visible even though what was
+  // holding them never was.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/credits/sweep", { method: "POST" });
+        const out = await res.json() as { released?: number };
+        if (out.released) await mutate();
+      } catch { /* the cron will get it */ }
+    })();
+  }, [mutate]);
+
+  // A refund, held on screen for four seconds.
+  //
+  // Keyed on the ledger timestamp rather than a balance increase: a top-up
+  // raises the balance too, and calling that a refund would be a lie about
+  // money. The ref remembers which batch has already been shown so a poll
+  // landing inside the same window does not restart the flash.
+  const refunded = data?.refunded ?? null;
+  const shownRefund = useRef<string | null>(null);
+  const [flash, setFlash] = useState<number | null>(null);
+  useEffect(() => {
+    if (!refunded || shownRefund.current === refunded.at) return;
+    shownRefund.current = refunded.at;
+    setFlash(refunded.credits);
+    const t = setTimeout(() => setFlash(null), 4000);
+    return () => clearTimeout(t);
+  }, [refunded]);
 
   // A wallet-funded account has no KIE or ElevenLabs key, so those two numbers
   // are zero for the wrong reason. What it can spend is credits, and the chip
   // becomes a link to top them up: this card is on every step, which is exactly
   // where somebody notices they are running low.
+  /* A refund, for four seconds. The balance moving on its own is the one
+     change a customer cannot account for, and this is what accounts for it now
+     that the reserve is not on screen. */
+  const refundFlash = flash === null ? null : (
+    <span
+      // Keyed on the amount so a second refund restarts the animation instead
+      // of inheriting a node already faded to nothing.
+      key={`refund-${flash}`}
+      className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium tabular-nums shrink-0"
+      style={{
+        background: "oklch(0.6 0.2 25 / 0.12)",
+        color: "oklch(0.68 0.21 25)",
+        border: "1px solid oklch(0.6 0.2 25 / 0.35)",
+        // Matches the four seconds the state is held for, so the node is
+        // removed on the frame it finishes fading rather than blinking out.
+        animation: "credit-refund-flash 4s ease-out forwards",
+      }}
+    >
+      +{flash.toLocaleString(undefined, { maximumFractionDigits: 2 })} refunded
+    </span>
+  );
+
   const wallet = data?.fundingMode === "wallet" ? data?.wallet : undefined;
   if (!data) {
     return (
@@ -163,35 +191,9 @@ export function StepBalanceCard() {
         </span>
         <span className="tabular-nums px-2.5 py-1" style={{ background: wBodyBg, color: wBodyColor }}>
           {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits
-          {wallet.reserved > 0 && (
-            <span style={{ opacity: 0.75 }}>
-              {" "}· {wallet.reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held
-            </span>
-          )}
         </span>
       </a>
-      {/* Only when there is something to reclaim. A permanent button for a
-          number that is usually zero would read as a chore the product expects
-          of you. */}
-      {wallet.reserved > 0 && (
-        <button
-          type="button"
-          onClick={reclaim}
-          disabled={reclaiming}
-          title={`${wallet.reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits are held by runs in progress. Click to return any held by a run that never finished.`}
-          className="inline-flex items-center justify-center rounded-md p-1.5 shrink-0 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-          style={{
-            background: "oklch(0.55 0.15 240 / 0.12)",
-            color: "oklch(0.55 0.15 240)",
-            border: "1px solid oklch(0.55 0.15 240 / 0.3)",
-          }}
-        >
-          {reclaiming
-            ? <span className="w-[11px] h-[11px] border-2 border-current border-t-transparent rounded-full animate-spin" />
-            : <RotateCcw size={11} />}
-          <span className="sr-only">Reclaim held credits</span>
-        </button>
-      )}
+      {refundFlash}
       {/* The chip itself has always linked to /billing and nothing said so.
           Findable by someone who has run out and hunting for the fix, invisible
           to everyone else. */}
@@ -243,6 +245,8 @@ export function StepBalanceCard() {
   }
 
   return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+    {refundFlash}
     <span
       className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full"
       style={{ border: `1px solid ${borderCol}` }}
@@ -264,6 +268,7 @@ export function StepBalanceCard() {
           </span>
         ))}
       </span>
+    </span>
     </span>
   );
 }

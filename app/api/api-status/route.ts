@@ -9,7 +9,7 @@ import { checkElevenLabs, checkKie, type ElevenLabsCheck, type KieCheck } from "
 import type { User } from "@supabase/supabase-js";
 import { getHeclusPack } from "@/lib/heclus-pack";
 import { getFundingMode, type FundingMode } from "@/lib/funding";
-import { getHeclusBalance } from "@/lib/heclus-credits";
+import { getHeclusBalance, getRecentRefunds } from "@/lib/heclus-credits";
 
 export interface ApiStatusResult {
   kie: KieCheck;
@@ -41,6 +41,9 @@ export interface ApiStatusResult {
    * are the two above.
    */
   wallet?: { credits: number; reserved: number };
+  /** Credits handed back in the last minute or so, for the chip to flash.
+   *  Absent when nothing was refunded. */
+  refunded?: { credits: number; at: string } | null;
   /** The top-up checkout for the Heclus pack, so the step chip can start a
    *  purchase in place rather than sending them to /billing to find the same
    *  button. Same payload for the same reason as `wallet`. Null when no pack is
@@ -79,11 +82,11 @@ export async function GET() {
     tokens30d: await claudeTokens30d(user.id),
   };
   const fundingMode = await getFundingMode(user);
-  const [wallet, pack] = fundingMode === "wallet"
-    ? await Promise.all([getHeclusBalance(user), getHeclusPack()])
-    : [undefined, undefined];
+  const [wallet, pack, refunded] = fundingMode === "wallet"
+    ? await Promise.all([getHeclusBalance(user), getHeclusPack(), getRecentRefunds(user.id)])
+    : [undefined, undefined, null];
   return NextResponse.json({
-    kie, elevenlabs, anthropic, fundingMode, wallet,
+    kie, elevenlabs, anthropic, fundingMode, wallet, refunded,
     // Withheld from an account with no paid plan: there is nothing to top up
     // into, and selling credits to someone who has not subscribed takes money
     // for an allowance their plan does not include.
