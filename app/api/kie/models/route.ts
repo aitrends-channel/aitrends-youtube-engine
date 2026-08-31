@@ -30,12 +30,23 @@ function round2(n: number): string {
  *  chip. */
 function withMinCredits<T extends KieModel>(models: T[], mins: ObservedByModel): T[] {
   return models.map((m) => {
-    // The blended figure. The catalog is fetched before the user has picked a
-    // resolution, so the chip is a floor for the model rather than a price for
-    // the run; the estimate the wallet checks does read the per-resolution row.
-    const v = mins[m.id]?.[""];
-    if (v === undefined) return m;
-    return { ...m, costPerUnit: round2(v) };
+    // Every resolution the ledger has measured, plus the blend under "".
+    // Sending the rows rather than only the blend is what stops the chip and
+    // the estimate disagreeing: the estimate has always read the row for the
+    // chosen resolution, and a chip quoting the average of every resolution
+    // ever run showed one number before selection and another after.
+    const rows = mins[m.id];
+    if (!rows) return m;
+    const byRes: Record<string, number> = {};
+    // round2 formats for display and hands back a string; the map is numbers,
+    // because the chip multiplies it by a duration.
+    for (const [res, v] of Object.entries(rows)) if (res) byRes[res] = Number(round2(v));
+    const blend = rows[""];
+    return {
+      ...m,
+      ...(blend === undefined ? {} : { costPerUnit: round2(blend) }),
+      ...(Object.keys(byRes).length ? { costByResolution: byRes } : {}),
+    };
   });
 }
 
@@ -76,10 +87,18 @@ function withPoyoCredits(models: CatalogModel[], observed: ObservedByModel): Cat
  */
 function withPublishedRates<T extends KieModel>(models: T[], operator: string | null): T[] {
   return models.map((m) => {
-    if (m.costPerUnit !== undefined) return m;
     const rate = publishedVideoRate(m.id, (m as { operator?: string }).operator ?? operator);
     if (!rate) return m;
-    return { ...m, costPerUnit: round2(rate.from), costUnit: rate.unit, costIsFloor: true };
+    // Seeded resolutions fill in under measured ones rather than replacing
+    // them, in the same order the estimate resolves: a row the ledger has is
+    // the better answer, and the seed covers the resolutions it has not.
+    const byRes = { ...(rate.byResolution ?? {}), ...(m.costByResolution ?? {}) };
+    return {
+      ...m,
+      costPerUnit: m.costPerUnit ?? round2(rate.from),
+      costUnit: m.costPerUnit === undefined ? rate.unit : m.costUnit,
+      ...(Object.keys(byRes).length ? { costByResolution: byRes } : {}),
+    };
   });
 }
 

@@ -235,6 +235,11 @@ export interface KieModel {
    *  cost, so the chip says "from". Set only for published rates, never for
    *  measured ones. */
   costIsFloor?: boolean;
+  /** Seeded credits per unit at each resolution the model offers, so a card
+   *  can quote the resolution in hand instead of the cheapest one. Sent whole
+   *  rather than refetched per resolution: it is four numbers, and the chip
+   *  should not wait on a request to stop saying "from". */
+  costByResolution?: Record<string, number>;
   /** Observed average wall-clock generation time in milliseconds.
    *  Powers the picker's "Fastest" tab — lower is faster. Injected
    *  by /api/kie/models from the project_costs ledger. Absent for

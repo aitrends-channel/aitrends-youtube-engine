@@ -19,9 +19,20 @@
 // merely old. Neither provider offers a rate endpoint: PoYo has no models route
 // at all, and kie.ai/pricing refuses automated fetches.
 
+import { seedFloor } from "@/lib/pricing/seed-prices";
+import type { SeedProvider } from "@/lib/pricing/seed-types";
+
+/** Where a seeded figure came from, for the `copied` field. */
+const SEED_SOURCE = "seed-prices";
+
 export type RateUnit = "clip" | "sec";
 
 export interface VideoRate {
+  /** True when the model charges one figure whatever the resolution, so the
+   *  chip can state it rather than hedge with "from". */
+  exact?: boolean;
+  /** Every seeded resolution, when the seed table has them. */
+  byResolution?: Record<string, number>;
   /** Cheapest published figure across the resolutions we offer for this model. */
   from: number;
   unit: RateUnit;
@@ -69,9 +80,29 @@ export const POYO_VIDEO_RATES: Record<string, VideoRate> = {
   "omni-flash": { from: 120, unit: "clip", copied: "2026-08-28", note: "120-450 per clip across 4-10s." },
 };
 
-/** The published floor for a model on the operator serving it, or null when
- *  neither provider publishes one we have transcribed. */
+/**
+ * The published figure for a model on the operator serving it.
+ *
+ * The seed table first, because it is the same data kept in one place and per
+ * resolution rather than one cheapest number, and because the estimator prices
+ * from it: a chip quoting a different source than the wallet charges is worse
+ * than no chip. The tables above answer only for a model it has no row for.
+ *
+ * Never crosses operators. This used to fall back to the KIE table when PoYo
+ * was serving and had no entry, which quoted kie_credits at a PoYo user. The
+ * two are different currencies at different rates, so the number was not high
+ * or low, it was in the wrong unit. An operator with no figure for a model now
+ * returns null and the chip stays empty, which is the honest answer.
+ */
 export function publishedVideoRate(modelId: string, operator: string | null | undefined): VideoRate | null {
-  const table = operator === "poyo" ? POYO_VIDEO_RATES : KIE_VIDEO_RATES;
-  return table[modelId] ?? (operator === "poyo" ? KIE_VIDEO_RATES[modelId] ?? null : null);
+  const provider: SeedProvider = operator === "poyo" ? "poyo" : "kie";
+  const seeded = seedFloor(provider, "video", modelId);
+  if (seeded) {
+    return {
+      from: seeded.value, unit: "sec", copied: SEED_SOURCE,
+      exact: !seeded.isFloor, byResolution: seeded.byResolution,
+    };
+  }
+  const table = provider === "poyo" ? POYO_VIDEO_RATES : KIE_VIDEO_RATES;
+  return table[modelId] ?? null;
 }

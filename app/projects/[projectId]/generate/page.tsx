@@ -27,6 +27,7 @@ import { reportOutOfCredits, blockIfShort, confirmSwitch } from "@/store/outOfCr
 import { refreshBalance } from "@/store/balanceStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { sortResolutions } from "@/lib/pricing/resolution";
 import { poyoImageConfig } from "@/lib/poyo/imageModels";
 import { OPERATOR_POYO } from "@/lib/operators";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -1490,7 +1491,10 @@ export default function GeneratePage({ params }: PageProps) {
     if (!config.resolutions) {
       setSelectedResolution(null);
     } else if (!selectedResolution || !config.resolutions.includes(selectedResolution)) {
-      setSelectedResolution(config.resolutions[0]);
+      // The lowest, not the first the provider happened to list. Config order
+      // is the vendor's docs order and puts 4K first on several models, which
+      // made the expensive option the one you got by not choosing.
+      setSelectedResolution(sortResolutions("image", config.resolutions)[0]);
     }
   }, [selectedImageModel, selectedImageOperator]); // eslint-disable-line react-hooks/exhaustive-deps
   // Same persistence pattern as image model — prefer last pick from
@@ -1561,7 +1565,7 @@ export default function GeneratePage({ params }: PageProps) {
     if (!config.resolutions || config.resolutions.length === 0) {
       setSelectedVideoResolution(null);
     } else if (!selectedVideoResolution || !config.resolutions.includes(selectedVideoResolution)) {
-      setSelectedVideoResolution(config.resolutions[0]);
+      setSelectedVideoResolution(sortResolutions("video", config.resolutions)[0]);
     }
     // Re-runs on the operator too: the same model offers different resolutions
     // on PoYo than on KIE, so a switch has to re-pick a valid value.

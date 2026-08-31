@@ -21,10 +21,11 @@ import type { SeedTable } from "./seed-types";
 export const MANUAL_SEED: SeedTable = {
   kie: {
     image: {
-      // No row found on kie.ai/pricing for either Kontext model; the search
-      // returns only the Flux 2 family. Left unpriced rather than guessed.
-      // "flux-kontext-pro": { flat: 0 },
-      // "flux-kontext-max": { flat: 0 },
+      // Listed as "flux1-kontext, text-to-image, Pro / Max", per image. The
+      // ids differ from ours by a digit, which is why a search for
+      // "flux-kontext" returns nothing and "kontext" returns both.
+      "flux-kontext-pro": { flat: 5 },
+      "flux-kontext-max": { flat: 10 },
     },
     video: {
       // From kie.ai/pricing, read 2026-08-31 off the rendered table, which is
@@ -52,9 +53,12 @@ export const MANUAL_SEED: SeedTable = {
       // is a fast variant of, which makes this an over-hold and refundable.
       "wan/2-6-flash-image-to-video": { byResolution: { "720p": 14, "1080p": 20.9 } },
 
+      // Priced per second already, so no conversion. "no video" is the tier
+      // without a reference clip, which is how we call it.
+      "seedance-2-mini": { byResolution: { "480p": 3.8, "720p": 8.2 } },
+
       // Still unpriced after searching the table:
       //   sora-2-image-to-video   no Sora row on kie.ai/pricing at all
-      //   seedance-2-mini         no Mini row; 2, 2-5 and 1.5-pro are listed
       //   genaipro-veo-2          the free-credits model, which may be
       //                           deliberately unpriced rather than missing
     },

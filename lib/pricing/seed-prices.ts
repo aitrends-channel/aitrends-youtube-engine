@@ -37,3 +37,28 @@ export function seedPrice(
   }
   return null;
 }
+
+/**
+ * The cheapest seeded figure for a model, for a chip that has no resolution
+ * chosen yet.
+ *
+ * `isFloor` says whether the number understates some of what the model offers.
+ * A model priced the same at every resolution, or with no resolution control,
+ * has no range to hedge about and the chip can state it flatly; one that
+ * varies is quoted "from" its cheapest.
+ */
+export function seedFloor(
+  provider: SeedProvider,
+  kind: SeedKind,
+  modelId: string,
+): { value: number; isFloor: boolean; byResolution?: Record<string, number> } | null {
+  for (const table of [GENERATED_SEED, MANUAL_SEED]) {
+    const row = table[provider]?.[kind]?.[modelId];
+    if (!row) continue;
+    const listed = row.byResolution ? Object.values(row.byResolution) : [];
+    const all = [...listed, ...(typeof row.flat === "number" ? [row.flat] : [])];
+    if (!all.length) continue;
+    return { value: Math.min(...all), isFloor: new Set(all).size > 1, byResolution: row.byResolution };
+  }
+  return null;
+}
