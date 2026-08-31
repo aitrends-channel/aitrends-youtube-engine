@@ -394,11 +394,17 @@ const SEAM_ANIMATION: Record<string, string> = {
  */
 function seamStyle(kind: string, p: number): React.CSSProperties {
   const pct = `${(p * 100).toFixed(1)}%`;
+  // Promoted to its own layer for the length of the seam: without it the
+  // browser repaints the whole frame on every step of the blend.
+  return { willChange: "transform, opacity, filter", ...seamOutStyle(kind, p, pct) };
+}
+
+function seamOutStyle(kind: string, p: number, pct: string): React.CSSProperties {
   switch (kind) {
     case "dissolve":     return { opacity: 1 - p };
     // Two halves: out to the colour by the midpoint, then the layer goes.
-    case "fade-black":   return { filter: `brightness(${Math.max(0, 1 - p * 2)})`, opacity: p < 0.5 ? 1 : 0 };
-    case "fade-white":   return { filter: `brightness(${1 + p * 5})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-black":   return { filter: `brightness(${Math.max(0, 1 - p * 2).toFixed(3)})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-white":   return { filter: `brightness(${(1 + Math.min(p * 2, 1) * 5).toFixed(3)})`, opacity: p < 0.5 ? 1 : 0 };
     case "fade-grays":   return { filter: `saturate(${Math.max(0, 1 - p * 2)})`, opacity: 1 - p };
     case "slide-left":   return { transform: `translateX(-${pct})` };
     case "slide-up":     return { transform: `translateY(-${pct})` };
@@ -415,6 +421,21 @@ function seamStyle(kind: string, p: number): React.CSSProperties {
     case "blur":         return { filter: `blur(${(p * 8).toFixed(1)}px)`, opacity: 1 - p };
     case "grain":        return { opacity: 1 - p, filter: `contrast(${1 + p * 0.6})` };
     default:             return { opacity: 1 - p };
+  }
+}
+
+/**
+ * The layer underneath, during a seam. Through-black and through-white pass
+ * through a flat colour at the midpoint, and the outgoing layer leaves there.
+ * Unless the incoming one has been taken to the same colour to meet it, the
+ * frame pops from black straight to a full-brightness shot, halfway through.
+ */
+function seamUnderStyle(kind: string, p: number): React.CSSProperties | undefined {
+  const q = Math.max(0, Math.min(1, p * 2 - 1));   // 0 until the midpoint, then 0 -> 1
+  switch (kind) {
+    case "fade-black": return { filter: `brightness(${q.toFixed(3)})`, willChange: "filter" };
+    case "fade-white": return { filter: `brightness(${(1 + (1 - q) * 5).toFixed(3)})`, willChange: "filter" };
+    default:           return undefined;
   }
 }
 
@@ -996,9 +1017,23 @@ export default function AssemblePage({ params }: PageProps) {
     audio.volume = Math.max(0, Math.min(1, narrationPreviewVolume));
     void audio.play().catch(() => stopPlayback());
 
+    // audio.currentTime only advances once per audio buffer, which is several
+    // frames apart, so a playhead read straight off it repeats a value and then
+    // jumps — and a seam driven by it renders in steps rather than a blend.
+    // Carry it on the frame clock between updates and resync when it moves.
+    let clockTime = -1;
+    let clockAt = 0;
     const tick = () => {
       const d = audio.duration;
-      const share = d && Number.isFinite(d) ? Math.min(1, audio.currentTime / d) : 0;
+      let share = 0;
+      if (d && Number.isFinite(d)) {
+        const ct = audio.currentTime;
+        const now = performance.now();
+        if (ct !== clockTime) { clockTime = ct; clockAt = now; }
+        // Capped so a stalled audio clock cannot run the seam ahead of itself.
+        const drift = audio.paused ? 0 : Math.min((now - clockAt) / 1000, 0.25);
+        share = Math.min(1, Math.max(0, (ct + drift) / d));
+      }
       setPlayhead(offset + share * span);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -1413,7 +1448,7 @@ export default function AssemblePage({ params }: PageProps) {
     const span = beatSeconds(playable[idx]).seconds;
     // The same clamp the worker applies, so what plays is what renders.
     const shortest = Math.min(...playable.map((b) => beatSeconds(b).seconds));
-    const t = Math.min(transitionSeconds, 2, shortest / 5);
+    const t = Math.min(transitionSeconds, 2, shortest / 3);
     const remaining = start + span - playhead;
     if (t <= 0 || remaining > t || remaining < 0) return null;
     const next = playable[idx + 1];
@@ -3152,7 +3187,8 @@ export default function AssemblePage({ params }: PageProps) {
                       )}
                       {playbackSeam?.url && (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                        <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover"
+                          style={seamUnderStyle(playbackSeam.kind, playbackSeam.p)} />
                       )}
                       {effectsTab === "transitions" && (mixedCuts ? mixedPreview : editingTransition) !== "none" && !playing && tileUrl && nextPreviewUrl ? (
                         <>
@@ -4147,9 +4183,7 @@ export default function AssemblePage({ params }: PageProps) {
                     <p className="text-xs" style={{ color: "var(--c-45)" }}>
                       {editingBeat
                         ? <>The cut after <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
-                        : mixedCuts
-                          ? `${ownCuts.length} cuts, ${mixedKinds.length} kinds`
-                          : "Every cut between beats"}
+                        : mixedCuts ? null : "Every cut between beats"}
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {editingBeat?.transition && (
@@ -4200,7 +4234,7 @@ export default function AssemblePage({ params }: PageProps) {
                   </div>
                   <div className="min-w-0 grid grid-cols-3 lg:grid-cols-4 gap-2">
                     {TRANSITIONS.map((tr) => {
-                      const active = mixedCuts ? false : editingTransition === tr.id;
+                      const active = editingTransition === tr.id;
                       const anim = SEAM_ANIMATION[tr.id];
                       return (
                         <button key={tr.id}
@@ -4208,6 +4242,10 @@ export default function AssemblePage({ params }: PageProps) {
                             const remembered = transitionLengths[tr.id];
                             if (remembered) setTransitionSeconds(remembered);
                             if (editingBeat) setBeatTransition(editingBeat.beatNumber, tr.id);
+                            // Randomize writes a value onto every cut, and a cut's
+                            // own beats the project's, so setting the project one
+                            // alone would pick a transition and change nothing.
+                            else if (mixedCuts) void applyTransitionToAll(tr.id);
                             else setTransition(tr.id);
                           }}
                           disabled={assembling}
@@ -4247,15 +4285,10 @@ export default function AssemblePage({ params }: PageProps) {
                       );
                     })}
                   </div>
-                  {beats.some((b) => b.transition) && (
-                    <p className="text-xs mt-2" style={{ color: "var(--c-38)" }}>
-                      {beats.filter((b) => b.transition).length} cuts have their own transition. Apply to all clears them.
-                    </p>
-                  )}
                   {editingTransition !== "none" && (
                     <div className="mt-4">
                       <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
-                        Transition length{editingBeat ? " · every cut" : ""}
+                        Duration{editingBeat ? " · every cut" : ""}
                       </p>
                       <div className="flex items-center gap-2">
                         <input
@@ -4277,9 +4310,6 @@ export default function AssemblePage({ params }: PageProps) {
                           {transitionSeconds.toFixed(1)}s
                         </span>
                       </div>
-                      <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
-                        Each beat holds this much longer so the overlap does not pull the narration early. Capped at a fifth of the shortest beat.
-                      </p>
                     </div>
                   )}
                 </>
