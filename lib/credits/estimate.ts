@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCreditRates, creditsForUnits, roundCredits } from "@/lib/pricing";
-import { getPoyoImageModel } from "@/lib/poyo/imageModels";
+import { getPoyoImageModel, poyoResolutionCredits } from "@/lib/poyo/imageModels";
 import { getMinKieCreditsByModel, getMinCostPerSecByModel, observedFor } from "@/lib/costs";
 import { relativeResolutionMultiplier } from "@/lib/pricing/resolution";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -173,12 +173,14 @@ async function perUnitCredits(
     }
     const model = getPoyoImageModel(input.modelId);
     if (!model) return { perUnit: null, source: "unknown" };
-    // nano-banana-pro's 18 credits was read off a probe at the default 1K, so
-    // the catalog figure is a cheapest-resolution figure like an observed one
-    // and scales the same way.
+    // A price listed against this exact resolution is already the price. Only
+    // the flat figure is a cheapest-resolution one that has to be scaled up,
+    // and scaling a listed figure would charge twice for the same step.
+    const listed = poyoResolutionCredits(model, input.resolution);
+    const units = listed ?? model.credits * scaleFor(input);
     return {
       perUnit: creditsForUnits(
-        "poyo_credits", model.credits * scaleFor(input), rates,
+        "poyo_credits", units, rates,
         { model: input.modelId, provider: "poyo" },
       ),
       source: "poyo-catalog",
