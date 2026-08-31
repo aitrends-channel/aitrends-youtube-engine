@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import { useViewerPlan } from "@/lib/admin-view";
 
 type DisplayColumn =
   | "channel_analysis"
@@ -104,6 +105,12 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     return out;
   };
 
+  // In Old mode this chip goes back to provider units, which is what an
+  // account on an old plan is actually billed in and what it saw before.
+  // Above the loading return below, because a hook that only runs once data
+  // has arrived changes the hook count between renders.
+  const { onCredits } = useViewerPlan();
+
   const byProvider = rollUp(allColumns);
   const thisStep = data?.columns?.[column];
 
@@ -114,7 +121,7 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     );
   }
 
-  const inCredits = !!data?.inCredits;
+  const inCredits = onCredits && !!data?.inCredits;
   // Charged, and for the whole video. The per-step number is still metered and
   // still returned; it is on the hover rather than in the chip.
   const credits = allColumns.reduce((sum, c) => sum + (c?.heclusCreditsCharged ?? 0), 0);
