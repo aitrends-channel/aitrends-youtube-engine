@@ -129,11 +129,16 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   // because checking what a video cost is most of the reason to be in there.
   // inCredits is still required for customers: a Heclus plan whose work is
   // funded from their own keys has no credit charges to show.
-  const showStepCredits = isAdmin || (!!stepCosts?.inCredits && isHeclusCreditsPlan(userPlan));
   // What this browser is pretending to be, for an admin. Everyone else reads
   // their real plan.
   const planView = useAdminPlanView();
   const onCredits = useOnCreditsPlan(userPlan, isAdmin);
+  // Follows the switch rather than short-circuiting on isAdmin. These were the
+  // one surface that ignored it, so flipping to Old changed the Cost button,
+  // the Logs button and the cost page while these numbers stayed, which makes
+  // the switch a partial answer to "what does that user see".
+  const showStepCredits = onCredits && (isAdmin || !!stepCosts?.inCredits);
+
   const creditsForPhase = (id: PhaseKey): number =>
     Number(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.heclusCreditsCharged ?? 0);
 
