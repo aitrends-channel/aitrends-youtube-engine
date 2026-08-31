@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { sortResolutions } from "@/lib/pricing/resolution";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
@@ -95,6 +96,7 @@ function ModelOption({
   footer,
   liveCredits,
   liveSeconds,
+  atResolution,
 }: {
   model: KieModel;
   selected: boolean;
@@ -109,6 +111,11 @@ function ModelOption({
   /** The clip length that figure is for, so the chip can show its own
    *  arithmetic rather than appearing to triple on selection. */
   liveSeconds?: number | null;
+  /** The resolution chosen for the run. Every card is priced at it, not just
+   *  the selected one: the choice applies to whichever model is picked next,
+   *  so quoting a floor on the others invites comparing a 480p price against a
+   *  720p one. */
+  atResolution?: string | null;
 }) {
   // A card, not a button, because the selected one holds its own aspect ratio
   // and resolution controls and a button cannot contain buttons. The body is
@@ -143,35 +150,42 @@ function ModelOption({
         </span>
       ) : model.type === "video" ? "/clip" : null}
     </span>
-  ) : model.costPerUnit ? (
+  ) : model.costPerUnit ? (() => {
+    // The published figure at the chosen resolution, where the model lists
+    // one. A price that varies is only "from" until a resolution is picked;
+    // after that there is an exact answer and hedging is just noise.
+    const byRes = model.costByResolution;
+    const key = atResolution && byRes
+      ? Object.keys(byRes).find((k) => k.toLowerCase() === atResolution.toLowerCase())
+      : undefined;
+    const perUnit = key ? byRes![key] : Number(model.costPerUnit);
+    return (
     <span
       className="px-1.5 py-0.5 rounded text-xs"
       // A model with no history has no live estimate, so selecting it left the
       // floor unchanged while the duration pills moved underneath. Where the
       // published rate is per second, the same arithmetic the measured models
       // do applies here too.
-      // A published floor and a measured figure are different claims, and the
-      // chip has to say which it is: "from 60 cr/clip" is the cheapest this
-      // model offers, "1.6 cr/s" is what it has actually billed us.
-      title={model.costIsFloor
-        ? "The cheapest this model offers, from the provider's price list. Select it to see what your settings cost."
-        : undefined}
+      // No "from". The seed table is the price we hold and charge against
+      // until the ledger has measured that model, so quoting it as a range the
+      // real figure might escape described a doubt the wallet does not act on.
+      title="The provider's published rate. The exact charge is settled on what the provider reports."
       style={{ background: "oklch(0.55 0.15 145 / 0.1)", color: "oklch(0.66 0.13 145)" }}
     >
-      {model.costIsFloor ? "from " : ""}
-      {model.type === "video" && model.costUnit !== "clip" && liveSeconds && Number(model.costPerUnit) > 0 ? (
+      {model.type === "video" && model.costUnit !== "clip" && liveSeconds && perUnit > 0 ? (
         <>
-          {(Number(model.costPerUnit) * liveSeconds).toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
-          <span style={{ opacity: 0.75 }}> for {liveSeconds}s ({model.costPerUnit}/s)</span>
+          {(perUnit * liveSeconds).toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
+          <span style={{ opacity: 0.75 }}> for {liveSeconds}s ({perUnit}/s)</span>
         </>
       ) : (
         <>
-          {model.costPerUnit} cr
+          {perUnit} cr
           {model.type === "video" ? (model.costUnit === "clip" ? "/clip" : "/s") : ""}
         </>
       )}
     </span>
-  ) : null;
+    );
+  })() : null;
 
   // Which provider will really run this, when it is not the configured one.
   // Pinned to the corner rather than mixed into the tags: it is a footnote
@@ -414,7 +428,7 @@ export function ModelPicker(props: ModelPickerProps) {
     <>
       {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
         <CardRow label="Resolution">
-          {imageConfig.resolutions.map((res) => (
+          {sortResolutions("image", imageConfig.resolutions).map((res) => (
             <VariantPill
               key={res}
               label={res}
@@ -433,7 +447,7 @@ export function ModelPicker(props: ModelPickerProps) {
           config to send under the right one. */}
       {props.type === "video" && videoConfig?.resolutions && videoConfig.resolutions.length > 0 && (
         <CardRow label="Resolution">
-          {videoConfig.resolutions.map((res) => (
+          {sortResolutions("video", videoConfig.resolutions).map((res) => (
             <VariantPill
               key={res}
               label={res}
@@ -596,6 +610,7 @@ export function ModelPicker(props: ModelPickerProps) {
                   : null
               }
               liveSeconds={props.type === "video" ? Number(props.selectedDuration) || null : null}
+              atResolution={props.selectedResolution}
               footer={
                 selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
                   ? variantControls

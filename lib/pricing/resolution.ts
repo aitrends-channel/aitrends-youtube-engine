@@ -129,3 +129,26 @@ export function relativeResolutionMultiplier(
   // under the cheapest thing we have ever actually paid for this model.
   return Math.max(1, chosen / cheapest);
 }
+
+
+/**
+ * A model's resolutions, cheapest and smallest first.
+ *
+ * Ordered by the same weights that price them, so the list a person reads runs
+ * the same way as the cost: 1K before 2K before 4K, 480p before 1080p, std
+ * before pro. Providers list them in whatever order their docs happened to,
+ * and a picker that puts 4K first invites picking it by reflex.
+ *
+ * A label the weights do not recognise keeps its position at the end rather
+ * than being dropped, since an unknown resolution is still a real option.
+ */
+export function sortResolutions(kind: "image" | "video", list: string[]): string[] {
+  return [...list].sort((a, b) => {
+    const wa = resolutionWeight(kind, a);
+    const wb = resolutionWeight(kind, b);
+    if (wa === null && wb === null) return 0;
+    if (wa === null) return 1;
+    if (wb === null) return -1;
+    return wa - wb;
+  });
+}
