@@ -126,7 +126,7 @@ const poyo: ImageOperator = {
     const done = await pollToCompletion(poyo, taskId, req.modelId, req.userId);
     // PoYo reports no cost, so the catalog price is the charge. Same reasoning
     // as estimate() above.
-    return { url: done.url, units: done.units ?? poyoCreditsFor(req.modelId) };
+    return { url: done.url, units: done.units ?? poyoCreditsFor(req.modelId, req.resolution) };
   },
 };
 

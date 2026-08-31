@@ -46,15 +46,34 @@ export interface PoyoImageModel {
   /** The string sent in the request's `model` field. */
   id: string;
   name: string;
-  /** PoYo credits per generation, from poyo.ai/ai-image-api. */
+  /** PoYo credits per generation, from poyo.ai/ai-image-api. On a model that
+   *  prices by resolution this is the figure for its cheapest one, and the
+   *  fallback when the resolution is unknown. */
   credits: number;
+  /**
+   * Credits per generation at each resolution the model offers.
+   *
+   * Where a row exists it is used as it stands. Without one the estimate
+   * scales `credits` by the resolution table in lib/pricing/resolution.ts,
+   * which assumes price tracks pixels: 1x, 2x, 4x for 1K, 2K, 4K. That
+   * assumption is wrong far more often than it is right here. Nano Banana 2
+   * charges the same 8 at 1K and 2K and 14 at 4K, where the ladder would have
+   * asked 16 and 32; Seedream 4 charges a flat 5 at all three. Only GPT Image
+   * 2 actually follows the curve.
+   *
+   * Still only a default. A measured figure from model_cost_and_speed beats it
+   * the moment one exists for that model and resolution.
+   */
+  byResolution?: Record<string, number>;
   /** Whether `id` has been confirmed against the live API. */
   verified: boolean;
   tags: string[];
 }
 
-const m = (id: string, name: string, credits: number, verified: boolean, tags: string[]): PoyoImageModel =>
-  ({ id, name, credits, verified, tags });
+const m = (
+  id: string, name: string, credits: number, verified: boolean, tags: string[],
+  byResolution?: Record<string, number>,
+): PoyoImageModel => ({ id, name, credits, verified, tags, byResolution });
 
 export const POYO_IMAGE_MODELS: PoyoImageModel[] = [
   // Confirmed: appears as a literal model id in PoYo's own z-image guide.
@@ -62,9 +81,9 @@ export const POYO_IMAGE_MODELS: PoyoImageModel[] = [
   // Confirmed: the worked example in docs.poyo.ai/api-manual/overview.
   m("gpt-4o-image",      "GPT-4o Image",       4,    true,  ["OpenAI"]),
 
-  m("gpt-image-2",       "GPT Image 2",        2,    true, ["OpenAI"]),
+  m("gpt-image-2",       "GPT Image 2",        2,    true, ["OpenAI"], { "1K": 2, "2K": 4, "4K": 8 }),
   m("gpt-image-1.5",     "GPT Image 1.5",      2,    true, ["OpenAI"]),
-  m("kling-o3-image",    "Kling O3 Image",     3.5,    true, ["Kling"]),
+  m("kling-o3-image",    "Kling O3 Image",     3.5,  true, ["Kling"], { "1K": 3.5, "2K": 3.5, "4K": 7 }),
   m("kling-o1-image",    "Kling O1 Image",     3.5,  false, ["Kling"]),
   m("flux-dev",          "Flux Dev",           4,    true, ["Black Forest Labs"]),
   m("flux-schnell",      "Flux Schnell",       0.48, false, ["Black Forest Labs", "Cheapest"]),
@@ -75,18 +94,18 @@ export const POYO_IMAGE_MODELS: PoyoImageModel[] = [
   m("nano-banana",       "Nano Banana",        5,    true, ["Google"]),
   // Measured: the median of nine finished tasks read back 8 credits, not the 5
   // the price list shows.
-  m("nano-banana-2",     "Nano Banana 2",      8,    true, ["Google"]),
+  m("nano-banana-2",     "Nano Banana 2",      8,    true, ["Google"], { "1K": 8, "2K": 8, "4K": 14 }),
   m("nano-banana-2-lite","Nano Banana 2 Lite", 5,    true, ["Google", "Fast"]),
   // Measured: a probe task at the default 1K read back 18 credits, not the 8
   // the price list shows.
-  m("nano-banana-pro",   "Nano Banana Pro",    18,   true, ["Google", "Pro"]),
-  m("seedream-4",        "Seedream 4",         5,    true, ["ByteDance"]),
-  m("seedream-4.5",      "Seedream 4.5",       5,    true, ["ByteDance"]),
-  m("seedream-5.0-lite", "Seedream 5.0 Lite",  5,    true, ["ByteDance"]),
-  m("seedream-5.0-pro",  "Seedream 5.0 Pro",   15,    true, ["ByteDance", "Max Quality"]),
+  m("nano-banana-pro",   "Nano Banana Pro",    18,   true, ["Google", "Pro"], { "1K": 18, "2K": 18, "4K": 35 }),
+  m("seedream-4",        "Seedream 4",         5,    true, ["ByteDance"], { "1K": 5, "2K": 5, "4K": 5 }),
+  m("seedream-4.5",      "Seedream 4.5",       5,    true, ["ByteDance"], { "2K": 5, "4K": 5 }),
+  m("seedream-5.0-lite", "Seedream 5.0 Lite",  5,    true, ["ByteDance"], { "2K": 5, "3K": 5 }),
+  m("seedream-5.0-pro",  "Seedream 5.0 Pro",   15,   true, ["ByteDance", "Max Quality"], { "1K": 15, "2K": 15 }),
   m("grok-imagine-image", "Grok Imagine",      6,    true, ["xAI"]),
   // Measured, not from the price list: a probe task read back 12 credits.
-  m("grok-imagine-image-2.0", "Grok Imagine 2.0", 12,  true, ["xAI"]),
+  m("grok-imagine-image-2.0", "Grok Imagine 2.0", 12, true, ["xAI"], { "1K": 12, "2K": 16 }),
   // NOT an image model. "grok-imagine" is Grok's video endpoint: a task
   // submitted against it came back as an .mp4 and charged 30 credits, while
   // the beat recorded it as an image. Kept, withheld from the picker, so beats
@@ -108,10 +127,25 @@ export function getPoyoImageModel(id: string): PoyoImageModel | undefined {
  * accounting error nobody notices. Same reasoning as the rate guard in
  * lib/pricing.ts.
  */
-export function poyoCreditsFor(modelId: string): number {
+export function poyoCreditsFor(modelId: string, resolution?: string | null): number {
   const model = BY_ID.get(modelId);
   if (!model) throw new Error(`No PoYo price for model: ${modelId}`);
-  return model.credits;
+  return poyoResolutionCredits(model, resolution) ?? model.credits;
+}
+
+/**
+ * The listed price at this exact resolution, or null when the table says
+ * nothing about it. A null sends the caller back to scaling `credits`, which is
+ * the old behaviour and still right for a model with no resolution knob.
+ */
+export function poyoResolutionCredits(
+  model: PoyoImageModel, resolution?: string | null,
+): number | null {
+  if (!resolution || !model.byResolution) return null;
+  const key = Object.keys(model.byResolution).find(
+    (k) => k.toLowerCase() === resolution.toLowerCase(),
+  );
+  return key ? model.byResolution[key] : null;
 }
 
 /** Only verified ids reach the picker. See the note above on why. */
