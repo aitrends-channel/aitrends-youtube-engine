@@ -3802,11 +3802,14 @@ export default function AssemblePage({ params }: PageProps) {
                 >
                 {effectsTab === "elements" ? (
                 <>
-                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
-                    {projectElements.length
-                      ? `${projectElements.length} placed · drag one onto the preview to add another`
-                      : "Drag one onto the preview, or onto the timeline"}
-                  </p>
+                  {/* Only while the tab has nothing on it. Once elements are
+                      placed the timeline below is showing them, and a count of
+                      what is already visible is a line to read past. */}
+                  {projectElements.length === 0 && (
+                    <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                      Drag one onto the preview, or onto the timeline
+                    </p>
+                  )}
                   {/* A row that wraps, not a grid. These are different widths
                       by nature — a pill is three times the width of a tile — and
                       a column wide enough for the widest one leaves the square
