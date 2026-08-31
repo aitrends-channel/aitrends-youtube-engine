@@ -152,9 +152,40 @@ const ELEMENTS = [
   { id: "comment",    label: "Comment" },
   { id: "new",        label: "New" },
   { id: "live",       label: "Live" },
+  // A mark rather than a word: it needs no translating, and it is what people
+  // actually leave in a corner.
+  { id: "bell",       label: "Bell" },
+  { id: "bell-ring",  label: "Bell ringing" },
+  { id: "youtube",    label: "YouTube" },
+  { id: "instagram",  label: "Instagram" },
+  { id: "tiktok",     label: "TikTok" },
+  { id: "facebook",   label: "Facebook" },
+  { id: "x",          label: "X" },
+  { id: "whatsapp",   label: "WhatsApp" },
+  { id: "heart",      label: "Heart" },
+  { id: "thumbs-up",  label: "Thumbs up" },
 ] as const;
 
-const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.18 };
+const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.14 };
+
+/**
+ * How wide an element lands, as a fraction of the frame.
+ *
+ * Size sets width and the height follows the artwork, so one number does not
+ * mean one size: the buttons are between one and a half and three and a half
+ * times as wide as they are tall, and the icon tiles are square. At the
+ * buttons' default a tile came out a third of the frame high, which is not a
+ * corner badge, it is a watermark.
+ */
+const SQUARE_ELEMENTS = new Set([
+  "bell", "bell-ring",
+  "youtube", "instagram", "tiktok", "facebook", "x", "whatsapp",
+  "heart", "thumbs-up",
+]);
+
+function defaultSizeFor(element: string): number {
+  return SQUARE_ELEMENTS.has(element) ? 0.08 : ELEMENT_DEFAULTS.size;
+}
 
 /** The sound library, synthesised by the worker's scripts/make-sfx.sh and
  *  copied into public/sfx so the browser can play the same files. */
@@ -182,6 +213,9 @@ const SOUND_EFFECTS = [
   { id: "chime",          label: "Chime",        hint: "Two tones, for a point made" },
   { id: "ding",           label: "Ding",         hint: "One bell note with a long tail" },
   { id: "sparkle",        label: "Sparkle",      hint: "Three rising notes" },
+  { id: "bell",           label: "Bell",         hint: "A struck bell, ringing out" },
+  { id: "notification",   label: "Notification", hint: "The two notes a phone plays" },
+  { id: "alert",          label: "Alert",        hint: "Three flat beeps, for attention" },
 ] as const;
 
 /**
@@ -394,11 +428,17 @@ const SEAM_ANIMATION: Record<string, string> = {
  */
 function seamStyle(kind: string, p: number): React.CSSProperties {
   const pct = `${(p * 100).toFixed(1)}%`;
+  // Promoted to its own layer for the length of the seam: without it the
+  // browser repaints the whole frame on every step of the blend.
+  return { willChange: "transform, opacity, filter", ...seamOutStyle(kind, p, pct) };
+}
+
+function seamOutStyle(kind: string, p: number, pct: string): React.CSSProperties {
   switch (kind) {
     case "dissolve":     return { opacity: 1 - p };
     // Two halves: out to the colour by the midpoint, then the layer goes.
-    case "fade-black":   return { filter: `brightness(${Math.max(0, 1 - p * 2)})`, opacity: p < 0.5 ? 1 : 0 };
-    case "fade-white":   return { filter: `brightness(${1 + p * 5})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-black":   return { filter: `brightness(${Math.max(0, 1 - p * 2).toFixed(3)})`, opacity: p < 0.5 ? 1 : 0 };
+    case "fade-white":   return { filter: `brightness(${(1 + Math.min(p * 2, 1) * 5).toFixed(3)})`, opacity: p < 0.5 ? 1 : 0 };
     case "fade-grays":   return { filter: `saturate(${Math.max(0, 1 - p * 2)})`, opacity: 1 - p };
     case "slide-left":   return { transform: `translateX(-${pct})` };
     case "slide-up":     return { transform: `translateY(-${pct})` };
@@ -415,6 +455,21 @@ function seamStyle(kind: string, p: number): React.CSSProperties {
     case "blur":         return { filter: `blur(${(p * 8).toFixed(1)}px)`, opacity: 1 - p };
     case "grain":        return { opacity: 1 - p, filter: `contrast(${1 + p * 0.6})` };
     default:             return { opacity: 1 - p };
+  }
+}
+
+/**
+ * The layer underneath, during a seam. Through-black and through-white pass
+ * through a flat colour at the midpoint, and the outgoing layer leaves there.
+ * Unless the incoming one has been taken to the same colour to meet it, the
+ * frame pops from black straight to a full-brightness shot, halfway through.
+ */
+function seamUnderStyle(kind: string, p: number): React.CSSProperties | undefined {
+  const q = Math.max(0, Math.min(1, p * 2 - 1));   // 0 until the midpoint, then 0 -> 1
+  switch (kind) {
+    case "fade-black": return { filter: `brightness(${q.toFixed(3)})`, willChange: "filter" };
+    case "fade-white": return { filter: `brightness(${(1 + (1 - q) * 5).toFixed(3)})`, willChange: "filter" };
+    default:           return undefined;
   }
 }
 
@@ -996,9 +1051,23 @@ export default function AssemblePage({ params }: PageProps) {
     audio.volume = Math.max(0, Math.min(1, narrationPreviewVolume));
     void audio.play().catch(() => stopPlayback());
 
+    // audio.currentTime only advances once per audio buffer, which is several
+    // frames apart, so a playhead read straight off it repeats a value and then
+    // jumps — and a seam driven by it renders in steps rather than a blend.
+    // Carry it on the frame clock between updates and resync when it moves.
+    let clockTime = -1;
+    let clockAt = 0;
     const tick = () => {
       const d = audio.duration;
-      const share = d && Number.isFinite(d) ? Math.min(1, audio.currentTime / d) : 0;
+      let share = 0;
+      if (d && Number.isFinite(d)) {
+        const ct = audio.currentTime;
+        const now = performance.now();
+        if (ct !== clockTime) { clockTime = ct; clockAt = now; }
+        // Capped so a stalled audio clock cannot run the seam ahead of itself.
+        const drift = audio.paused ? 0 : Math.min((now - clockAt) / 1000, 0.25);
+        share = Math.min(1, Math.max(0, (ct + drift) / d));
+      }
       setPlayhead(offset + share * span);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -1112,6 +1181,10 @@ export default function AssemblePage({ params }: PageProps) {
    *  page describes, so it leaves the preview and the only thing left of it is
    *  a download. Cleared when a new render arrives. */
   const [renderStale, setRenderStale] = useState(false);
+  /** The render the mode was last set against. A genuinely new render should
+   *  put the page back into Final mode; the same one arriving again, from SWR
+   *  or from a reload, should not quietly undo an Edit. */
+  const [seenRender, setSeenRender] = useState<string | null>(null);
   /** Watch the finished video in the preview, or go back to editing it. */
   const [showFinished, setShowFinished] = useState(true);
 
@@ -1203,6 +1276,9 @@ export default function AssemblePage({ params }: PageProps) {
         filterStrengths?: Record<string, number>;
         transitionLengths?: Record<string, number>;
         motionShapes?: Record<string, { strength: string; seconds: number }>;
+        showFinished?: boolean;
+        renderStale?: boolean;
+        seenRender?: string | null;
       };
       if (saved.tab && ["effects", "transitions", "filters", "sound", "elements"].includes(saved.tab)) {
         setEffectsTab(saved.tab as typeof effectsTab);
@@ -1214,6 +1290,12 @@ export default function AssemblePage({ params }: PageProps) {
       if (saved.filterStrengths && typeof saved.filterStrengths === "object") setFilterStrengths(saved.filterStrengths);
       if (saved.transitionLengths && typeof saved.transitionLengths === "object") setTransitionLengths(saved.transitionLengths);
       if (saved.motionShapes && typeof saved.motionShapes === "object") setMotionShapes(saved.motionShapes);
+      // Which mode the page was in is editing state too. Coming back to a
+      // project mid-edit and being handed the finished video instead was the
+      // page forgetting what you were doing.
+      if (typeof saved.showFinished === "boolean") setShowFinished(saved.showFinished);
+      if (typeof saved.renderStale === "boolean") setRenderStale(saved.renderStale);
+      if (typeof saved.seenRender === "string" || saved.seenRender === null) setSeenRender(saved.seenRender ?? null);
     } catch { /* private mode, cleared storage, corrupt value: start fresh */ }
   }, [localKey]);
 
@@ -1222,9 +1304,11 @@ export default function AssemblePage({ params }: PageProps) {
     try {
       window.localStorage.setItem(localKey, JSON.stringify({
         tab: effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes,
+        showFinished, renderStale, seenRender,
       }));
     } catch { /* storage full or blocked: the page still works */ }
-  }, [localKey, effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes]);
+  }, [localKey, effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes,
+      showFinished, renderStale, seenRender]);
   const shapeOf = (id: string | null) => (id ? soundShapes[id] : undefined) ?? { volume: 1, pitch: 1 };
   const tuneSound = (id: string, patch: { volume?: number; pitch?: number }) =>
     setSoundShapes((cur) => ({ ...cur, [id]: { ...shapeOf(id), ...patch } }));
@@ -1413,7 +1497,7 @@ export default function AssemblePage({ params }: PageProps) {
     const span = beatSeconds(playable[idx]).seconds;
     // The same clamp the worker applies, so what plays is what renders.
     const shortest = Math.min(...playable.map((b) => beatSeconds(b).seconds));
-    const t = Math.min(transitionSeconds, 2, shortest / 5);
+    const t = Math.min(transitionSeconds, 2, shortest / 3);
     const remaining = start + span - playhead;
     if (t <= 0 || remaining > t || remaining < 0) return null;
     const next = playable[idx + 1];
@@ -1641,10 +1725,14 @@ export default function AssemblePage({ params }: PageProps) {
   const [previewLoadError, setPreviewLoadError] = useState(false);
   useEffect(() => { setPreviewLoadError(false); }, [previewUrl]);
   useEffect(() => {
-    if (!previewUrl) return;
+    // Wait for the restore, or this fires first on mount with the defaults and
+    // overwrites the mode that was just read back.
+    if (!previewUrl || !localLoaded.current) return;
+    if (seenRender === previewUrl) return;
+    setSeenRender(previewUrl);
     setRenderStale(false);
     setShowFinished(true);
-  }, [previewUrl]);
+  }, [previewUrl, seenRender]);
 
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
@@ -3152,7 +3240,8 @@ export default function AssemblePage({ params }: PageProps) {
                       )}
                       {playbackSeam?.url && (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                        <img src={playbackSeam.url} alt="" className="absolute inset-0 w-full h-full object-cover"
+                          style={seamUnderStyle(playbackSeam.kind, playbackSeam.p)} />
                       )}
                       {effectsTab === "transitions" && (mixedCuts ? mixedPreview : editingTransition) !== "none" && !playing && tileUrl && nextPreviewUrl ? (
                         <>
@@ -3231,14 +3320,17 @@ export default function AssemblePage({ params }: PageProps) {
                       )}
                       {/* Every element on screen at this moment, over the
                           picture and under the logo, exactly as the render
-                          stacks them. Draggable while the tab is open, because
-                          a position typed as two numbers is a position nobody
-                          gets right. */}
+                          stacks them. Draggable because a position typed
+                          as two numbers is a position nobody gets right. */}
                       {[...projectElements]
                         .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
                         .filter((el) => playhead >= el.start_sec && playhead < el.end_sec)
                         .map((el) => {
-                          const editable = effectsTab === "elements" && !assembling;
+                          // Not gated on the tab any more: the overlay only
+                          // draws when the page is off the finished render, and
+                          // an element you can see on the preview is one you
+                          // expect to be able to drag, whichever tab is open.
+                          const editable = !assembling;
                           const picked = selectedElement === el.id;
                           return (
                             <div
@@ -3710,14 +3802,20 @@ export default function AssemblePage({ params }: PageProps) {
                 >
                 {effectsTab === "elements" ? (
                 <>
-                  <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
-                    {projectElements.length
-                      ? `${projectElements.length} placed · drag one onto the preview to add another`
-                      : "Drag one onto the preview, or onto the timeline"}
-                  </p>
-                  {/* Bigger than the sound buttons: these are pictures, and a
-                      64px pill is unreadable. */}
-                  <div className="min-w-0 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                  {/* Only while the tab has nothing on it. Once elements are
+                      placed the timeline below is showing them, and a count of
+                      what is already visible is a line to read past. */}
+                  {projectElements.length === 0 && (
+                    <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>
+                      Drag one onto the preview, or onto the timeline
+                    </p>
+                  )}
+                  {/* A row that wraps, not a grid. These are different widths
+                      by nature — a pill is three times the width of a tile — and
+                      a column wide enough for the widest one leaves the square
+                      ones swimming in it. Each takes the width its artwork needs
+                      at a common height and the row wraps when it runs out. */}
+                  <div className="min-w-0 flex flex-wrap gap-2">
                     {ELEMENTS.map((el) => (
                       <button
                         key={el.id}
@@ -3747,7 +3845,7 @@ export default function AssemblePage({ params }: PageProps) {
                                   end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
                                   x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
                                   y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
-                                  size: ELEMENT_DEFAULTS.size,
+                                  size: defaultSizeFor(el.id),
                                 });
                                 return;
                               }
@@ -3768,7 +3866,7 @@ export default function AssemblePage({ params }: PageProps) {
                                   end_sec: Math.min(timelineTotal || at + 3, at + 3),
                                   x: ELEMENT_DEFAULTS.x,
                                   y: ELEMENT_DEFAULTS.y,
-                                  size: ELEMENT_DEFAULTS.size,
+                                  size: defaultSizeFor(el.id),
                                   lane,
                                 });
                               }
@@ -3777,14 +3875,13 @@ export default function AssemblePage({ params }: PageProps) {
                           window.addEventListener("pointermove", move);
                           window.addEventListener("pointerup", up);
                         }}
-                        className="rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
-                        style={{
-                          background: "var(--bg-input)",
-                          border: `1px solid ${pickedElement === el.id ? "oklch(0.72 0.25 285)" : "var(--bd-card)"}`,
-                        }}
+                        className="h-[60px] rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
+                        style={pickedElement === el.id
+                          ? { background: "oklch(0.72 0.25 285 / 0.18)" }
+                          : undefined}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/elements/${el.id}.png`} alt={el.label} className="w-full h-auto" />
+                        <img src={`/elements/${el.id}.png`} alt={el.label} className="h-11 w-auto" />
                       </button>
                     ))}
                   </div>
@@ -4147,9 +4244,7 @@ export default function AssemblePage({ params }: PageProps) {
                     <p className="text-xs" style={{ color: "var(--c-45)" }}>
                       {editingBeat
                         ? <>The cut after <span style={{ color: "var(--accent-purple-text)" }}>beat {editingBeat.beatNumber}</span></>
-                        : mixedCuts
-                          ? `${ownCuts.length} cuts, ${mixedKinds.length} kinds`
-                          : "Every cut between beats"}
+                        : mixedCuts ? null : "Every cut between beats"}
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {editingBeat?.transition && (
@@ -4200,7 +4295,7 @@ export default function AssemblePage({ params }: PageProps) {
                   </div>
                   <div className="min-w-0 grid grid-cols-3 lg:grid-cols-4 gap-2">
                     {TRANSITIONS.map((tr) => {
-                      const active = mixedCuts ? false : editingTransition === tr.id;
+                      const active = editingTransition === tr.id;
                       const anim = SEAM_ANIMATION[tr.id];
                       return (
                         <button key={tr.id}
@@ -4208,6 +4303,10 @@ export default function AssemblePage({ params }: PageProps) {
                             const remembered = transitionLengths[tr.id];
                             if (remembered) setTransitionSeconds(remembered);
                             if (editingBeat) setBeatTransition(editingBeat.beatNumber, tr.id);
+                            // Randomize writes a value onto every cut, and a cut's
+                            // own beats the project's, so setting the project one
+                            // alone would pick a transition and change nothing.
+                            else if (mixedCuts) void applyTransitionToAll(tr.id);
                             else setTransition(tr.id);
                           }}
                           disabled={assembling}
@@ -4247,15 +4346,10 @@ export default function AssemblePage({ params }: PageProps) {
                       );
                     })}
                   </div>
-                  {beats.some((b) => b.transition) && (
-                    <p className="text-xs mt-2" style={{ color: "var(--c-38)" }}>
-                      {beats.filter((b) => b.transition).length} cuts have their own transition. Apply to all clears them.
-                    </p>
-                  )}
                   {editingTransition !== "none" && (
                     <div className="mt-4">
                       <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
-                        Transition length{editingBeat ? " · every cut" : ""}
+                        Duration{editingBeat ? " · every cut" : ""}
                       </p>
                       <div className="flex items-center gap-2">
                         <input
@@ -4277,9 +4371,6 @@ export default function AssemblePage({ params }: PageProps) {
                           {transitionSeconds.toFixed(1)}s
                         </span>
                       </div>
-                      <p className="text-xs mt-1.5" style={{ color: "var(--c-38)" }}>
-                        Each beat holds this much longer so the overlap does not pull the narration early. Capped at a fifth of the shortest beat.
-                      </p>
                     </div>
                   )}
                 </>
