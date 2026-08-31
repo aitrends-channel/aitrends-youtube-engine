@@ -15,6 +15,7 @@ import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 import { setAdminPlanView, useAdminPlanView, useOnCreditsPlan } from "@/lib/admin-view";
+import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
 import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
@@ -162,7 +163,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
       const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; paid?: unknown; is_admin?: unknown };
       if (typeof meta.plan === "string" && meta.plan.trim()) setUserPlan(meta.plan.trim());
       if (meta.paid === true) setIsPaid(true);
-      if (meta.is_admin === true) setIsAdmin(true);
+      // Both halves, the way lib/admin.ts defines admin. Reading only the
+      // metadata flag left the founder account, which is an admin by email and
+      // may carry no flag at all, seeing none of the admin surfaces here.
+      if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
     });
   }, []);
 
