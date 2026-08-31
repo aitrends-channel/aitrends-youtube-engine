@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useOnCreditsPlan } from "@/lib/admin-view";
+import { isAdminEmail } from "@/lib/admin";
 
 // Mirrors the website's "How do I keep my generation costs down?" answer
 // (heclus-landing-page lib/faq-data.ts) so support, the marketing site and
@@ -77,7 +78,7 @@ export function CostTipsModal() {
     void supabase.auth.getUser().then(({ data }) => {
       const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
       if (typeof meta.plan === "string") setPlan(meta.plan);
-      if (meta.is_admin === true) setIsAdmin(true);
+      if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
     });
   }, []);
   // Follows the admin switch in the wizard header, so flipping to Old hides
