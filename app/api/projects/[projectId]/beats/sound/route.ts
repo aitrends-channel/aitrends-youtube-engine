@@ -16,7 +16,8 @@ const SOUNDS = ["whoosh", "reverse-whoosh", "swish", "sweep", "page",
   "click", "tick", "pop", "beep", "glitch", "shutter",
   "zoom-in", "zoom-out", "riser",
   "impact", "boom", "thud", "heartbeat",
-  "chime", "ding", "sparkle"];
+  "chime", "ding", "sparkle",
+  "bell", "notification", "alert"];
 
 export async function PATCH(
   req: Request,

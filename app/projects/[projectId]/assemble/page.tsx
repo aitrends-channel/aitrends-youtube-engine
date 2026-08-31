@@ -152,9 +152,40 @@ const ELEMENTS = [
   { id: "comment",    label: "Comment" },
   { id: "new",        label: "New" },
   { id: "live",       label: "Live" },
+  // A mark rather than a word: it needs no translating, and it is what people
+  // actually leave in a corner.
+  { id: "bell",       label: "Bell" },
+  { id: "bell-ring",  label: "Bell ringing" },
+  { id: "youtube",    label: "YouTube" },
+  { id: "instagram",  label: "Instagram" },
+  { id: "tiktok",     label: "TikTok" },
+  { id: "facebook",   label: "Facebook" },
+  { id: "x",          label: "X" },
+  { id: "whatsapp",   label: "WhatsApp" },
+  { id: "heart",      label: "Heart" },
+  { id: "thumbs-up",  label: "Thumbs up" },
 ] as const;
 
-const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.18 };
+const ELEMENT_DEFAULTS = { x: 0.7, y: 0.1, size: 0.14 };
+
+/**
+ * How wide an element lands, as a fraction of the frame.
+ *
+ * Size sets width and the height follows the artwork, so one number does not
+ * mean one size: the buttons are between one and a half and three and a half
+ * times as wide as they are tall, and the icon tiles are square. At the
+ * buttons' default a tile came out a third of the frame high, which is not a
+ * corner badge, it is a watermark.
+ */
+const SQUARE_ELEMENTS = new Set([
+  "bell", "bell-ring",
+  "youtube", "instagram", "tiktok", "facebook", "x", "whatsapp",
+  "heart", "thumbs-up",
+]);
+
+function defaultSizeFor(element: string): number {
+  return SQUARE_ELEMENTS.has(element) ? 0.08 : ELEMENT_DEFAULTS.size;
+}
 
 /** The sound library, synthesised by the worker's scripts/make-sfx.sh and
  *  copied into public/sfx so the browser can play the same files. */
@@ -182,6 +213,9 @@ const SOUND_EFFECTS = [
   { id: "chime",          label: "Chime",        hint: "Two tones, for a point made" },
   { id: "ding",           label: "Ding",         hint: "One bell note with a long tail" },
   { id: "sparkle",        label: "Sparkle",      hint: "Three rising notes" },
+  { id: "bell",           label: "Bell",         hint: "A struck bell, ringing out" },
+  { id: "notification",   label: "Notification", hint: "The two notes a phone plays" },
+  { id: "alert",          label: "Alert",        hint: "Three flat beeps, for attention" },
 ] as const;
 
 /**
@@ -3783,7 +3817,7 @@ export default function AssemblePage({ params }: PageProps) {
                                   end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
                                   x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
                                   y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
-                                  size: ELEMENT_DEFAULTS.size,
+                                  size: defaultSizeFor(el.id),
                                 });
                                 return;
                               }
@@ -3804,7 +3838,7 @@ export default function AssemblePage({ params }: PageProps) {
                                   end_sec: Math.min(timelineTotal || at + 3, at + 3),
                                   x: ELEMENT_DEFAULTS.x,
                                   y: ELEMENT_DEFAULTS.y,
-                                  size: ELEMENT_DEFAULTS.size,
+                                  size: defaultSizeFor(el.id),
                                   lane,
                                 });
                               }

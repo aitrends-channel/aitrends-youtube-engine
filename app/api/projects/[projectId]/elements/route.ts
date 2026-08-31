@@ -17,7 +17,10 @@ import type { User } from "@supabase/supabase-js";
 
 /** Must stay in step with the table's check constraint and the files the
  *  worker ships in assets/elements. */
-const ELEMENTS = ["subscribe", "subscribed", "like", "share", "follow", "comment", "new", "live"];
+const ELEMENTS = ["subscribe", "subscribed", "like", "share", "follow", "comment", "new", "live",
+  "bell", "bell-ring",
+  "youtube", "instagram", "tiktok", "facebook", "x", "whatsapp",
+  "heart", "thumbs-up"];
 
 const MIN_SPAN = 0.3;
 
