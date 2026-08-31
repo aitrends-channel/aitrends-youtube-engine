@@ -190,7 +190,7 @@ export function StepBalanceCard() {
           Balance
         </span>
         <span className="tabular-nums px-2.5 py-1" style={{ background: wBodyBg, color: wBodyColor }}>
-          {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits
+          {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
         </span>
       </a>
       {refundFlash}

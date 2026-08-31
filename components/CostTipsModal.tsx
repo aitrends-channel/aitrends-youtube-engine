@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Lightbulb } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { Lightbulb, ScrollText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useOnCreditsPlan } from "@/lib/admin-view";
 
 // Mirrors the website's "How do I keep my generation costs down?" answer
 // (heclus-landing-page lib/faq-data.ts) so support, the marketing site and
@@ -63,6 +67,26 @@ const SPEND_SPLIT = [
 
 export function CostTipsModal() {
   const [open, setOpen] = useState(false);
+  // Credit-funded accounts get a way into the usage log from wherever they are.
+  // Read off the auth metadata rather than fetched: it is already in the
+  // session, and this component renders on nine pages.
+  const [plan, setPlan] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    void supabase.auth.getUser().then(({ data }) => {
+      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
+      if (typeof meta.plan === "string") setPlan(meta.plan);
+      if (meta.is_admin === true) setIsAdmin(true);
+    });
+  }, []);
+  // Follows the admin switch in the wizard header, so flipping to Old hides
+  // this the way it is hidden for an account that really is on an old plan.
+  const onCredits = useOnCreditsPlan(plan, isAdmin);
+  // The log lives under the project, so the wizard nav has something to render
+  // beside it. Without a project in the URL there is nothing to link to.
+  const params = useParams<{ projectId?: string }>();
+  const projectId = typeof params?.projectId === "string" ? params.projectId : null;
 
   return (
     <>
@@ -90,6 +114,24 @@ export function CostTipsModal() {
           New
         </span>
       </button>
+
+      {/* Beside the tips, because the two answer the same question from
+          opposite ends: how to spend less, and what has been spent. */}
+      {onCredits && projectId && (
+        <Link
+          href={`/projects/${projectId}/logs`}
+          title="Credit usage log"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer"
+          style={{
+            border: "1px solid var(--bd-8)",
+            background: "transparent",
+            color: "var(--c-55)",
+          }}
+        >
+          <ScrollText size={12} />
+          <span>Logs</span>
+        </Link>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         {/* p-0 + gap-0 so the header, list and footer own their own padding
