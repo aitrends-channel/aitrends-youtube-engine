@@ -28,6 +28,29 @@ const COLUMN_STEPS = {
 
 type DisplayColumn = keyof typeof COLUMN_STEPS;
 
+/** One movement of credits on this project, for the usage log. */
+export interface CreditLogEntry {
+  /** The display column it rolls up into, or null when the note named a step
+   *  this endpoint has no column for. */
+  column: string | null;
+  /** The raw step from the note. The log names this rather than the column it
+   *  rolls into: "Generate" covers both an image and a clip, which are
+   *  different work at different prices, and a person reading a charge wants
+   *  to know which one they paid for. */
+  step: string | null;
+  /** Which beat, where the charge belongs to one. */
+  beatNumber: number | null;
+  provider: string | null;
+  /** The model that served this step, where one is known. Rendered for admins
+   *  only, but sent to everyone: it is not secret, and gating the payload as
+   *  well as the column would be two places to keep in step. */
+  model: string | null;
+  type: "charged" | "refunded";
+  /** Always positive. The direction is in `type`, not the sign. */
+  credits: number;
+  at: string;
+}
+
 interface CostBreakdownEntry {
   provider: string;
   model: string | null;
@@ -126,6 +149,22 @@ export async function GET(
     for (const s of COLUMN_STEPS[col]) stepToColumn[s] = col;
   }
 
+  // Which model served each step.
+  //
+  // credit_ledger records the provider but not the model, and project_costs
+  // records the model but carries no beat number, so the two cannot be joined
+  // row to row. Per step is the join that does hold: a project runs one image
+  // model, one voice and one Claude model per step. Changing model mid-run
+  // would label the later charges with the earlier name.
+  //
+  // Supadata is skipped: it bills the product owner rather than the user, and
+  // would otherwise take the name of the step it rode along with.
+  const modelByStep: Record<string, string> = {};
+  for (const row of (data ?? []) as Array<{ step: string; provider: string; model: string | null }>) {
+    if (!row.model || row.provider === "supadata") continue;
+    modelByStep[row.step] ??= row.model;
+  }
+
   const rates = await getCreditRates();
   const columns = emptyRollup();
   for (const row of (data ?? []) as Array<{
@@ -168,14 +207,35 @@ export async function GET(
   // produced a chip claiming 907 credits on a step that billed 141.
   const { data: ledger } = await supabase
     .from("credit_ledger")
-    .select("kind, credits, note")
+    .select("kind, credits, note, created_at, beat_number, provider")
     .eq("user_id", user.id)
     .eq("project_id", projectId)
-    .in("kind", ["spend", "refund"]);
+    .in("kind", ["spend", "refund"])
+    .order("created_at", { ascending: false });
 
-  for (const row of (ledger ?? []) as { kind: string; credits: number | string; note: string | null }[]) {
+  // The same rows again as a list. The page shows what was taken and what came
+  // back, rather than a matrix of provider units nobody is billed in.
+  const log: CreditLogEntry[] = [];
+
+  for (const row of (ledger ?? []) as
+    { kind: string; credits: number | string; note: string | null; created_at: string;
+      beat_number: number | null; provider: string | null }[]) {
     const step = (row.note ?? "").split(" · ")[0]?.trim();
     const col = step ? stepToColumn[step] : undefined;
+    const credits = Number(row.credits);
+    log.push({
+      // An unmapped step still belongs in the log. Dropping it would make the
+      // list disagree with the balance, and a missing name is easier to add
+      // later than a missing charge is to explain.
+      column: col ?? null,
+      step: step || null,
+      beatNumber: row.beat_number,
+      provider: row.provider,
+      model: step ? modelByStep[step] ?? null : null,
+      type: credits < 0 ? "charged" : "refunded",
+      credits: Math.abs(credits),
+      at: row.created_at,
+    });
     if (!col) continue;
     // Signed in the ledger: spend is negative, refund positive. Charged is what
     // is left after refunds, so the sum is negated once.
@@ -185,5 +245,5 @@ export async function GET(
   const inCredits =
     isHeclusCreditsPlan(billingPlanOf(user)) || (await getFundingMode(user)) === "wallet";
 
-  return NextResponse.json({ projectId, columns, inCredits });
+  return NextResponse.json({ projectId, columns, inCredits, log });
 }

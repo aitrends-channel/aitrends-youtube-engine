@@ -130,9 +130,6 @@ function ModelOption({
   const price = liveCredits != null ? (
     <span
       className="px-1.5 py-0.5 rounded text-xs"
-      title={model.type === "video"
-        ? "What this clip costs at the chosen duration and resolution. The figure on unselected cards is a rate per second."
-        : "What one image costs at the chosen resolution"}
       // Green, the colour credits are spoken about in everywhere else: the Used
       // chip on every step and the per-step figures in the sidebar. Purple is
       // the selection colour here, and a price wearing it read as another thing
@@ -166,10 +163,10 @@ function ModelOption({
       // floor unchanged while the duration pills moved underneath. Where the
       // published rate is per second, the same arithmetic the measured models
       // do applies here too.
-      // No "from". The seed table is the price we hold and charge against
-      // until the ledger has measured that model, so quoting it as a range the
-      // real figure might escape described a doubt the wallet does not act on.
-      title="The provider's published rate. The exact charge is settled on what the provider reports."
+      // No "from", and no tooltip. The seed table is the price we hold and
+      // charge against until the ledger has measured that model, so the chip
+      // states it: a hover explaining a number that is already the number was
+      // one more thing to read past.
       style={{ background: "oklch(0.55 0.15 145 / 0.1)", color: "oklch(0.66 0.13 145)" }}
     >
       {model.type === "video" && model.costUnit !== "clip" && liveSeconds && perUnit > 0 ? (
@@ -193,7 +190,6 @@ function ModelOption({
   const servedByTag = model.servedBy ? (
     <span
       className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide"
-      title={`The configured provider does not carry this model, so it runs on ${model.servedBy.toUpperCase()}.`}
       style={{ background: "oklch(0.72 0.16 70 / 0.14)", color: "oklch(0.55 0.14 70)" }}
     >
       V{model.servedBy.charAt(0).toUpperCase()}

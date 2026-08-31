@@ -7,13 +7,14 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film,
-  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut, DollarSign, KeyRound, Wallet,
+  Check, CheckCircle2, LayoutTemplate, X, Settings, LogOut, DollarSign, KeyRound, Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { setAdminPlanView, useAdminPlanView, useOnCreditsPlan } from "@/lib/admin-view";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
 import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
@@ -128,6 +129,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   // inCredits is still required for customers: a Heclus plan whose work is
   // funded from their own keys has no credit charges to show.
   const showStepCredits = isAdmin || (!!stepCosts?.inCredits && isHeclusCreditsPlan(userPlan));
+  // What this browser is pretending to be, for an admin. Everyone else reads
+  // their real plan.
+  const planView = useAdminPlanView();
+  const onCredits = useOnCreditsPlan(userPlan, isAdmin);
   const creditsForPhase = (id: PhaseKey): number =>
     Number(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.heclusCreditsCharged ?? 0);
 
@@ -425,20 +430,47 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
 
       {/* ── Desktop top-right: Back to Dashboard + Profile ──────────── */}
       <div className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2">
+        {/* Admin only: render the app as either kind of account. A view held in
+            this browser, which changes nothing about the account. Desktop row
+            only; the mobile header has no room and this is a dev affordance. */}
+        {isAdmin && (
+          <div className="inline-flex rounded-lg overflow-hidden text-[11px] font-medium shrink-0"
+            style={{ border: "1px solid var(--bd-8)" }}>
+            {([["new", "New"], ["old", "Old"]] as const).map(([v, label]) => {
+              const on = (planView ?? (isHeclusCreditsPlan(userPlan) ? "new" : "old")) === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAdminPlanView(v)}
+                  title={v === "new" ? "View as a Heclus Credits account" : "View as an old-plan account"}
+                  className="px-2 py-1.5 transition-all cursor-pointer"
+                  style={on
+                    ? { background: "oklch(0.72 0.25 285 / 0.18)", color: "var(--accent-purple-text)" }
+                    : { background: "transparent", color: "var(--c-50)" }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {topRightExtra}
         <button
           onClick={() => router.push("/dashboard")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
           style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
         >
-          <ArrowLeft size={13} />
-          Back
+          Dashboard
         </button>
 
         {/* Cost view — per-project provider × step breakdown. Hidden
             when this nav is rendered for the "new-fork" placeholder
-            since there's no real project id to query against yet. */}
-        {projectId !== "new-fork" && (
+            since there's no real project id to query against yet, and
+            hidden on a credit plan, where the usage log reached from the
+            Logs button beside the tips answers the same question in the
+            unit that account is actually billed in. */}
+        {projectId !== "new-fork" && !onCredits && (
           <button
             onClick={() => router.push(`/projects/${projectId}/cost`)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
@@ -552,8 +584,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
               style={{ color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
             >
-              <ArrowLeft size={13} />
-              Back
+              Dashboard
             </button>
             {/* Cost view (mobile) — icon-only to save horizontal space
                 next to Back, Theme, and the profile avatar. Skipped on

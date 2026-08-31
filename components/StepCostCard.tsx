@@ -162,7 +162,7 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
       >
         {inCredits
           ? (credits > 0
-            ? `${credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits`
+            ? `${credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr`
             : "—")
           : parts.length === 0 ? "—" : parts.map((p, i) => (
             <span key={p.key}>
