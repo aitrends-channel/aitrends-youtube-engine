@@ -31,8 +31,24 @@ import { estimateRun, estimateCharacters, estimateStepFloor, type RunEstimate } 
 //                 so the finisher looks its own hold up rather than threading
 //                 an id through three entry points and a database column.
 
-/** How much more than the estimate to hold. See the note above. */
+/**
+ * How much more than the estimate to hold.
+ *
+ * The quarter is for an estimate that had to guess. It buys nothing when the
+ * figure is a price recorded against this exact model and resolution, which is
+ * now most of them: the seed tables in lib/pricing carry every resolution both
+ * vendors publish, and the ledger overrides them with what was actually
+ * charged. Padding a known price only takes credits out of the balance for the
+ * length of the run and hands them back at settle, which looks to the customer
+ * like being charged a quarter more than the screen said.
+ *
+ * The small margin that remains on an exact figure is for conversion. The
+ * vendor's credit is turned into ours through a rate and then rounded, so a
+ * figure exact in poyo_credits can land a hair under in Heclus credits, and
+ * settle caps at the hold.
+ */
 const PADDING = 1.25;
+const PADDING_EXACT = 1.02;
 
 export interface Hold {
   id: string;
@@ -54,8 +70,10 @@ export async function takeHold(opts: {
   provider: string;
   projectId?: string;
   beatNumber?: number;
+  /** The estimate was a price, not a guess. See PADDING_EXACT. */
+  exact?: boolean;
 }): Promise<Hold | null> {
-  const credits = roundCredits(opts.credits * PADDING);
+  const credits = roundCredits(opts.credits * (opts.exact ? PADDING_EXACT : PADDING));
   if (!(credits > 0)) return null;
   const id = await reserveHeclusCredits({
     userId: opts.userId,
@@ -137,6 +155,7 @@ export async function holdForRun(opts: {
     provider: opts.provider,
     projectId: opts.projectId,
     beatNumber: opts.beatNumber,
+    exact: opts.estimate.exact,
   });
   return { hold, refused: hold === null };
 }

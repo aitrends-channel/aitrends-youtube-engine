@@ -896,3 +896,14 @@ body {
   30%, 88% { opacity: 1; }
   100%     { opacity: 0; }
 }
+
+/* The refund flash on the balance chip.
+   Drops in from above, then fades for the rest of its four seconds. The entry
+   is fast and the exit is slow on purpose: the arrival is what has to be
+   noticed, and a credit returning is not something to be hurried past. */
+@keyframes credit-refund-flash {
+  0%   { opacity: 0; transform: translateY(-10px); }
+  10%  { opacity: 1; transform: translateY(0); }
+  35%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(0); }
+}
