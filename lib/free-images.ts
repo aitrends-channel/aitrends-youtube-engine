@@ -1,5 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { isAdminUser } from "@/lib/admin";
+import { billingPlanOf } from "@/lib/plans-gating";
+import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 import { hasPaidAccess } from "@/lib/subscription";
 import { resolveQuotaCap, FREE_IMAGE_MODEL } from "@/lib/quota-config";
 import { getFreeUsageThisMonth, incrementFreeUsage } from "@/lib/freeUsage";
@@ -49,13 +51,23 @@ export async function freeImageAllowance(user: User): Promise<FreeImageAllowance
   // so they still draw the top tier through resolveQuotaCap below.
   if (!hasPaidAccess(user)) return EMPTY;
   const meta = (user.app_metadata ?? {}) as { plan?: string };
+  // Heclus plans only, keyed on the product rather than the tier.
+  //
+  // Allowances are stored per tier, and legacy starter and heclus_starter are
+  // the same tier, so a tier-keyed allowance cannot tell them apart. That would
+  // switch this perk on for customers whose plan was priced years before it
+  // existed. Admins are exempt so the feature stays testable.
+  const admin = isAdminUser(user);
+  if (!admin && !isHeclusCreditsPlan(billingPlanOf(user))) return EMPTY;
   const [monthly, bonus] = await Promise.all([
-    resolveQuotaCap("free_image_credits", meta.plan, isAdminUser(user)),
+    resolveQuotaCap("free_image_credits", meta.plan, admin),
     boughtImages(user.id),
   ]);
   // A plan with no allowance can still hold bought images: buying is what a
   // customer does when the monthly figure is not enough, and taking those away
   // because the plan grants none would be taking something they paid for.
+  // Bought images survive the check above only for an account that could buy
+  // them, which is a Heclus plan by definition.
   const cap = monthly + bonus;
   if (cap <= 0) return EMPTY;
   const used = await getFreeUsageThisMonth(user.id, "free_image_credits");
