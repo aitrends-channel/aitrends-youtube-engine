@@ -126,6 +126,20 @@ function beatSeconds(b: Beat): { seconds: number; estimated: boolean } {
 }
 const DEFAULT_ZOOM = 3;
 
+/**
+ * How many clip thumbnails in the timeline strip get a real <video>.
+ *
+ * One per clip beat was written when a project was about nineteen of them.
+ * Production has one with 364, and a browser will not hold that many media
+ * elements: Chrome caps them somewhere under a hundred, and every one is a
+ * decoder and a metadata fetch on the main thread. The tab stops responding
+ * long before the last one loads.
+ *
+ * Past the cap a clip falls back to its own still frame, which is what the
+ * image beats already render, so the strip still reads as a filmstrip.
+ */
+const MAX_STRIP_VIDEOS = 40;
+
 /** How far each strength travels, as a share of the frame. Mirrors
  *  MOTION_TRAVEL in the worker: if these drift apart the preview lies. */
 const MOTION_STRENGTHS = [
@@ -6844,7 +6858,7 @@ export default function AssemblePage({ params }: PageProps) {
                   })()}
                   <div className="flex gap-[1px] items-stretch rounded-md"
                     style={{ background: "oklch(1 0 0 / 0.09)" }}>
-                    {(() => { let elapsed = 0; return beats.map((b) => {
+                    {(() => { let elapsed = 0; let clipsMounted = 0; return beats.map((b) => {
                       const { seconds } = beatSeconds(b);
                       const startsAt = elapsed;
                       elapsed += seconds;
@@ -6879,7 +6893,7 @@ export default function AssemblePage({ params }: PageProps) {
                             boxShadow: selected ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
                           }}
                         >
-                          {isClip && b.videoUrl ? (
+                          {isClip && b.videoUrl && clipsMounted++ < MAX_STRIP_VIDEOS ? (
                             // The clip itself, because the clip is what gets
                             // assembled. Its first frame stands in for it, laid
                             // out like the still head frame below rather than
