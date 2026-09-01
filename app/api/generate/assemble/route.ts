@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redis } from "@/lib/queue/client";
-import { requiredTierForResolution, meetsTier, tierLabel } from "@/lib/plans-gating";
+import { requiredTierForResolution, canUseResolution, tierLabel } from "@/lib/plans-gating";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
   // devtools (or anywhere else) gets rejected with a 403 instead of silently
   // spending the 4K render budget on a Starter customer.
   const requiredTier = requiredTierForResolution(options.resolution);
-  if (requiredTier && !meetsTier(user, requiredTier)) {
+  if (requiredTier && !canUseResolution(user, options.resolution)) {
     return NextResponse.json(
       {
         error: `${options.resolution} output is part of the ${tierLabel(requiredTier)} plan. Upgrade to render at this resolution.`,
