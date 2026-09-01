@@ -9,6 +9,7 @@ import { productIdForPlan } from "@/lib/dodo/plan-products";
 import { getHeclusPack } from "@/lib/heclus-pack";
 import { supabase } from "@/lib/supabase/client";
 import { getPaymentSettings } from "@/lib/plans";
+import { canSeeNewPlans, isGatedPlan } from "@/lib/rollout";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,14 @@ export async function POST(req: Request) {
   const wallet = typeof body.wallet === "string" ? body.wallet : null;
   const plan = typeof body.plan === "string" ? body.plan : null;
   const quantity = Math.max(1, Math.floor(Number(body.quantity) || 1));
+
+  // The card is hidden from customers in /api/plans, but hiding a card is not
+  // a gate: this route takes a slug from the client and is what turns it into a
+  // real charge. Refused here, a customer who guesses the slug still cannot buy
+  // a plan whose entitlements are not switched on for them yet.
+  if (plan && isGatedPlan(plan) && !canSeeNewPlans(user)) {
+    return NextResponse.json({ error: "That plan is not available yet." }, { status: 403 });
+  }
 
   const settings = await getPaymentSettings();
   // Same rule /api/dodo/verify applies: production-test is the live-Dodo

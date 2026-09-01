@@ -75,10 +75,55 @@ export function requiredTierForResolution(res: string | null | undefined): Tier 
   return (typeof res === "string" && RESOLUTION_TIER[res]) || null;
 }
 
-/** True when this user may render at this resolution. */
+/**
+ * Plans that keep a resolution the new ladder would take away from them.
+ *
+ * 2160p moved from Pro to Max with the Heclus products. That is the right
+ * ladder for a plan somebody buys today, but the legacy `pro` product was sold
+ * with 4K included and is still being paid for by 24 subscribers. Applying the
+ * new rule to them would quietly remove something they bought.
+ *
+ * Legacy `pro` only. heclus_pro was sold under the new ladder and never
+ * included 4K, so it is not grandfathered.
+ */
+const GRANDFATHERED_RESOLUTIONS: Record<string, ReadonlySet<string>> = {
+  pro: new Set(["2160p"]),
+};
+
+/** True when this plan slug keeps a resolution the tier ladder would deny it. */
+function isGrandfathered(plan: string | null | undefined, res: string | null | undefined): boolean {
+  const kept = GRANDFATHERED_RESOLUTIONS[(plan ?? "").trim().toLowerCase()];
+  return !!kept && !!res && kept.has(res);
+}
+
+/**
+ * True when this user may render at this resolution.
+ *
+ * The one answer for the server. Call it rather than pairing
+ * requiredTierForResolution with a tier comparison: that spelling is what let
+ * the grandfather clause below be written and then not apply anywhere.
+ */
 export function canUseResolution(user: User | null | undefined, res: string | null | undefined): boolean {
   const required = requiredTierForResolution(res);
-  return !required || meetsTier(user, required);
+  if (!required) return true;
+  // meetsTier folds in admin via tierOf, so this covers internal users too.
+  if (meetsTier(user, required)) return true;
+  return isGrandfathered(billingPlanOf(user), res);
+}
+
+/**
+ * The same answer from a bare plan slug, for the picker.
+ *
+ * The Assemble page holds a slug ("pro", "heclus_max", or "admin" for an
+ * internal user) rather than a User, and a badge that disagrees with the
+ * server is either a lock on something that would render or an unlocked
+ * button that 403s.
+ */
+export function resolutionAllowedForPlan(plan: string | null | undefined, res: string | null | undefined): boolean {
+  const required = requiredTierForResolution(res);
+  if (!required) return true;
+  if (tierRank(tierForPlan(plan)) >= tierRank(required)) return true;
+  return isGrandfathered(plan, res);
 }
 
 /** The tier's name as a customer sees it. */

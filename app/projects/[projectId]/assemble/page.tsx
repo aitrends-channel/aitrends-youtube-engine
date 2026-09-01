@@ -17,8 +17,9 @@ import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPrevie
 import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
-import { requiredTierForResolution, tierForPlan, tierRank, tierLabel } from "@/lib/plans-gating";
+import { requiredTierForResolution, resolutionAllowedForPlan, tierForPlan, tierRank, tierLabel } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
+import { SOUND_EFFECTS_ADMIN_ONLY } from "@/lib/rollout";
 
 interface PageProps {
   params: { projectId: string };
@@ -1237,6 +1238,10 @@ export default function AssemblePage({ params }: PageProps) {
     return () => { cancelled = true; };
   }, []);
   const userTier = tierForPlan(userPlan);
+  // Sound effects are internal-only for now (SOUND_EFFECTS_ADMIN_ONLY). The
+  // effect resolves admins to the "admin" plan above, which is the same signal
+  // the 4K gate reads, so this needs no second lookup.
+  const soundsAllowed = !SOUND_EFFECTS_ADMIN_ONLY || userPlan === "admin";
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
@@ -1385,6 +1390,14 @@ export default function AssemblePage({ params }: PageProps) {
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
   const [sfxVolume, setSfxVolume] = useState(0.6);
   const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements" | "text">("effects");
+  useEffect(() => {
+    // Runs when the plan resolves, not on mount, so a restored "sound" tab
+    // survives for an admin and is dropped for everyone else. Without it a
+    // customer could sit on a tab whose strip button no longer exists.
+    if (!soundsAllowed && (effectsTab === "sound" || effectsTab === "elements")) {
+      setEffectsTab("effects");
+    }
+  }, [soundsAllowed, effectsTab]);
 
   // The All / Custom switch inside the Sound and Elements tabs, and the
   // account's own uploads. One state for both libraries: they are the same
@@ -3690,7 +3703,10 @@ export default function AssemblePage({ params }: PageProps) {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                       {RESOLUTION_PRESETS.map((p) => {
                         const needs = requiredTierForResolution(p);
-                        const locked = !!needs && tierRank(userTier) < tierRank(needs);
+                        // Grandfathering means the tier alone no longer decides
+                        // this: legacy Pro keeps 4K. Same function the server
+                        // answers with, so the badge cannot disagree with it.
+                        const locked = !!needs && !resolutionAllowedForPlan(userPlan, p);
                         const active = selectedResolution === p;
                         return (
                           <button
@@ -5010,7 +5026,9 @@ export default function AssemblePage({ params }: PageProps) {
                    was set is not changing it. */
                 <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
                   style={{ background: "var(--bg-input)" }}>
-                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"], ["text", "Text"]] as const).map(([id, label]) => (
+                  {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"], ["text", "Text"]] as const)
+                    .filter(([id]) => soundsAllowed || (id !== "sound" && id !== "elements"))
+                    .map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
