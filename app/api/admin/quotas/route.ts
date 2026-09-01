@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { entitlementTier } from "@/lib/plan-tier";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { getPlans } from "@/lib/plans";
+import { getAllPlans } from "@/lib/plans";
 import {
   QUOTA_EXCLUDED_PLAN_SLUG,
   coerceQuotaConfig,
@@ -31,17 +32,28 @@ export async function GET() {
   // real plan rather than a hardcoded starter/pro pair. production-test
   // is excluded — it's the live-checkout verification harness, not a
   // customer tier, and no quota math runs against it.
-  let plans: { slug: string; name: string; isFounder: boolean }[] = [];
+  // The tier as well as the slug: the config is keyed by entitlement, so a
+  // column for heclus_pro has to read and write the "pro" map. Sending only the
+  // slug is what made every cell render 0.
+  type Col = { slug: string; tier: string; name: string; isFounder: boolean };
+  let plans: Col[] = [];
+  let legacyPlans: Col[] = [];
   try {
-    plans = (await getPlans())
-      .filter((p) => p.slug !== QUOTA_EXCLUDED_PLAN_SLUG)
-      .map((p) => ({ slug: p.slug, name: p.name, isFounder: p.isFounder }));
+    const all = (await getAllPlans()).filter((p) => p.slug !== QUOTA_EXCLUDED_PLAN_SLUG);
+    const col = (p: (typeof all)[number]): Col =>
+      ({ slug: p.slug, tier: entitlementTier(p.slug), name: p.name, isFounder: p.isFounder });
+    plans = all.filter((p) => !p.legacy).map(col);
+    // Retired products get their own tab. Founder in particular has never been
+    // editable here: it is the only tier no plan on sale maps to, so it fell off
+    // the page entirely when the Heclus products replaced the legacy ones.
+    legacyPlans = all.filter((p) => p.legacy).map(col);
   } catch {
     plans = [];
+    legacyPlans = [];
   }
 
   const config: QuotaConfig = coerceQuotaConfig((data as { free_quotas?: unknown } | null)?.free_quotas);
-  return NextResponse.json({ config, plans });
+  return NextResponse.json({ config, plans, legacyPlans });
 }
 
 export async function PUT(req: Request) {

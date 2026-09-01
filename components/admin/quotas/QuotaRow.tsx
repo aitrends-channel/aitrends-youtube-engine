@@ -21,7 +21,7 @@ export function QuotaRow({
   saving: boolean;
   savingOther: boolean;
   disabled: boolean;
-  onOverrideChange: (slug: string, value: string) => void;
+  onOverrideChange: (tier: string, value: string) => void;
   onSave: () => void;
 }) {
   const canSave = dirty && valid && !saving && !savingOther;
@@ -35,7 +35,7 @@ export function QuotaRow({
   // an admin needs before raising a cap, since we're billed for every one
   // of these characters.
   const costed = rate === null ? [] : plans
-    .map((p) => ({ plan: p, units: parseQuotaValue(draftByPlan[p.slug] ?? "") ?? 0 }))
+    .map((p) => ({ plan: p, units: parseQuotaValue(draftByPlan[p.tier] ?? "") ?? 0 }))
     .filter((r) => r.units > 0)
     .map((r) => ({ ...r, usd: (r.units / 1_000_000) * rate }));
 
@@ -91,14 +91,14 @@ export function QuotaRow({
             <QuotaInput
               key={p.slug}
               label={p.name}
-              hint={p.slug}
+              hint={p.tier}
               unit={unitLabel}
               allowUnlimited={field.allowUnlimited === true}
-              value={draftByPlan[p.slug] ?? ""}
-              savedValue={typeof saved?.byPlan[p.slug] === "number" ? saved.byPlan[p.slug] : undefined}
+              value={draftByPlan[p.tier] ?? ""}
+              savedValue={typeof saved?.byPlan[p.tier] === "number" ? saved.byPlan[p.tier] : undefined}
               disabled={disabled}
               locked={p.isFounder || field.perPlanEditable === false}
-              onChange={(v) => onOverrideChange(p.slug, v)}
+              onChange={(v) => onOverrideChange(p.tier, v)}
             />
           ))}
         </div>

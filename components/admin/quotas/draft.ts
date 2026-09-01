@@ -2,22 +2,27 @@ import { QUOTA_FIELDS, QUOTA_VALUE_MAX, QUOTA_UNLIMITED, type QuotaConfig, type 
 
 const allowsUnlimited = (key: QuotaKind) => QUOTA_FIELDS.find((f) => f.key === key)?.allowUnlimited === true;
 
-/** slug → value, as strings so a half-typed number isn't coerced mid-edit.
+/** tier → value, as strings so a half-typed number isn't coerced mid-edit.
  *  Blank means the plan gets no allowance (same as 0) and is dropped from
  *  the saved payload rather than stored as a zero. */
 export type QuotaDraft = Record<QuotaKind, Record<string, string>>;
 
 /** isFounder plans show a read-only cell — the founder tier deliberately
- *  carries no Heclus-paid allowance, so there's nothing to allocate. */
-export type PlanRef = { slug: string; name: string; isFounder: boolean };
+ *  carries no Heclus-paid allowance, so there's nothing to allocate.
+ *
+ *  `tier` is what the config is keyed by, and it is not the slug: heclus_pro
+ *  is billed as heclus_pro and entitled as pro. Reading by slug is what made
+ *  every cell render 0 the moment the Heclus products replaced the legacy
+ *  ones in getPlans, because no byPlan map has ever had a heclus_ key in it. */
+export type PlanRef = { slug: string; tier: string; name: string; isFounder: boolean };
 
 export function toDraft(config: QuotaConfig, plans: PlanRef[]): QuotaDraft {
   const out = {} as QuotaDraft;
   for (const f of QUOTA_FIELDS) {
     const byPlan: Record<string, string> = {};
     for (const p of plans) {
-      const v = config[f.key].byPlan[p.slug];
-      byPlan[p.slug] = typeof v === "number" ? String(v) : "";
+      const v = config[f.key].byPlan[p.tier];
+      byPlan[p.tier] = typeof v === "number" ? String(v) : "";
     }
     out[f.key] = byPlan;
   }
@@ -49,15 +54,15 @@ export function isQuotaDirty(
   plans: PlanRef[],
 ): boolean {
   for (const p of plans) {
-    const drafted = parseQuotaValue(draft[key][p.slug] ?? "", allowsUnlimited(key));
-    const stored = typeof saved[key].byPlan[p.slug] === "number" ? saved[key].byPlan[p.slug] : null;
+    const drafted = parseQuotaValue(draft[key][p.tier] ?? "", allowsUnlimited(key));
+    const stored = typeof saved[key].byPlan[p.tier] === "number" ? saved[key].byPlan[p.tier] : null;
     if (drafted !== stored) return true;
   }
   return false;
 }
 
 export function isQuotaValid(draft: QuotaDraft, key: QuotaKind, plans: PlanRef[]): boolean {
-  return plans.every((p) => isQuotaValueValid(draft[key][p.slug] ?? "", allowsUnlimited(key)));
+  return plans.every((p) => isQuotaValueValid(draft[key][p.tier] ?? "", allowsUnlimited(key)));
 }
 
 /** Blank plans are omitted, so they resolve to 0 on the server. */
@@ -66,8 +71,8 @@ export function toPayload(draft: QuotaDraft, key: QuotaKind, plans: PlanRef[]): 
 } {
   const byPlan: Record<string, number> = {};
   for (const p of plans) {
-    const v = parseQuotaValue(draft[key][p.slug] ?? "", allowsUnlimited(key));
-    if (v !== null) byPlan[p.slug] = v;
+    const v = parseQuotaValue(draft[key][p.tier] ?? "", allowsUnlimited(key));
+    if (v !== null) byPlan[p.tier] = v;
   }
   return { byPlan };
 }
