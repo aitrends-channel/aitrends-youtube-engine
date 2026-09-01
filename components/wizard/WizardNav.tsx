@@ -132,6 +132,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   // What this browser is pretending to be, for an admin. Everyone else reads
   // their real plan.
   const planView = useAdminPlanView();
+  const [switchingView, setSwitchingView] = useState(false);
   const onCredits = useOnCreditsPlan(userPlan, isAdmin);
   // Follows the switch rather than short-circuiting on isAdmin. These were the
   // one surface that ignored it, so flipping to Old changed the Cost button,
@@ -451,9 +452,33 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 <button
                   key={v}
                   type="button"
-                  onClick={() => setAdminPlanView(v)}
-                  title={v === "new" ? "View as a Heclus Credits account" : "View as an old-plan account"}
-                  className="px-2 py-1.5 transition-all cursor-pointer"
+                  disabled={switchingView}
+                  onClick={async () => {
+                    // The view switches first, so the buttons move under the
+                    // cursor whether or not the write lands.
+                    setAdminPlanView(v);
+                    // And the funding mode follows it. Without this the switch
+                    // rendered the credit-plan surfaces while every balance
+                    // still came from the admin's own provider keys, which is
+                    // what made "New" look broken.
+                    setSwitchingView(true);
+                    try {
+                      await fetch("/api/admin/funding-mode", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ mode: v === "new" ? "wallet" : "byo" }),
+                      });
+                      // Server components and every SWR bar read the mode, so
+                      // the page has to re-fetch for the switch to show.
+                      router.refresh();
+                    } catch {
+                      // The view still switched; only the funding half failed.
+                    } finally {
+                      setSwitchingView(false);
+                    }
+                  }}
+                  title={v === "new" ? "View as a Heclus Credits account, funded by the wallet" : "View as an old-plan account, funded by your own keys"}
+                  className="px-2 py-1.5 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                   style={on
                     ? { background: "oklch(0.72 0.25 285 / 0.18)", color: "var(--accent-purple-text)" }
                     : { background: "transparent", color: "var(--c-50)" }}
