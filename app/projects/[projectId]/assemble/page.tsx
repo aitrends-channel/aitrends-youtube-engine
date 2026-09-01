@@ -1559,21 +1559,26 @@ export default function AssemblePage({ params }: PageProps) {
   // beats, music is not. Its own ref, separate from the music card's inline
   // preview player, so the two cannot pause each other.
   const timelineBgmRef = useRef<HTMLAudioElement | null>(null);
-  /** Every effect currently sounding, so the transport can silence all of them.
+  /** Every effect currently sounding, keyed by which sound it is.
    *
-   *  A set, not a single element, because two cues can legitimately overlap:
-   *  the render mixes them with amix, and a placed sound landing on a beat that
-   *  carries its own is the normal case rather than a mistake. What must not
-   *  overlap is auditioning, which is a different thing and asks for it
-   *  explicitly. */
-  const sfxAudioRef = useRef<Set<HTMLAudioElement>>(new Set());
+   *  Several at once, because two different cues can legitimately overlap: the
+   *  render mixes them with amix, and a placed sound landing on a beat that
+   *  carries its own is ordinary rather than a mistake.
+   *
+   *  Keyed rather than a plain set, so the same sound cannot overlap ITSELF.
+   *  That is never what a second cue means: a 90ms pop firing twice inside its
+   *  own length is inaudible either way, and a two-minute upload used on
+   *  several beats stacks copies that run against each other for the rest of
+   *  the video. One instance per sound, and a cue arriving while it still
+   *  plays is dropped. */
+  const sfxAudioRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   /** Which sound is being auditioned, so its tile can offer to stop it. Only
    *  ever one, because auditioning is exclusive. */
   const [auditioning, setAuditioning] = useState<string | null>(null);
 
   /** Silence every effect sounding. Safe to call when none is. */
   const stopSound = useCallback(() => {
-    for (const a of sfxAudioRef.current) {
+    for (const a of sfxAudioRef.current.values()) {
       a.onended = null;
       try { a.pause(); a.currentTime = 0; } catch { /* already finished */ }
     }
@@ -1667,6 +1672,10 @@ export default function AssemblePage({ params }: PageProps) {
    *  swish landed on the same frame and cut it off. */
   const playSound = useCallback((id: string, volume = 1, pitch = 1, exclusive = true) => {
     if (exclusive) stopSound();
+    // Already sounding, so this cue would be a second copy of the same file
+    // playing over the first. Auditioning is exempt: it just stopped everything
+    // and is meant to restart from the top.
+    else if (sfxAudioRef.current.has(id)) return;
     if (exclusive) setAuditioning(id);
     // A built-in ships in /public; an upload is served from R2. Resolved here
     // rather than by the callers, all of which pass an id and nothing else.
@@ -1683,12 +1692,14 @@ export default function AssemblePage({ params }: PageProps) {
     // Cleared on its own end so the ref never holds a finished element, and a
     // later stop cannot rewind something that already stopped.
     a.onended = () => {
-      sfxAudioRef.current.delete(a);
+      // Only if it is still the current one: a later cue for the same sound
+      // replaces the entry, and the older element must not delete it.
+      if (sfxAudioRef.current.get(id) === a) sfxAudioRef.current.delete(id);
       // Back to a play glyph when it finishes on its own, so the tile never
       // sits offering to stop something that already stopped.
       if (exclusive) setAuditioning((cur) => (cur === id ? null : cur));
     };
-    sfxAudioRef.current.add(a);
+    sfxAudioRef.current.set(id, a);
     void a.play().catch(() => { /* autoplay rules */ });
   }, [sfxVolume, customAssets, stopSound]);
 
@@ -2126,13 +2137,33 @@ export default function AssemblePage({ params }: PageProps) {
   //
   // Once, hence the set. The playhead updates every frame, so without it a
   // sound at 4.0s would retrigger about sixty times a second while the head sat
-  // on it. The set clears on stop and on any jump backwards, which is what a
-  // seek looks like from here, so scrubbing back over a sound plays it again.
+  // on it.
+  //
+  // A seek re-arms the cues it lands before, so scrubbing back over a sound
+  // plays it again. What counts as a seek is the delicate part: the playhead is
+  // a frame clock corrected against audio.currentTime, and that correction
+  // steps BACKWARDS by up to 0.25s on its own. A 0.05s threshold called every
+  // one of those a seek, wiped the whole set, and re-fired any cue still inside
+  // its 0.4s window. A short sound survived it, because the old exclusive
+  // playback cut the first copy off; once cues were allowed to overlap the
+  // duplicate became audible, and on a two-minute upload it meant two copies
+  // running against each other for the rest of the video.
+  const SEEK_JUMP = 0.35;
   const firedSounds = useRef<Set<string>>(new Set());
   const lastPlayhead = useRef(0);
   useEffect(() => {
     if (!playing) { firedSounds.current.clear(); lastPlayhead.current = playhead; return; }
-    if (playhead < lastPlayhead.current - 0.05) firedSounds.current.clear();
+    const jumped = Math.abs(playhead - lastPlayhead.current) > SEEK_JUMP;
+    if (jumped) {
+      // Only the cues now ahead of the head. Clearing all of them would re-fire
+      // everything already passed the moment the head crossed it again.
+      for (const snd of projectSounds) {
+        if (snd.at_sec >= playhead) firedSounds.current.delete(snd.id);
+      }
+      // And silence what is sounding: a long sound started before the jump is
+      // playing from a position the video is no longer at.
+      stopSound();
+    }
     lastPlayhead.current = playhead;
     if (sfxVolume <= 0) return;
     for (const snd of projectSounds) {
@@ -2144,7 +2175,7 @@ export default function AssemblePage({ params }: PageProps) {
         playSound(snd.sound, snd.volume, snd.pitch, false);
       }
     }
-  }, [playhead, playing, projectSounds, sfxVolume, playSound]);
+  }, [playhead, playing, projectSounds, sfxVolume, playSound, stopSound]);
 
   // Track height. Enough for a block with a label in it and no more: five
   // sections stacked is what makes the timeline tall, so this number is
@@ -6453,20 +6484,49 @@ export default function AssemblePage({ params }: PageProps) {
                   opacity: timelineLocked ? 0.55 : 1,
                   // Text, elements, clips and sound stacked can run past a
                   // screen, and a timeline you have to scroll the page to see
-                  // the end of is not a timeline. It scrolls inside itself now,
-                  // both ways, and the ruler goes with it: a fixed header would
-                  // need the rows to scroll in a separate box, which then has
-                  // to be kept in step horizontally with the header.
+                  // the end of is not a timeline. It scrolls inside itself,
+                  // both ways. The ruler stays put vertically without a second
+                  // scroll box to keep in step: sticky pins one axis and leaves
+                  // the other alone, so it holds at the top while still moving
+                  // sideways with the rows it measures.
                   maxHeight: "min(calc(50vh - 80px), 340px)",
                 }}
               >
-                <div ref={timelineStripRef} style={{ width: stripWidth }}>
+                <div ref={timelineStripRef} className="relative" style={{ width: stripWidth }}>
+                  {/* The playhead, on the strip rather than inside the rows.
+                      It used to live in the clip row and reach back 24px for
+                      the ruler, which was only ever right when nothing was
+                      above it: the text and element tracks sit in between and
+                      grow with their lanes, so the reach was short by however
+                      many lanes were in use. On the strip it simply spans
+                      everything, ruler included, whatever is stacked. */}
+                  <div className="absolute inset-y-0 w-[2px] z-30 pointer-events-none"
+                    style={{
+                      left: playhead * pxPerSecond,
+                      background: playing ? "oklch(0.95 0 0)" : "oklch(0.85 0 0 / 0.75)",
+                      boxShadow: playing ? "0 0 6px oklch(0.95 0 0 / 0.6)" : "none",
+                    }}>
+                    {/* The head, which is the part people recognise. */}
+                    <span className="absolute -top-1 -left-[3px] w-2 h-2 rounded-sm rotate-45"
+                      style={{ background: playing ? "oklch(0.95 0 0)" : "oklch(0.85 0 0 / 0.75)" }} />
+                  </div>
                   {/* Ruler. Every five seconds, which keeps a ten-minute video
                       readable without a mark per second. Drag it to scrub:
                       the ticks say what this is, the dragging proves it. */}
                   <div
-                    className="relative h-5 mb-1 cursor-ew-resize select-none"
-                    style={{ borderBottom: "1px solid var(--bd-10)" }}
+                    // No "relative" alongside: both are position utilities and
+                    // which one wins depends on stylesheet order, not class
+                    // order. Sticky positions the element anyway, so the ticks
+                    // inside still have a containing block.
+                    className="sticky top-0 z-20 h-5 mb-1 cursor-ew-resize select-none"
+                    style={{
+                      borderBottom: "1px solid var(--bd-10)",
+                      // Opaque, or the rows scroll visibly underneath it. The
+                      // two layers reproduce exactly what the viewport puts
+                      // behind the ruler when nothing is scrolled: its white
+                      // overlay over the panel.
+                      background: "linear-gradient(oklch(1 0 0 / 0.11), oklch(1 0 0 / 0.11)), var(--bg-panel)",
+                    }}
                     onPointerDown={(e) => {
                       const strip = e.currentTarget;
                       const scrub = (clientX: number, commit: boolean) => {
@@ -6726,16 +6786,6 @@ export default function AssemblePage({ params }: PageProps) {
                           style={{ left: t * pxPerSecond, background: "oklch(1 0 0 / 0.07)" }} />
                       ));
                   })()}
-                  <div className="absolute top-0 bottom-0 w-[2px] z-30 pointer-events-none"
-                    style={{
-                      left: playhead * pxPerSecond,
-                      background: playing ? "oklch(0.95 0 0)" : "oklch(0.85 0 0 / 0.75)",
-                      boxShadow: playing ? "0 0 6px oklch(0.95 0 0 / 0.6)" : "none",
-                    }}>
-                    {/* The head, which is the part people recognise. */}
-                    <span className="absolute -top-1 -left-[3px] w-2 h-2 rounded-sm rotate-45"
-                      style={{ background: playing ? "oklch(0.95 0 0)" : "oklch(0.85 0 0 / 0.75)" }} />
-                  </div>
                   <div className="flex gap-[1px] items-stretch rounded-md"
                     style={{ background: "oklch(1 0 0 / 0.09)" }}>
                     {(() => { let elapsed = 0; return beats.map((b) => {
