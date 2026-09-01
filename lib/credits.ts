@@ -60,7 +60,45 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
  * modal, and the top-up button. A zero allowance with no bought credit is what
  * every one of those already treats as "no wallet".
  */
-export const VIDEO_CREDITS_ADMIN_ONLY = false;
+export const VIDEO_CREDITS_ADMIN_ONLY = true;
+
+/**
+ * Whether anyone may buy more free-video credits.
+ *
+ * Separate from the lane itself, because the two questions are different: a
+ * customer already holding credits should be able to spend them, and should not
+ * be able to buy more of something that has not been released. One account
+ * bought three packs before the lane was meant to be reachable at all.
+ *
+ * Closed for everyone, admins included. An admin who needs to test the purchase
+ * flow can flip this for the duration rather than leaving the door open, which
+ * is what let the first purchase through.
+ */
+export const VIDEO_CREDITS_TOPUP_OPEN = false;
+
+/**
+ * Accounts the free video lane stays open to while it is otherwise coming soon.
+ *
+ * The lane reached customers before it was meant to, and one of them bought
+ * credits against it. Switching it off wholesale would take away something
+ * already paid for, and hiding a wallet is not the same as refunding it — so
+ * the switch is admins plus this list rather than admins alone.
+ *
+ * An allowance rather than only their bought credits, because the picker drops
+ * the free model when the allowance is zero: without this they would keep a
+ * balance they could no longer see a model to spend.
+ *
+ * Lowercased on both sides. An email that does not match here silently loses
+ * access, which is the failure worth being careful about.
+ */
+export const VIDEO_CREDITS_ALLOWED_EMAILS = [
+  "davidstamu80@gmail.com",
+];
+
+function videoCreditsAllowed(user: User): boolean {
+  const email = (user.email ?? "").trim().toLowerCase();
+  return !!email && VIDEO_CREDITS_ALLOWED_EMAILS.includes(email);
+}
 
 /**
  * Grant one pack per confirmed payment regardless of quantity bought.
@@ -103,9 +141,11 @@ const EMPTY: CreditBalance = { grant: 0, paid: 0, total: 0, reserved: 0, monthly
  *  allocated, which is how Founder is excluded. */
 export async function monthlyGrantFor(user: User): Promise<number> {
   if (FREE_VIDEO_COMING_SOON) return 0;
-  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user)) return 0;
-  // Customers only. planSlugOf defaults an unpaid account to "starter", so
-  // without this every signup drew the Starter allowance of clips we pay for.
+  // videoCreditsAllowed is production's allowlist for the one customer who
+  // bought before the lane was closed; hasPaidAccess is staging's guard against
+  // an unpaid signup drawing the Starter allowance of clips we pay for. Both
+  // sides are load-bearing, so both are kept.
+  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user) && !videoCreditsAllowed(user)) return 0;
   if (!hasPaidAccess(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));

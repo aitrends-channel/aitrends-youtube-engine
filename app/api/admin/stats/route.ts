@@ -203,6 +203,7 @@ export async function GET() {
       else planDefaultLimit = 1;
       const settings = settingsByUserId.get(authUser.id);
       const override = settings?.niche_limit_override ?? null;
+      const dodoMeta = (authUser.app_metadata?.dodo ?? {}) as Record<string, unknown>;
       return {
         email,
         status: isPaid ? "Paid" : "Registered",
@@ -211,6 +212,14 @@ export async function GET() {
         plan,
         paidAt: (authUser.app_metadata?.paid_at as string | undefined) ?? null,
         planExpiresAt: (authUser.app_metadata?.plan_expires_at as string | undefined) ?? null,
+        // Last thing Dodo (or our own cancel route) said about the
+        // subscription. status is the lifecycle state, event is what
+        // produced it — kept separate because the in-app cancel stamps
+        // both optimistically while a webhook replay can carry a status
+        // with no matching event of its own.
+        subscriptionStatus: (dodoMeta.status as string | undefined) ?? null,
+        subscriptionEvent: (dodoMeta.event as string | undefined) ?? null,
+        subscriptionUpdatedAt: (dodoMeta.updated_at as string | undefined) ?? null,
         nichesUsed: settings?.niches_used ?? 0,
         hasSetup: settings?.has_setup ?? false,
         hasAnthropicKey: settings?.has_anthropic_key ?? false,
@@ -240,6 +249,9 @@ export async function GET() {
         plan: null,
         paidAt: null,
         planExpiresAt: null,
+        subscriptionStatus: null,
+        subscriptionEvent: null,
+        subscriptionUpdatedAt: null,
         nichesUsed: 0,
         hasSetup: false,
         planDefaultLimit: null,
