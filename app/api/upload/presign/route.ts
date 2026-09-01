@@ -31,7 +31,13 @@ export async function POST(req: Request) {
   // 1Click config page (bgm/logo) belong to the user's preset, not to
   // any project, so they live under <user>/one-click/… and skip the
   // project-ownership check.
-  if (projectId !== "one-click") {
+  //
+  // "assets" is the same idea for custom sound effects and elements: they
+  // belong to the account and are reused across every project, so there is no
+  // project to check them against. Registering one is gated in
+  // /api/me/assets; a presigned PUT on its own only writes into the caller's
+  // own folder, which they can already do for any project they own.
+  if (projectId !== "one-click" && projectId !== "assets") {
     const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).single();
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }

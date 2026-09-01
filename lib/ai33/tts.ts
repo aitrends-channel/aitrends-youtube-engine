@@ -1,9 +1,9 @@
 import type { KieModel } from "@/lib/types";
-import { entitlementTier } from "@/lib/plan-tier";
+import { entitlementTier, tierRank, ADMIN_PLAN } from "@/lib/plan-tier";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
-import { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, resolveQuotaCap } from "@/lib/quota-config";
+import { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, AI33_TTS_CAP_MAX, resolveQuotaCap } from "@/lib/quota-config";
 
 // ai33.pro (OpenSpeaker) TTS — a Heclus-paid voiceover perk, mirroring the
 // Qwen path (lib/replicate/tts.ts). It runs on HECLUS's own ai33 key
@@ -45,17 +45,24 @@ export class Ai33TTSError extends Error {
 // dashboard (Config → Quotas) via resolveQuotaCap; these are the
 // fallback. Defined in lib/quota-config.ts to keep the import one-way,
 // re-exported here because that's where callers look for them.
-export { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO };
+export { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, AI33_TTS_CAP_MAX };
 
 /** Synchronous env-only cap. Kept for callers that can't await; the
  *  admin-configured value is what generateAi33TTS actually enforces. */
 export function ai33CapForPlan(plan: string | null | undefined, isAdmin = false): number {
-  if (isAdmin) return AI33_TTS_CAP_PRO;
+  // The highest cap defined. Add a tier with its own cap and it belongs here
+  // too, or an admin silently drops to the tier below it.
+  if (isAdmin) return AI33_TTS_CAP_MAX;
   // Normalised, so heclus_pro takes the Pro cap. Callers reach this with a raw
   // app_metadata.plan as often as with a tier.
   const p = entitlementTier(plan);
+  // make-admin stores plan="admin", which reaches here when the caller had no
+  // isAdmin flag to pass.
+  if (p === ADMIN_PLAN) return AI33_TTS_CAP_MAX;
   if (p === "founder") return 0;
-  if (p === "pro") return AI33_TTS_CAP_PRO;
+  // Highest tier first, so each takes its own cap rather than the one below.
+  if (tierRank(p) >= tierRank("max")) return AI33_TTS_CAP_MAX;
+  if (tierRank(p) >= tierRank("pro")) return AI33_TTS_CAP_PRO;
   // starter, demo, unknown → the entry-level cap.
   return AI33_TTS_CAP_STARTER;
 }

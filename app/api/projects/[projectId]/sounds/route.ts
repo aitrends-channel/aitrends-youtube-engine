@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { isCustomRef, ownsRef } from "@/lib/user-assets";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -61,8 +62,11 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
 
   const sound = body.sound;
-  if (typeof sound !== "string" || !SOUNDS.includes(sound)) {
-    return NextResponse.json({ error: `sound must be one of: ${SOUNDS.join(", ")}` }, { status: 400 });
+  // A built-in name, or one of this account's own uploads. ownsRef is what
+  // stops a guessed uuid attaching somebody else's asset to this project.
+  const isOwnCustom = typeof sound === "string" && isCustomRef(sound) && await ownsRef(g.user!.id, sound);
+  if (typeof sound !== "string" || (!SOUNDS.includes(sound) && !isOwnCustom)) {
+    return NextResponse.json({ error: `sound must be one of: ${SOUNDS.join(", ")}, or one of your uploads` }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -93,7 +97,10 @@ export async function PATCH(req: Request, { params }: { params: { projectId: str
   if (typeof id !== "string") return NextResponse.json({ error: "id is required" }, { status: 400 });
 
   const patch: Record<string, number | string | null> = {};
-  if (typeof body.sound === "string" && SOUNDS.includes(body.sound)) patch.sound = body.sound;
+  if (typeof body.sound === "string"
+      && (SOUNDS.includes(body.sound) || (isCustomRef(body.sound) && await ownsRef(g.user!.id, body.sound)))) {
+    patch.sound = body.sound;
+  }
   if (num(body.at_sec) !== undefined) patch.at_sec = Math.max(0, num(body.at_sec)!);
   if (num(body.volume) !== undefined) patch.volume = clamp(num(body.volume)!, 0, 2);
   if (num(body.pitch) !== undefined) patch.pitch = clamp(num(body.pitch)!, 0.5, 2);

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { isCustomRef, ownsRef } from "@/lib/user-assets";
 
 // Set, or clear, the sound played at one beat's start.
 //
@@ -11,7 +12,11 @@ import type { User } from "@supabase/supabase-js";
 // makes, not an absence of one.
 
 /** Must stay in step with the column's check constraint and with the files in
- *  the worker's assets/sfx, which scripts/make-sfx.sh generates. */
+ *  the worker's assets/sfx, which scripts/make-sfx.sh generates.
+ *
+ *  Not the whole set a beat accepts: migration 177 also allows
+ *  "custom:<uuid>", one of the account's own uploads, which cannot be listed
+ *  here because it is per customer. Both shapes are checked below. */
 const SOUNDS = ["whoosh", "reverse-whoosh", "swish", "sweep", "page",
   "click", "tick", "pop", "beep", "glitch", "shutter",
   "zoom-in", "zoom-out", "riser",
@@ -44,9 +49,12 @@ export async function PATCH(
   // not a workflow, it is a punishment.
   if ("applyAll" in body) {
     const all = body.applyAll;
-    const value = all === null ? null : typeof all === "string" && SOUNDS.includes(all) ? all : undefined;
+    const allIsOwnCustom = typeof all === "string" && isCustomRef(all) && await ownsRef(user.id, all);
+    const value = all === null
+      ? null
+      : typeof all === "string" && (SOUNDS.includes(all) || allIsOwnCustom) ? all : undefined;
     if (value === undefined) {
-      return NextResponse.json({ error: `applyAll must be null or one of: ${SOUNDS.join(", ")}` }, { status: 400 });
+      return NextResponse.json({ error: `applyAll must be null, one of: ${SOUNDS.join(", ")}, or one of your uploads` }, { status: 400 });
     }
     // The level and pitch travel with it: the sound was tuned before it was
     // applied, and applying it without the tuning would throw that away.
@@ -116,14 +124,17 @@ export async function PATCH(
   }
 
   const raw = body.sound;
+  // A built-in, or one of this account's own uploads. ownsRef is what stops a
+  // guessed uuid attaching somebody else's asset to this project.
+  const isOwnCustom = typeof raw === "string" && isCustomRef(raw) && await ownsRef(user.id, raw);
   const sound = raw === null || raw === ""
     ? null
-    : typeof raw === "string" && SOUNDS.includes(raw)
+    : typeof raw === "string" && (SOUNDS.includes(raw) || isOwnCustom)
       ? raw
       : undefined;
   if (sound === undefined) {
     return NextResponse.json(
-      { error: `sound must be null or one of: ${SOUNDS.join(", ")}` },
+      { error: `sound must be null, one of: ${SOUNDS.join(", ")}, or one of your uploads` },
       { status: 400 },
     );
   }

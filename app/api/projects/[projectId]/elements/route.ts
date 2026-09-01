@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { isCustomRef, ownsRef } from "@/lib/user-assets";
 
 // Elements overlaid on the assembled video: which button, when it is on
 // screen, and where.
@@ -60,8 +61,11 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
 
   const element = body.element;
-  if (typeof element !== "string" || !ELEMENTS.includes(element)) {
-    return NextResponse.json({ error: `element must be one of: ${ELEMENTS.join(", ")}` }, { status: 400 });
+  // A built-in name, or one of this account's own uploads. ownsRef is what
+  // stops a guessed uuid attaching somebody else's asset to this project.
+  const isOwnCustom = typeof element === "string" && isCustomRef(element) && await ownsRef(user.id, element);
+  if (typeof element !== "string" || (!ELEMENTS.includes(element) && !isOwnCustom)) {
+    return NextResponse.json({ error: `element must be one of: ${ELEMENTS.join(", ")}, or one of your uploads` }, { status: 400 });
   }
   const start = Math.max(0, num(body.start_sec) ?? 0);
   const end = Math.max(start + MIN_SPAN, num(body.end_sec) ?? start + 3);
@@ -97,7 +101,10 @@ export async function PATCH(req: Request, { params }: { params: { projectId: str
   if (typeof id !== "string") return NextResponse.json({ error: "id is required" }, { status: 400 });
 
   const patch: Record<string, number | string> = {};
-  if (typeof body.element === "string" && ELEMENTS.includes(body.element)) patch.element = body.element;
+  if (typeof body.element === "string"
+      && (ELEMENTS.includes(body.element) || (isCustomRef(body.element) && await ownsRef(user.id, body.element)))) {
+    patch.element = body.element;
+  }
   const start = num(body.start_sec);
   const end = num(body.end_sec);
   if (start !== undefined) patch.start_sec = Math.max(0, start);

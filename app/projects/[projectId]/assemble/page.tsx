@@ -16,7 +16,7 @@ import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPrevie
 import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
-import { PRO_RESOLUTIONS, PRO_TIER_PLANS } from "@/lib/plans-gating";
+import { requiredTierForResolution, tierForPlan, tierRank, tierLabel } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 
 interface PageProps {
@@ -267,6 +267,27 @@ const SOUND_SECONDS: Record<string, number> = {
   riser: 1.200, shutter: 0.140, sparkle: 0.440, sweep: 0.800, swish: 0.320,
   thud: 0.260, tick: 0.030, whoosh: 0.500, "zoom-in": 0.600, "zoom-out": 0.600,
 };
+
+/**
+ * Bar heights for the little waveform on a sound tile.
+ *
+ * Deterministic from the id, so a sound looks the same every render and two
+ * sounds look different from each other. The heights are decorative and do not
+ * come from the audio: drawing a true waveform means decoding two dozen files
+ * to fill a picker. The bar COUNT is real, taken from the length, so a long
+ * sound genuinely reads as longer than a short one.
+ */
+function waveformBars(id: string, seconds: number): number[] {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619) >>> 0;
+  const count = Math.max(6, Math.min(20, Math.round(6 + seconds * 7)));
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+    out.push(30 + (h % 70));
+  }
+  return out;
+}
 
 /** The natural length of a sound, or a fallback for one this list has not
  *  caught up with. */
@@ -715,6 +736,211 @@ const WORD_TIMED_CAPTIONS = ["karaoke", "reveal", "typewriter"];
 const CAPTION_SIZES     = [{ id: "small", label: "S" }, { id: "medium", label: "M" }, { id: "large", label: "L" }, { id: "xl", label: "XL" }] as const;
 const CAPTION_POSITIONS = [{ id: "bottom", label: "Bottom" }, { id: "middle", label: "Middle" }, { id: "top", label: "Top" }] as const;
 
+/** How long an audio file is, from the browser's own decoder. Null when it
+ *  cannot be read, which the API accepts: only trim and stretch need it. */
+function measureAudioSeconds(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    const done = (v: number | null) => { URL.revokeObjectURL(url); resolve(v); };
+    audio.onloadedmetadata = () => done(Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null);
+    audio.onerror = () => done(null);
+    audio.src = url;
+  });
+}
+
+/** A sound or element the customer uploaded, as /api/me/assets returns it. */
+interface CustomAsset {
+  id: string;
+  kind: "sound" | "element";
+  name: string;
+  url: string;
+  durationSec: number | null;
+}
+
+/** How an uploaded asset is referred to wherever a built-in id would go. */
+const customRef = (id: string) => `custom:${id}`;
+const isCustomRef = (ref: string) => ref.startsWith("custom:");
+
+const ASSET_ACCEPT: Record<"sound" | "element", string> = {
+  sound: "audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,.mp3,.wav,.m4a,.ogg",
+  element: "image/png,image/webp,image/gif,.png,.webp,.gif",
+};
+
+/**
+ * The All / Custom switch above a library.
+ *
+ * Its own component because both the Sound tab and the Elements tab need it and
+ * they are 200 lines apart.
+ */
+function LibraryTabs({ value, onChange, customCount }: {
+  value: "all" | "custom";
+  onChange: (v: "all" | "custom") => void;
+  customCount: number;
+}) {
+  return (
+    <div className="flex gap-1 p-0.5 rounded-lg mb-2" style={{ background: "var(--bg-input)" }}>
+      {([["all", "All"], ["custom", "Custom"]] as const).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className="flex-1 py-1 rounded-md text-[11px] font-medium transition-all"
+          style={value === id
+            ? { background: "oklch(0.72 0.25 285 / 0.18)", color: "var(--accent-purple-text)" }
+            : { color: "var(--c-50)" }}
+        >
+          {label}
+          {id === "custom" && customCount > 0 && (
+            <span className="ml-1 text-[10px]" style={{ color: "var(--c-40)" }}>{customCount}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The x on an uploaded tile.
+ *
+ * A sibling of the tile rather than a child of it, because the tile is a button
+ * and a button cannot contain one. stopPropagation matters as much: without it
+ * a click would remove the asset and audition it on the way out.
+ */
+function RemoveAssetButton({ name, onRemove }: { name: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      title={`Remove ${name}`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onRemove(); }}
+      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center transition-all opacity-60 hover:opacity-100"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+    >
+      <X size={9} strokeWidth={3} />
+    </button>
+  );
+}
+
+/**
+ * The Custom pane: what this account has uploaded, and the way to add more.
+ *
+ * The whole pane is the drop target rather than a dashed box inside it. A box
+ * that is only a box until you have uploaded something is a control that gets
+ * in the way once you have, and the pane already has the shape and the edges to
+ * be the target itself.
+ *
+ * Uploads render as the same tiles the built-in library uses, passed in as
+ * children, so an uploaded sound drags onto the timeline and auditions on click
+ * exactly like a shipped one, and carries its own x to remove it.
+ */
+function CustomAssetPane({ kind, assets, canUpload, busy, error, onFiles, onUpgrade, children }: {
+  kind: "sound" | "element";
+  assets: CustomAsset[];
+  canUpload: boolean;
+  busy: boolean;
+  error: string | null;
+  onFiles: (files: FileList | null) => void;
+  onUpgrade: () => void;
+  children?: React.ReactNode;
+}) {
+  const [over, setOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const noun = kind === "sound" ? "sound effects" : "elements";
+  const empty = assets.length === 0;
+
+  return (
+    <div
+      onDragOver={(e) => { if (canUpload) { e.preventDefault(); setOver(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
+      onDrop={(e) => {
+        setOver(false);
+        if (!canUpload) return;
+        e.preventDefault();
+        onFiles(e.dataTransfer.files);
+      }}
+      className="rounded-xl transition-all"
+      style={{
+        // Only while something is being dragged over it. At rest the pane has
+        // no border of its own, so it reads as part of the tab.
+        outline: over ? "1px dashed oklch(0.72 0.25 285 / 0.6)" : "none",
+        outlineOffset: "4px",
+        background: over ? "oklch(0.72 0.25 285 / 0.06)" : "transparent",
+        // The whole pane is the target, not just the strip its tiles happen to
+        // fill. Without a floor the div collapses to the height of two tiles
+        // and most of the visible area under the tabs stops accepting a drop,
+        // which reads as the feature being broken rather than as the box being
+        // small.
+        minHeight: 200,
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={ASSET_ACCEPT[kind]}
+        className="hidden"
+        onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }}
+      />
+
+      {!canUpload ? (
+        <div className="flex flex-col items-center justify-center text-center" style={{ minHeight: 200 }}>
+          <p className="text-xs font-medium" style={{ color: "var(--c-70)" }}>Custom {noun} are part of Max</p>
+          <p className="text-[11px] mt-1" style={{ color: "var(--c-45)" }}>Upgrade to use your own</p>
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="mt-3 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:opacity-90"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            Upgrade to Max
+          </button>
+        </div>
+      ) : (
+        <>
+          {empty ? (
+            <button
+              type="button"
+              onClick={() => !busy && inputRef.current?.click()}
+              disabled={busy}
+              className="w-full text-center cursor-pointer disabled:cursor-default flex flex-col items-center justify-center"
+              style={{ minHeight: 200 }}
+            >
+              <p className="text-xs font-medium" style={{ color: "var(--c-70)" }}>
+                {busy ? "Uploading…" : `Drop your ${noun} here`}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--c-45)" }}>
+                {busy ? "Hold on" : "or click to choose from your device"}
+              </p>
+            </button>
+          ) : (
+            <>
+              {children}
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => !busy && inputRef.current?.click()}
+                  disabled={busy}
+                  className="text-[11px] underline underline-offset-2 disabled:opacity-40"
+                  style={{ color: "var(--c-50)" }}
+                >
+                  {busy ? "Uploading…" : "Add more"}
+                </button>
+                <span className="text-[11px]" style={{ color: "var(--c-35)" }}>or drop them anywhere here</span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {error && (
+        <p className="text-[11px] mt-2 px-2 py-1.5 rounded-lg"
+          style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)" }}>{error}</p>
+      )}
+    </div>
+  );
+}
+
 export default function AssemblePage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -851,7 +1077,7 @@ export default function AssemblePage({ params }: PageProps) {
   // and the dimensions previously displayed in the Output card).
   const [selectedResolution, setSelectedResolution] = useState<ResolutionPreset>("1080p");
 
-  // Pro-tier gate for 1440p / 2160p. We look up app_metadata.plan
+  // Tier gate for 1440p (Pro) and 2160p (Max). We look up app_metadata.plan
   // once on mount via the browser Supabase client — same pattern as
   // the dashboard. Defaults to "starter" so the UI gates Pro-only
   // presets while the fetch is in flight; if the user actually has
@@ -862,6 +1088,11 @@ export default function AssemblePage({ params }: PageProps) {
   // Pro-locked resolution. SubscriptionModal is mounted lazily —
   // most assemble sessions never need it.
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradePlan, setUpgradePlan] = useState<string>("heclus_pro");
+  const openUpgrade = useCallback((plan: string) => {
+    setUpgradePlan(plan);
+    setShowUpgradeModal(true);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const client = createSupabaseBrowserClient();
@@ -870,7 +1101,7 @@ export default function AssemblePage({ params }: PageProps) {
       const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown };
       // isAdminUser folds in both the app_metadata.is_admin flag AND
       // the legacy hardcoded ADMIN_EMAILS backstop — otherwise the
-      // founder admin (recognised by email) would fail canUsePro and
+      // founder admin (recognised by email) would rank as starter and
       // get locked out of 4K assemble.
       if (isAdminUser(data.user)) {
         setUserPlan("admin");
@@ -881,7 +1112,7 @@ export default function AssemblePage({ params }: PageProps) {
     }).catch(() => { /* leave default */ });
     return () => { cancelled = true; };
   }, []);
-  const canUsePro = PRO_TIER_PLANS.has(userPlan);
+  const userTier = tierForPlan(userPlan);
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
@@ -1030,6 +1261,118 @@ export default function AssemblePage({ params }: PageProps) {
   const [videoFilterStrength, setVideoFilterStrength] = useState(1);
   const [sfxVolume, setSfxVolume] = useState(0.6);
   const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements" | "text">("effects");
+
+  // The All / Custom switch inside the Sound and Elements tabs, and the
+  // account's own uploads. One state for both libraries: they are the same
+  // choice, and carrying it across reads as the tab remembering rather than
+  // forgetting.
+  const [libTab, setLibTab] = useState<"all" | "custom">("all");
+  const [customAssets, setCustomAssets] = useState<CustomAsset[]>([]);
+  const [canUploadAssets, setCanUploadAssets] = useState(false);
+  const [assetBusy, setAssetBusy] = useState(false);
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const customSounds = customAssets.filter((a) => a.kind === "sound");
+  const customElements = customAssets.filter((a) => a.kind === "element");
+  // Built-ins and uploads as one list, so the drag, place and resize handlers
+  // below never learn the difference. A built-in is served from /public; an
+  // upload from R2.
+  const elementLibrary = [
+    ...ELEMENTS.map((e) => ({ id: e.id, label: e.label, src: `/elements/${e.id}.png` })),
+    ...customElements.map((a) => ({ id: customRef(a.id), label: a.name, src: a.url })),
+  ];
+  /** Where an element's artwork lives, whichever kind it is. Built-ins ship in
+   *  /public; an upload is served from R2. */
+  const elementSrc = (id: string) =>
+    elementLibrary.find((e) => e.id === id)?.src ?? `/elements/${id}.png`;
+  /** How long a sound runs, built-in or uploaded. The module-level
+   *  soundSeconds only knows the ones we ship. */
+  const secondsFor = (id: string): number =>
+    customAssets.find((a) => customRef(a.id) === id)?.durationSec ?? soundSeconds(id);
+  const soundLibrary: { id: string; label: string; hint?: string }[] = [
+    ...SOUND_EFFECTS.map((x) => ({ id: x.id, label: x.label, hint: x.hint })),
+    // No hint on an upload: the customer named it and knows what it is.
+    ...customSounds.map((a) => ({ id: customRef(a.id), label: a.name })),
+  ];
+
+  const loadCustomAssets = useCallback(async () => {
+    try {
+      const r = await fetch("/api/me/assets", { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      setCustomAssets(Array.isArray(d.assets) ? d.assets : []);
+      setCanUploadAssets(!!d.canUpload);
+    } catch { /* the library still works without uploads */ }
+  }, []);
+  useEffect(() => { loadCustomAssets(); }, [loadCustomAssets]);
+
+  /**
+   * Upload, then register.
+   *
+   * The file goes straight to R2 with a presigned PUT, which is what keeps a
+   * 5 MB sound off a route handler; /api/me/assets then records it. A sound is
+   * measured here rather than server side because the browser already has to
+   * decode it to play a preview, and the length is what sizes its block on the
+   * timeline.
+   */
+  const uploadCustomAssets = useCallback(async (kind: "sound" | "element", files: FileList | null) => {
+    if (!files?.length) return;
+    setAssetError(null);
+    setAssetBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const presign = await fetch("/api/upload/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: "assets",
+            folder: kind === "sound" ? "sfx" : "elements",
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+          }),
+        });
+        const pres = await presign.json().catch(() => ({}));
+        if (!presign.ok) throw new Error(pres.error ?? "Could not start the upload");
+
+        const put = await fetch(pres.uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+
+        const durationSec = kind === "sound" ? await measureAudioSeconds(file) : null;
+        // The key, not the URL: the server derives the URL itself and refuses
+        // anything outside this account's folder.
+        const storageKey = new URL(pres.publicUrl).pathname.replace(/^\//, "");
+        const reg = await fetch("/api/me/assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind,
+            name: file.name.replace(/\.[^.]+$/, "").slice(0, 60),
+            storageKey,
+            mime: file.type,
+            bytes: file.size,
+            durationSec,
+          }),
+        });
+        const out = await reg.json().catch(() => ({}));
+        if (!reg.ok) throw new Error(out.error ?? "Could not save the upload");
+      }
+      await loadCustomAssets();
+    } catch (e) {
+      setAssetError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setAssetBusy(false);
+    }
+  }, [loadCustomAssets]);
+
+  const deleteCustomAsset = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/me/assets?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      await loadCustomAssets();
+    } catch { /* the row stays; the next load will show it */ }
+  }, [loadCustomAssets]);
   // Seconds each move takes. 0 is the slider's left-most position and means the
   // whole beat, which is what every render did before this was a choice.
   const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
@@ -1092,6 +1435,19 @@ export default function AssemblePage({ params }: PageProps) {
   // beats, music is not. Its own ref, separate from the music card's inline
   // preview player, so the two cannot pause each other.
   const timelineBgmRef = useRef<HTMLAudioElement | null>(null);
+  /** The effect currently sounding. One at a time: auditioning a second sound
+   *  while the first is still running is two sounds, not a preview of either. */
+  const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  /** Silence whatever effect is sounding. Safe to call when none is. */
+  const stopSound = useCallback(() => {
+    const prev = sfxAudioRef.current;
+    sfxAudioRef.current = null;
+    if (!prev) return;
+    prev.onended = null;
+    try { prev.pause(); prev.currentTime = 0; } catch { /* already finished */ }
+  }, []);
+
   const playIndexRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
@@ -1152,9 +1508,12 @@ export default function AssemblePage({ params }: PageProps) {
     audioRef.current = null;
     timelineBgmRef.current?.pause();
     timelineBgmRef.current = null;
+    // An effect fired by the last cue outlives the transport otherwise, and
+    // keeps sounding after the playhead has stopped.
+    stopSound();
     setPlaying(false);
     setPlayingBeat(null);
-  }, []);
+  }, [stopSound]);
 
   // Stop when the page goes away, or the audio keeps playing over a step the
   // user has already left.
@@ -1162,9 +1521,17 @@ export default function AssemblePage({ params }: PageProps) {
 
   /** Hear a sound the way the render will mix it: its own level against the
    *  project's, and its own pitch. preservesPitch off is what makes playback
-   *  rate a pitch shift rather than a speed change. */
+   *  rate a pitch shift rather than a speed change.
+   *
+   *  One at a time. Clicking down a library stacked every sound on top of the
+   *  last, which is a chord rather than an audition, and dragging a volume
+   *  slider fired one per step. */
   const playSound = useCallback((id: string, volume = 1, pitch = 1) => {
-    const a = new Audio(`/sfx/${id}.mp3`);
+    stopSound();
+    // A built-in ships in /public; an upload is served from R2. Resolved here
+    // rather than by the callers, all of which pass an id and nothing else.
+    const custom = isCustomRef(id) ? customAssets.find((x) => customRef(x.id) === id) : null;
+    const a = new Audio(custom ? custom.url : `/sfx/${id}.mp3`);
     // Exactly what the render mixes: the sound's own level against the
     // project's. Anything else here is a preview that lies.
     a.volume = Math.max(0, Math.min(1, volume * sfxVolume));
@@ -1173,8 +1540,12 @@ export default function AssemblePage({ params }: PageProps) {
     p.preservesPitch = false;
     p.mozPreservesPitch = false;
     a.playbackRate = Math.max(0.5, Math.min(2, pitch));
+    // Cleared on its own end so the ref never holds a finished element, and a
+    // later stop cannot rewind something that already stopped.
+    a.onended = () => { if (sfxAudioRef.current === a) sfxAudioRef.current = null; };
+    sfxAudioRef.current = a;
     void a.play().catch(() => { /* autoplay rules */ });
-  }, [sfxVolume]);
+  }, [sfxVolume, customAssets, stopSound]);
 
   const playFrom = useCallback((index: number, startAt = 0) => {
     const beat = playable[index];
@@ -2585,6 +2956,217 @@ export default function AssemblePage({ params }: PageProps) {
   const hasVoiceover = !!(ttsCleanedUrl || ttsUrl) || beats.some((b) => !!b.voiceoverUrl);
   const uploadFailedPreview = project?.assembly_status === "preview" && !project?.assembled_url;
 
+  /**
+   * One element tile: drag it onto the preview or the timeline to place it.
+   *
+   * Shared with the Custom tab for the same reason the sound tile is: an
+   * uploaded element should behave like a shipped one, not merely resemble it.
+   */
+  const renderElementTile = (el: { id: string; label: string; src: string }) => (
+            <button
+              key={el.id}
+              type="button"
+              disabled={assembling}
+              title={`Drag ${el.label} onto the preview`}
+              onPointerDown={(e) => {
+                if (assembling) return;
+                e.preventDefault();
+                setPickedElement(el.id);
+                setDraggingElement({ id: el.id, x: e.clientX, y: e.clientY });
+                const move = (ev: PointerEvent) => setDraggingElement({ id: el.id, x: ev.clientX, y: ev.clientY });
+                const up = (ev: PointerEvent) => {
+                  window.removeEventListener("pointermove", move);
+                  window.removeEventListener("pointerup", up);
+                  setDraggingElement(null);
+                  const frame = previewFrameRef.current;
+                  const strip = timelineStripRef.current;
+                  // Dropped on the preview: it lands where it was
+                  // dropped and runs from the playhead.
+                  if (frame) {
+                    const r = frame.getBoundingClientRect();
+                    if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+                      void addElement({
+                        element: el.id,
+                        start_sec: playhead,
+                        end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
+                        x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+                        y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
+                        size: defaultSizeFor(el.id),
+                      });
+                      return;
+                    }
+                  }
+                  // Dropped on the timeline: it lands at that moment,
+                  // in the corner, for placing later.
+                  if (strip) {
+                    const r = strip.getBoundingClientRect();
+                    if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top - 40 && ev.clientY <= r.bottom + 40) {
+                      const at = Math.max(0, (ev.clientX - r.left) / pxPerSecond);
+                      // The track it was dropped over, measured from
+                      // the element rows rather than the whole strip.
+                      const rowsTop = elementRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
+                      const lane = Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H)));
+                      void addElement({
+                        element: el.id,
+                        start_sec: at,
+                        end_sec: Math.min(timelineTotal || at + 3, at + 3),
+                        x: ELEMENT_DEFAULTS.x,
+                        y: ELEMENT_DEFAULTS.y,
+                        size: defaultSizeFor(el.id),
+                        lane,
+                      });
+                    }
+                  }
+                };
+                window.addEventListener("pointermove", move);
+                window.addEventListener("pointerup", up);
+              }}
+              className="h-[60px] rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
+              style={pickedElement === el.id
+                ? {
+                    background: "oklch(0.72 0.25 285 / 0.18)",
+                    border: "1px solid oklch(0.72 0.25 285)",
+                  }
+                // Transparent rather than absent, so the tile does not resize
+                // by a pixel the moment it is selected.
+                : { border: "1px solid transparent" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={el.src} alt={el.label} className="h-11 w-auto" />
+            </button>
+  );
+
+  /**
+   * One sound tile: audition on click, drag onto the timeline to place it.
+   *
+   * Lifted out of the library grid so the Custom tab renders the same control
+   * rather than a second list that looks similar and behaves differently. An
+   * uploaded sound is a sound.
+   */
+  const renderSoundTile = (snd: { id: string; label: string; hint?: string }) => {
+            const active = editingBeat
+              ? editingBeat.soundEffect === snd.id
+              : pickedSound === snd.id;
+            return (
+              <button
+                key={snd.id}
+                type="button"
+                disabled={assembling}
+                // An upload has no hint; its name is the description.
+                title={`${snd.hint ?? snd.label} · drag onto the timeline to place it`}
+                // Dragging places the sound at a moment; clicking
+                // still auditions it and still sets the selected
+                // beat's sound. A tile that only did one of those
+                // would lose the other.
+                onPointerDown={(e) => {
+                  if (assembling) return;
+                  setDraggingSound({ id: snd.id, x: e.clientX, y: e.clientY });
+                  const move = (ev: PointerEvent) => setDraggingSound({ id: snd.id, x: ev.clientX, y: ev.clientY });
+                  const up = (ev: PointerEvent) => {
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", up);
+                    setDraggingSound(null);
+                    const view = timelineViewportRef.current;
+                    const strip = timelineStripRef.current;
+                    if (!view || !strip) return;
+                    const v = view.getBoundingClientRect();
+                    if (ev.clientX < v.left || ev.clientX > v.right || ev.clientY < v.top || ev.clientY > v.bottom) return;
+                    // Timed off the strip, which is as wide as the
+                    // whole video, and hit-tested against the
+                    // viewport, which is what is on screen.
+                    const r = strip.getBoundingClientRect();
+                    const own = shapeOf(snd.id);
+                    const rowsTop = soundRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
+                    void addSound({
+                      sound: snd.id,
+                      at_sec: Math.max(0, (ev.clientX - r.left) / pxPerSecond),
+                      volume: own.volume,
+                      pitch: own.pitch,
+                      lane: Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H))),
+                    });
+                  };
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", up);
+                }}
+                onClick={() => {
+                  // Always playable, even with nothing selected: a
+                  // greyed-out row of names reads as broken, and
+                  // hearing the library is how anyone decides which
+                  // one they want. With a beat selected it is also
+                  // the choice.
+                  // This sound's own tuning: what it was left at,
+                  // or untouched if it has never been tuned. A beat
+                  // already carrying it keeps what is on the beat.
+                  const own = shapeOf(snd.id);
+                  const onThisBeat = editingBeat?.soundEffect === snd.id;
+                  const volume = onThisBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
+                  const pitch = onThisBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
+                  playSound(snd.id, volume, pitch);
+                  setPickedSound(active ? null : snd.id);
+                  if (editingBeat) {
+                    setBeatSound(
+                      editingBeat.beatNumber,
+                      active ? null : snd.id,
+                      active ? undefined : { volume: own.volume, pitch: own.pitch },
+                    );
+                  }
+                }}
+                className="w-full p-1.5 rounded-lg text-left text-[11px] transition-all disabled:opacity-40 flex items-center gap-1.5"
+                style={active ? {
+                  background: "oklch(0.72 0.25 285 / 0.18)",
+                  border: "1px solid oklch(0.72 0.25 285)",
+                  color: "var(--accent-purple-text)",
+                } : {
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--bd-card)",
+                  color: "var(--c-60)",
+                }}
+              >
+                {/* Laid out as a file rather than a word: something to press,
+                    a name, a waveform, and how long it runs. A span and not a
+                    button, because the tile is already one and clicking
+                    anywhere on it auditions. */}
+                <span
+                  className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                  style={active
+                    ? { background: "oklch(0.72 0.25 285 / 0.35)", color: "var(--accent-purple-text)" }
+                    : { background: "var(--bd-card)", color: "var(--c-55)" }}
+                >
+                  <Play size={9} fill="currentColor" strokeWidth={0} />
+                </span>
+                <span className="min-w-0 flex-1 flex flex-col gap-1">
+                  <span className="flex items-center gap-1">
+                    <span className="truncate flex-1">{snd.label}</span>
+                    {active && <Check size={11} className="shrink-0" />}
+                    {/* How many other beats already use it, so the tab shows
+                        the shape of the whole video rather than only what was
+                        last clicked. */}
+                    {!active && usedCounts[snd.id] > 0 && (
+                      <span className="shrink-0 text-[9px] tabular-nums px-1 rounded"
+                        style={{ color: "var(--c-38)", background: "var(--bd-card)" }}>
+                        {usedCounts[snd.id]}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-[3px]">
+                    <span className="flex items-center gap-[1.5px] h-2.5 flex-1 overflow-hidden">
+                      {waveformBars(snd.id, secondsFor(snd.id)).map((h, i) => (
+                        <span
+                          key={i}
+                          className="w-[2px] rounded-full shrink-0"
+                          style={{ height: `${h}%`, background: "currentColor", opacity: active ? 0.55 : 0.3 }}
+                        />
+                      ))}
+                    </span>
+                    <span className="shrink-0 text-[9px] tabular-nums" style={{ opacity: 0.55 }}>
+                      {secondsFor(snd.id).toFixed(1)}s
+                    </span>
+                  </span>
+                </span>
+              </button>
+            );
+  };
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={!!(project?.assembled_url)} />
@@ -2707,8 +3289,8 @@ export default function AssemblePage({ params }: PageProps) {
                   <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {RESOLUTION_PRESETS.map((p) => {
-                      const isProOnly = PRO_RESOLUTIONS.has(p);
-                      const locked = isProOnly && !canUsePro;
+                      const needs = requiredTierForResolution(p);
+                      const locked = !!needs && tierRank(userTier) < tierRank(needs);
                       const active = selectedResolution === p;
                       return (
                         <button
@@ -2717,15 +3299,16 @@ export default function AssemblePage({ params }: PageProps) {
                             if (locked) {
                               // Pop the SubscriptionModal so the user
                               // can upgrade in-place rather than just
-                              // being told "no" by a toast.
-                              setShowUpgradeModal(true);
+                              // being told "no" by a toast, and land on
+                              // the tier this preset actually needs.
+                              openUpgrade(needs === "max" ? "heclus_max" : "heclus_pro");
                               return;
                             }
                             setSelectedResolution(p);
                           }}
                           disabled={assembling}
-                          title={locked
-                            ? `Pro plan unlocks ${p} (${dimsFor(aspectRatio, p).label}) — click to upgrade`
+                          title={locked && needs
+                            ? `${tierLabel(needs)} plan unlocks ${p} (${dimsFor(aspectRatio, p).label}), click to upgrade`
                             : `Render at ${dimsFor(aspectRatio, p).label}`}
                           className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
                           style={active ? {
@@ -2739,15 +3322,17 @@ export default function AssemblePage({ params }: PageProps) {
                           }}
                         >
                           {p}
-                          {isProOnly && (
+                          {needs && (
                             <span
                               className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
                               style={{
-                                background: "oklch(0.72 0.25 285)",
+                                // Max sits above Pro, so it gets the warmer
+                                // badge rather than repeating Pro's purple.
+                                background: needs === "max" ? "oklch(0.72 0.19 55)" : "oklch(0.72 0.25 285)",
                                 color: "white",
                               }}
                             >
-                              Pro
+                              {tierLabel(needs)}
                             </span>
                           )}
                         </button>
@@ -3578,7 +4163,7 @@ export default function AssemblePage({ params }: PageProps) {
                   }}
                 >
                   <Volume2 size={10} />
-                  {SOUND_EFFECTS.find((x) => x.id === draggingSound.id)?.label ?? draggingSound.id}
+                  {soundLibrary.find((x) => x.id === draggingSound.id)?.label ?? draggingSound.id}
                 </span>
               )}
               {draggingText && (() => {
@@ -3603,7 +4188,7 @@ export default function AssemblePage({ params }: PageProps) {
               {draggingElement && (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={`/elements/${draggingElement.id}.png`}
+                  src={elementSrc(draggingElement.id)}
                   alt=""
                   className="fixed z-50 pointer-events-none"
                   style={{
@@ -3790,7 +4375,7 @@ export default function AssemblePage({ params }: PageProps) {
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={`/elements/${el.element}.png`}
+                                src={elementSrc(el.element)}
                                 alt=""
                                 draggable={false}
                                 onPointerDown={!editable ? undefined : (ev) => {
@@ -4719,6 +5304,9 @@ export default function AssemblePage({ params }: PageProps) {
                 </>
                 ) : effectsTab === "elements" ? (
                 <>
+                  <LibraryTabs value={libTab} onChange={setLibTab} customCount={customElements.length} />
+                  {libTab === "all" ? (
+                  <>
                   {/* Only while the tab has nothing on it. Once elements are
                       placed the timeline below is showing them, and a count of
                       what is already visible is a line to read past. */}
@@ -4733,75 +5321,29 @@ export default function AssemblePage({ params }: PageProps) {
                       ones swimming in it. Each takes the width its artwork needs
                       at a common height and the row wraps when it runs out. */}
                   <div className="min-w-0 flex flex-wrap gap-2">
-                    {ELEMENTS.map((el) => (
-                      <button
-                        key={el.id}
-                        type="button"
-                        disabled={assembling}
-                        title={`Drag ${el.label} onto the preview`}
-                        onPointerDown={(e) => {
-                          if (assembling) return;
-                          e.preventDefault();
-                          setPickedElement(el.id);
-                          setDraggingElement({ id: el.id, x: e.clientX, y: e.clientY });
-                          const move = (ev: PointerEvent) => setDraggingElement({ id: el.id, x: ev.clientX, y: ev.clientY });
-                          const up = (ev: PointerEvent) => {
-                            window.removeEventListener("pointermove", move);
-                            window.removeEventListener("pointerup", up);
-                            setDraggingElement(null);
-                            const frame = previewFrameRef.current;
-                            const strip = timelineStripRef.current;
-                            // Dropped on the preview: it lands where it was
-                            // dropped and runs from the playhead.
-                            if (frame) {
-                              const r = frame.getBoundingClientRect();
-                              if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
-                                void addElement({
-                                  element: el.id,
-                                  start_sec: playhead,
-                                  end_sec: Math.min(timelineTotal || playhead + 3, playhead + 3),
-                                  x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
-                                  y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
-                                  size: defaultSizeFor(el.id),
-                                });
-                                return;
-                              }
-                            }
-                            // Dropped on the timeline: it lands at that moment,
-                            // in the corner, for placing later.
-                            if (strip) {
-                              const r = strip.getBoundingClientRect();
-                              if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top - 40 && ev.clientY <= r.bottom + 40) {
-                                const at = Math.max(0, (ev.clientX - r.left) / pxPerSecond);
-                                // The track it was dropped over, measured from
-                                // the element rows rather than the whole strip.
-                                const rowsTop = elementRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
-                                const lane = Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H)));
-                                void addElement({
-                                  element: el.id,
-                                  start_sec: at,
-                                  end_sec: Math.min(timelineTotal || at + 3, at + 3),
-                                  x: ELEMENT_DEFAULTS.x,
-                                  y: ELEMENT_DEFAULTS.y,
-                                  size: defaultSizeFor(el.id),
-                                  lane,
-                                });
-                              }
-                            }
-                          };
-                          window.addEventListener("pointermove", move);
-                          window.addEventListener("pointerup", up);
-                        }}
-                        className="h-[60px] rounded-lg flex items-center justify-center p-2 transition-all disabled:opacity-40 cursor-grab"
-                        style={pickedElement === el.id
-                          ? { background: "oklch(0.72 0.25 285 / 0.18)" }
-                          : undefined}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/elements/${el.id}.png`} alt={el.label} className="h-11 w-auto" />
-                      </button>
-                    ))}
+                    {elementLibrary.map(renderElementTile)}
                   </div>
+                  </>
+                  ) : (
+                    <CustomAssetPane
+                      kind="element"
+                      assets={customElements}
+                      canUpload={canUploadAssets}
+                      busy={assetBusy}
+                      error={assetError}
+                      onFiles={(f) => uploadCustomAssets("element", f)}
+                      onUpgrade={() => openUpgrade("heclus_max")}
+                    >
+                      <div className="min-w-0 flex flex-wrap gap-2">
+                        {customElements.map((a) => (
+                          <div key={a.id} className="relative">
+                            {renderElementTile({ id: customRef(a.id), label: a.name, src: a.url })}
+                            <RemoveAssetButton name={a.name} onRemove={() => deleteCustomAsset(a.id)} />
+                          </div>
+                        ))}
+                      </div>
+                    </CustomAssetPane>
+                  )}
                   {selectedElement && (() => {
                     const el = projectElements.find((x) => x.id === selectedElement);
                     if (!el) return null;
@@ -4810,7 +5352,7 @@ export default function AssemblePage({ params }: PageProps) {
                         style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
-                            {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                            {elementLibrary.find((x) => x.id === el.element)?.label ?? el.element}
                             <span className="font-normal" style={{ color: "var(--c-40)" }}>
                               {` · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
                             </span>
@@ -4847,7 +5389,7 @@ export default function AssemblePage({ params }: PageProps) {
                   {selectedSound && (() => {
                     const snd = projectSounds.find((x) => x.id === selectedSound);
                     if (!snd) return null;
-                    const name = SOUND_EFFECTS.find((x) => x.id === snd.sound)?.label ?? snd.sound;
+                    const name = soundLibrary.find((x) => x.id === snd.sound)?.label ?? snd.sound;
                     return (
                       <div data-overlay-keep className="mb-3 rounded-xl px-3 py-2.5 space-y-2.5"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
@@ -4962,100 +5504,34 @@ export default function AssemblePage({ params }: PageProps) {
                       </button>
                     </div>
                   </div>
-                  <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))" }}>
+                  <LibraryTabs value={libTab} onChange={setLibTab} customCount={customSounds.length} />
+                  {libTab === "all" ? (
+                  <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
                     {/* placed-sound editor renders above; tiles follow */}
-                    {SOUND_EFFECTS.map((snd) => {
-                      const active = editingBeat
-                        ? editingBeat.soundEffect === snd.id
-                        : pickedSound === snd.id;
-                      return (
-                        <button
-                          key={snd.id}
-                          type="button"
-                          disabled={assembling}
-                          title={`${snd.hint} · drag onto the timeline to place it`}
-                          // Dragging places the sound at a moment; clicking
-                          // still auditions it and still sets the selected
-                          // beat's sound. A tile that only did one of those
-                          // would lose the other.
-                          onPointerDown={(e) => {
-                            if (assembling) return;
-                            setDraggingSound({ id: snd.id, x: e.clientX, y: e.clientY });
-                            const move = (ev: PointerEvent) => setDraggingSound({ id: snd.id, x: ev.clientX, y: ev.clientY });
-                            const up = (ev: PointerEvent) => {
-                              window.removeEventListener("pointermove", move);
-                              window.removeEventListener("pointerup", up);
-                              setDraggingSound(null);
-                              const view = timelineViewportRef.current;
-                              const strip = timelineStripRef.current;
-                              if (!view || !strip) return;
-                              const v = view.getBoundingClientRect();
-                              if (ev.clientX < v.left || ev.clientX > v.right || ev.clientY < v.top || ev.clientY > v.bottom) return;
-                              // Timed off the strip, which is as wide as the
-                              // whole video, and hit-tested against the
-                              // viewport, which is what is on screen.
-                              const r = strip.getBoundingClientRect();
-                              const own = shapeOf(snd.id);
-                              const rowsTop = soundRowsRef.current?.getBoundingClientRect().top ?? ev.clientY;
-                              void addSound({
-                                sound: snd.id,
-                                at_sec: Math.max(0, (ev.clientX - r.left) / pxPerSecond),
-                                volume: own.volume,
-                                pitch: own.pitch,
-                                lane: Math.max(0, Math.min(9, Math.floor((ev.clientY - rowsTop) / LANE_H))),
-                              });
-                            };
-                            window.addEventListener("pointermove", move);
-                            window.addEventListener("pointerup", up);
-                          }}
-                          onClick={() => {
-                            // Always playable, even with nothing selected: a
-                            // greyed-out row of names reads as broken, and
-                            // hearing the library is how anyone decides which
-                            // one they want. With a beat selected it is also
-                            // the choice.
-                            // This sound's own tuning: what it was left at,
-                            // or untouched if it has never been tuned. A beat
-                            // already carrying it keeps what is on the beat.
-                            const own = shapeOf(snd.id);
-                            const onThisBeat = editingBeat?.soundEffect === snd.id;
-                            const volume = onThisBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
-                            const pitch = onThisBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
-                            playSound(snd.id, volume, pitch);
-                            setPickedSound(active ? null : snd.id);
-                            if (editingBeat) {
-                              setBeatSound(
-                                editingBeat.beatNumber,
-                                active ? null : snd.id,
-                                active ? undefined : { volume: own.volume, pitch: own.pitch },
-                              );
-                            }
-                          }}
-                          className="w-full py-1.5 px-2 rounded-lg text-left text-[11px] transition-all disabled:opacity-40 flex items-center gap-1"
-                          style={active ? {
-                            background: "oklch(0.72 0.25 285 / 0.18)",
-                            border: "1px solid oklch(0.72 0.25 285)",
-                            color: "var(--accent-purple-text)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                            color: "var(--c-60)",
-                          }}
-                        >
-                          <span className="truncate flex-1">{snd.label}</span>
-                          {active && <Check size={13} className="shrink-0" />}
-                          {/* How many other beats already use it, so the tab
-                              shows the shape of the whole video rather than
-                              only what was last clicked. */}
-                          {!active && usedCounts[snd.id] > 0 && (
-                            <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--c-38)" }}>
-                              {usedCounts[snd.id]}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
+                    {soundLibrary.map(renderSoundTile)}
                   </div>
+                  ) : (
+                    <CustomAssetPane
+                      kind="sound"
+                      assets={customSounds}
+                      canUpload={canUploadAssets}
+                      busy={assetBusy}
+                      error={assetError}
+                      onFiles={(f) => uploadCustomAssets("sound", f)}
+                      onUpgrade={() => openUpgrade("heclus_max")}
+                    >
+                      {/* The library's own tile, so an upload auditions on
+                          click and drags onto the timeline like any other. */}
+                      <div className="min-w-0 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+                        {customSounds.map((a) => (
+                          <div key={a.id} className="relative">
+                            {renderSoundTile({ id: customRef(a.id), label: a.name })}
+                            <RemoveAssetButton name={a.name} onRemove={() => deleteCustomAsset(a.id)} />
+                          </div>
+                        ))}
+                      </div>
+                    </CustomAssetPane>
+                  )}
                   {editingBeat?.soundEffect && (
                     <button
                       type="button"
@@ -5094,7 +5570,7 @@ export default function AssemblePage({ params }: PageProps) {
                     const setPitch = (v: number) => onBeat
                       ? setBeatSound(editingBeat!.beatNumber, sound, { pitch: v })
                       : live ? tuneEverywhere(sound, { pitch: v }) : tuneSound(sound, { pitch: v });
-                    const label = SOUND_EFFECTS.find((x) => x.id === sound)?.label ?? sound;
+                    const label = soundLibrary.find((x) => x.id === sound)?.label ?? sound;
                     return (
                       <div className="mt-3 space-y-2 rounded-xl px-3 py-2.5"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
@@ -5912,7 +6388,7 @@ export default function AssemblePage({ params }: PageProps) {
                           <div
                             key={el.id}
                             onPointerDown={drag("move")}
-                            title={`${ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element} · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
+                            title={`${elementLibrary.find((x) => x.id === el.element)?.label ?? el.element} · ${fmtClock(el.start_sec)} to ${fmtClock(el.end_sec)}`}
                             className="absolute h-8 rounded-md flex items-center gap-1.5 px-2 cursor-grab touch-none overflow-hidden"
                             style={{
                               left, width,
@@ -5925,9 +6401,9 @@ export default function AssemblePage({ params }: PageProps) {
                             }}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={`/elements/${el.element}.png`} alt="" className="h-4 w-auto shrink-0 pointer-events-none" />
+                            <img src={elementSrc(el.element)} alt="" className="h-4 w-auto shrink-0 pointer-events-none" />
                             <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
-                              {ELEMENTS.find((x) => x.id === el.element)?.label ?? el.element}
+                              {elementLibrary.find((x) => x.id === el.element)?.label ?? el.element}
                             </span>
                             {/* Trim handles, wide enough to hit at any zoom. */}
                             <span onPointerDown={drag("start")}
@@ -6126,7 +6602,7 @@ export default function AssemblePage({ params }: PageProps) {
                       ))}
                       {projectSounds.map((snd) => {
                         const picked = selectedSound === snd.id;
-                        const natural = soundSeconds(snd.sound);
+                        const natural = secondsFor(snd.sound);
                         const plays = snd.duration_sec ?? natural;
                         // Drawn at what it plays for, with a floor so a 78ms
                         // tick is still something you can grab.
@@ -6169,7 +6645,7 @@ export default function AssemblePage({ params }: PageProps) {
                           >
                             <Volume2 size={10} className="shrink-0 pointer-events-none" style={{ color: "oklch(0.75 0.15 145)" }} />
                             <span className="text-[10px] truncate pointer-events-none" style={{ color: "var(--c-70)" }}>
-                              {SOUND_EFFECTS.find((x) => x.id === snd.sound)?.label ?? snd.sound}
+                              {soundLibrary.find((x) => x.id === snd.sound)?.label ?? snd.sound}
                             </span>
                             {picked && !assembling && (
                               <>
@@ -6614,7 +7090,7 @@ export default function AssemblePage({ params }: PageProps) {
       {showUpgradeModal && (
         <SubscriptionModal
           email={userEmail}
-          defaultPlan="pro"
+          defaultPlan={upgradePlan}
           hideTryDemo
           onClose={() => setShowUpgradeModal(false)}
           onSuccess={() => setShowUpgradeModal(false)}
