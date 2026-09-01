@@ -757,6 +757,116 @@ function measureAudioSeconds(file: File): Promise<number | null> {
  * recognisable: nothing should ever PATCH or DELETE one of these, because the
  * server has never heard of it.
  */
+/**
+ * A card's expanded content, over the page rather than inside the card.
+ *
+ * The three summary cards sit in a three-column grid, so expanding one in place
+ * makes a narrow column very tall and shoves the timeline down the page. Their
+ * contents are also the kind of thing you open, set, and close: a resolution, a
+ * music file, a caption style. That is a dialog, not a disclosure.
+ *
+ * Portalled to the body so no ancestor's overflow or transform can clip it, and
+ * scrollable inside, because the captions panel is taller than a laptop screen.
+ */
+function CardOverlay({ title, onClose, children }: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  /** Where it has been dragged to, in viewport coordinates. Null until it is
+   *  moved, so it opens centred and only becomes a positioned window once
+   *  somebody decides where they want it. */
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Escape closes it, which is the one shortcut every dialog is expected to
+  // honour and the only way out if the backdrop is somehow unreachable.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center p-4 sm:p-8 overflow-y-auto"
+      style={{ background: "oklch(0 0 0 / 0.55)" }}
+      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={panelRef}
+        className={`rounded-2xl flex flex-col ${pos ? "" : "my-auto"}`}
+        style={{
+          background: "var(--bg-panel)",
+          border: "1px solid var(--bd-card)",
+          boxShadow: "0 24px 64px oklch(0 0 0 / 0.5)",
+          // Sized inline rather than by class, because the browser writes the
+          // dragged size back as an inline width and height and a max-w class
+          // would silently cap it.
+          width: "min(42rem, 95vw)",
+          maxWidth: "95vw",
+          maxHeight: "90vh",
+          // Native resize: a real corner grip for free, in every browser, with
+          // none of the pointer bookkeeping a hand-rolled one needs. It wants
+          // an overflow other than visible, and hidden is the one that keeps
+          // the title bar pinned while the body below it scrolls.
+          resize: "both",
+          overflow: "hidden",
+          ...(pos ? { position: "fixed" as const, left: pos.x, top: pos.y, margin: 0 } : {}),
+        }}
+        // The backdrop closes on a click that started on it; without this a
+        // drag begun on a slider and released outside would close the dialog.
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex items-center justify-between gap-3 px-5 py-3.5 cursor-grab active:cursor-grabbing select-none shrink-0"
+          style={{ borderBottom: "1px solid var(--bd-6)" }}
+          // The title bar is the handle, the way a window's is. Dragging from
+          // the body would fight every slider and list inside it.
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest("button")) return;
+            const el = panelRef.current;
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            const offX = e.clientX - r.left;
+            const offY = e.clientY - r.top;
+            const move = (m: PointerEvent) => {
+              // Clamped so a corner always stays reachable: dragged fully off
+              // screen it could not be dragged back, and Escape is the only
+              // other way out.
+              const x = Math.max(24 - r.width, Math.min(window.innerWidth - 24, m.clientX - offX));
+              const y = Math.max(0, Math.min(window.innerHeight - 40, m.clientY - offY));
+              setPos({ x, y });
+            };
+            const up = () => {
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        >
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{title}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {/* The scroller, so shrinking the window scrolls its contents rather
+            than clipping them. */}
+        <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /** The placed-sound panel's width. Named because the drag clamp needs it. */
 const PLACED_PANEL_W = 250;
 
@@ -3416,187 +3526,186 @@ export default function AssemblePage({ params }: PageProps) {
         </div>
 
         <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
-          <div className="w-full space-y-6">
+          {/* space-y-4, not 6: three tall panels stacked with 24px between
+              them pushed the timeline below the fold on a laptop, and the
+              cards already have borders doing the separating. */}
+          <div className="w-full space-y-4">
 
-            {/* Voiceover, clips, resolution and aspect ratio in one panel.
-                Three of the four are readouts and the fourth is picked once,
-                so the summary line carries them and the controls stay out of
-                the way of the steps that get touched every time. */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={outputOpen}
-                onClick={() => setOutputOpen((v) => !v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOutputOpen((v) => !v); }
-                }}
-                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${outputOpen ? "mb-4" : ""}`}
-              >
-                <div>
-                  <p className="text-sm font-semibold">Output</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    {[
-                      `${dimsFor(aspectRatio, selectedResolution).label} · ${aspectRatio}`,
-                      `${generatedVideos}/${videoBeats} clips`,
-                      !hasVoiceover ? "no voiceover" : trimSilence ? "trimmed voiceover" : "original voiceover",
-                    ].join(" · ")}
-                  </p>
-                </div>
-                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
-                  {outputOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
-              </div>
-              {outputOpen && (
-              <div className="space-y-3">
-                {/* Which take gets assembled. It lives here because the
-                    card above already reports which one is selected, and the
-                    previews are what makes that choice: hearing the two is
-                    the only way to tell them apart. Clicking a card selects
-                    it; the play button inside stops propagation so listening
-                    does not also switch the selection. */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
-                    {(trimmedLoading || originalLoading) && (
-                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--brand-text)" }}>
-                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Loading previews…
-                      </span>
-                    )}
-                    {!beats.some((b) => !!b.voiceoverUrl) && (
-                      <span className="text-[11px]" style={{ color: "var(--c-40)" }}>none generated yet</span>
-                    )}
-                  </div>
-                  {beats.some((b) => !!b.voiceoverUrl) && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      <FullVoiceoverPreview
-                        projectId={projectId}
-                        beats={beats}
-                        trimSilence={true}
-                        title="Trimmed voiceover"
-                        selected={trimSilence}
-                        onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
-                        onLoadingChange={setTrimmedLoading}
-                      />
-                      <FullVoiceoverPreview
-                        projectId={projectId}
-                        beats={beats}
-                        trimSilence={false}
-                        title="Original voiceover"
-                        selected={!trimSilence}
-                        onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
-                        onLoadingChange={setOriginalLoading}
-                      />
-                    </div>
-                  )}
-                </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
-                  <p className="mt-2 text-sm font-medium"
-                    style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
-                    {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
-                  <p className="mt-2 text-sm font-medium"
-                    style={{ color: generatedVideos > 0 ? "var(--brand-text)" : "var(--c-45)" }}>
-                    {generatedVideos} / {videoBeats}
-                  </p>
-                  {generatedVideos < videoBeats && (
-                    <p className="text-xs mt-1" style={{ color: "var(--c-40)" }}>
-                      {videoBeats - generatedVideos} will use still images
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
-                  <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {RESOLUTION_PRESETS.map((p) => {
-                      const needs = requiredTierForResolution(p);
-                      const locked = !!needs && tierRank(userTier) < tierRank(needs);
-                      const active = selectedResolution === p;
-                      return (
-                        <button
-                          key={p}
-                          onClick={() => {
-                            if (locked) {
-                              // Pop the SubscriptionModal so the user
-                              // can upgrade in-place rather than just
-                              // being told "no" by a toast, and land on
-                              // the tier this preset actually needs.
-                              openUpgrade(needs === "max" ? "heclus_max" : "heclus_pro");
-                              return;
-                            }
-                            setSelectedResolution(p);
-                          }}
-                          disabled={assembling}
-                          title={locked && needs
-                            ? `${tierLabel(needs)} plan unlocks ${p} (${dimsFor(aspectRatio, p).label}), click to upgrade`
-                            : `Render at ${dimsFor(aspectRatio, p).label}`}
-                          className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
-                          style={active ? {
-                            background: "oklch(0.72 0.25 285 / 0.18)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.45)",
-                            color: "var(--accent-purple-text)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                            color: "var(--c-50)",
-                          }}
-                        >
-                          {p}
-                          {needs && (
-                            <span
-                              className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
-                              style={{
-                                // Max sits above Pro, so it gets the warmer
-                                // badge rather than repeating Pro's purple.
-                                background: needs === "max" ? "oklch(0.72 0.19 55)" : "oklch(0.72 0.25 285)",
-                                color: "white",
-                              }}
-                            >
-                              {tierLabel(needs)}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>
-                  Output Aspect Ratio{" "}
-                  <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches your generated images</span>
-                </p>
-                {/* Read-only: the output must match the ratio the images (and
-                    therefore the clips) were generated at — changing it here
-                    would letterbox/crop every beat. Locked to the project's
-                    generation aspect ratio. */}
-                <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}>
-                  {aspectRatio}
-                </span>
-              </div>
-              </div>
-              )}
-            </div>
-
-            {/* Two collapsed rows, side by side. Both are closed most of the
+            {/* Three collapsed rows, side by side. All are closed most of the
                 time and their summaries are one line each, so stacking them
-                spent a screen of height on two sentences. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                spent most of a screen on three sentences. Output sits with
+                them rather than above: it is a readout too, and the full width
+                bought it nothing. */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start -mt-5">
+              {/* Voiceover, clips, resolution and aspect ratio in one panel.
+                  Three of the four are readouts and the fourth is picked once,
+                  so the summary line carries them and the controls stay out of
+                  the way of the steps that get touched every time. */}
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={outputOpen}
+                  onClick={() => setOutputOpen((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOutputOpen((v) => !v); }
+                  }}
+                  className={`flex items-center justify-between gap-3 cursor-pointer select-none ${outputOpen ? "mb-4" : ""}`}
+                >
+                  <div>
+                    <p className="text-sm font-semibold">Output</p>
+                  </div>
+                  <span className="shrink-0" style={{ color: "var(--c-45)" }}>
+                    {outputOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                </div>
+                {outputOpen && (
+                <CardOverlay title="Output" onClose={() => setOutputOpen(false)}>
+                <div className="space-y-3">
+                  {/* Which take gets assembled. It lives here because the
+                      card above already reports which one is selected, and the
+                      previews are what makes that choice: hearing the two is
+                      the only way to tell them apart. Clicking a card selects
+                      it; the play button inside stops propagation so listening
+                      does not also switch the selection. */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+                      {(trimmedLoading || originalLoading) && (
+                        <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--brand-text)" }}>
+                          <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Loading previews…
+                        </span>
+                      )}
+                      {!beats.some((b) => !!b.voiceoverUrl) && (
+                        <span className="text-[11px]" style={{ color: "var(--c-40)" }}>none generated yet</span>
+                      )}
+                    </div>
+                    {beats.some((b) => !!b.voiceoverUrl) && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <FullVoiceoverPreview
+                          projectId={projectId}
+                          beats={beats}
+                          trimSilence={true}
+                          title="Trimmed voiceover"
+                          selected={trimSilence}
+                          onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
+                          onLoadingChange={setTrimmedLoading}
+                        />
+                        <FullVoiceoverPreview
+                          projectId={projectId}
+                          beats={beats}
+                          trimSilence={false}
+                          title="Original voiceover"
+                          selected={!trimSilence}
+                          onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
+                          onLoadingChange={setOriginalLoading}
+                        />
+                      </div>
+                    )}
+                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
+                    <p className="mt-2 text-sm font-medium"
+                      style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
+                      {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
+                    <p className="mt-2 text-sm font-medium"
+                      style={{ color: generatedVideos > 0 ? "var(--brand-text)" : "var(--c-45)" }}>
+                      {generatedVideos} / {videoBeats}
+                    </p>
+                    {generatedVideos < videoBeats && (
+                      <p className="text-xs mt-1" style={{ color: "var(--c-40)" }}>
+                        {videoBeats - generatedVideos} will use still images
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
+                    <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      {RESOLUTION_PRESETS.map((p) => {
+                        const needs = requiredTierForResolution(p);
+                        const locked = !!needs && tierRank(userTier) < tierRank(needs);
+                        const active = selectedResolution === p;
+                        return (
+                          <button
+                            key={p}
+                            onClick={() => {
+                              if (locked) {
+                                // Pop the SubscriptionModal so the user
+                                // can upgrade in-place rather than just
+                                // being told "no" by a toast, and land on
+                                // the tier this preset actually needs.
+                                openUpgrade(needs === "max" ? "heclus_max" : "heclus_pro");
+                                return;
+                              }
+                              setSelectedResolution(p);
+                            }}
+                            disabled={assembling}
+                            title={locked && needs
+                              ? `${tierLabel(needs)} plan unlocks ${p} (${dimsFor(aspectRatio, p).label}), click to upgrade`
+                              : `Render at ${dimsFor(aspectRatio, p).label}`}
+                            className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
+                            style={active ? {
+                              background: "oklch(0.72 0.25 285 / 0.18)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                              color: "var(--accent-purple-text)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                              color: "var(--c-50)",
+                            }}
+                          >
+                            {p}
+                            {needs && (
+                              <span
+                                className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
+                                style={{
+                                  // Max sits above Pro, so it gets the warmer
+                                  // badge rather than repeating Pro's purple.
+                                  background: needs === "max" ? "oklch(0.72 0.19 55)" : "oklch(0.72 0.25 285)",
+                                  color: "white",
+                                }}
+                              >
+                                {tierLabel(needs)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>
+                    Output Aspect Ratio{" "}
+                    <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches your generated images</span>
+                  </p>
+                  {/* Read-only: the output must match the ratio the images (and
+                      therefore the clips) were generated at — changing it here
+                      would letterbox/crop every beat. Locked to the project's
+                      generation aspect ratio. */}
+                  <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}>
+                    {aspectRatio}
+                  </span>
+                </div>
+                </div>
+                </CardOverlay>
+                )}
+              </div>
               {/* Music and logo together.
                   Two uploads that decorate the video rather than change what it
                   says, both used on a minority of assemblies, and each was its
                   own full-width card. One section, closed by default, gives the
                   steps that matter the room instead. */}
-              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div
                   role="button"
                   tabIndex={0}
@@ -3609,18 +3718,13 @@ export default function AssemblePage({ params }: PageProps) {
                 >
                   <div>
                     <p className="text-sm font-semibold">Background music & logo</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                      {[
-                        bgmPreviewUrl ? (bgmVolume > 0 ? `Music at ${Math.round(bgmVolume * 100)}%` : "Music muted") : null,
-                        logoUploadedUrl || logoFile ? "Logo added" : null,
-                      ].filter(Boolean).join(" · ") || "None added"}
-                    </p>
                   </div>
                   <span className="shrink-0" style={{ color: "var(--c-45)" }}>
                     {brandingOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                 </div>
                 {brandingOpen && (
+                <CardOverlay title="Background music & logo" onClose={() => setBrandingOpen(false)}>
                 <div className="space-y-4">
                 {/* Background music — compact single-bar picker. Pre-pick
                     shows label + Choose file. Post-pick collapses every
@@ -4020,11 +4124,12 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
 
                 </div>
+                </CardOverlay>
                 )}
               </div>
 
               {/* Captions */}
-              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 {/* The whole row opens the section, so the target is the row
                     rather than the words. The switch only appears once it is
                     open: collapsed, the summary already says on or off, and a
@@ -4043,11 +4148,6 @@ export default function AssemblePage({ params }: PageProps) {
                   <div className="flex items-center gap-2">
                     <div>
                       <p className="text-sm font-semibold">Captions</p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                        {captionsEnabled
-                          ? `On · ${captionsStyle}, ${captionsSize}, ${captionsPosition}${captionsAnimation === "none" ? "" : `, ${captionsAnimation}`}`
-                          : "Off · burned into the video when on"}
-                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
@@ -4073,6 +4173,7 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
 
                 {captionsOpen && captionsEnabled && (
+                <CardOverlay title="Captions" onClose={() => setCaptionsOpen(false)}>
                   <div className="space-y-4">
                     {/* What the choices add up to, on one of the project's own
                         frames. Style, size and position are three lists of
@@ -4293,6 +4394,7 @@ export default function AssemblePage({ params }: PageProps) {
                       </div>
                     </div>
                   </div>
+                </CardOverlay>
                 )}
               </div>
             </div>
@@ -6240,13 +6342,13 @@ export default function AssemblePage({ params }: PageProps) {
                 Selecting a beat and setting its effect is what this does, so
                 that is all it offers. */}
             {beats.length > 0 && (
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            <div className="rounded-2xl px-5 pt-3 pb-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               {/* The bar an editor puts above its timeline: what you are
                   looking at on the left, the transport in the middle, zoom on
                   the right. Laid out as a three-column grid rather than
                   justify-between so the transport is centred on the panel and
                   not on whatever is left over after the other two. */}
-              <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-2"
+              <div className="mb-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1.5"
                 style={{ borderBottom: "1px solid var(--bd-6)" }}>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Timeline</p>
