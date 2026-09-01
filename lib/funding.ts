@@ -27,13 +27,20 @@ export type FundingMode = "byo" | "wallet";
  * balance. Flipping this to false is what puts the feature in front of
  * customers.
  *
- * Off since 2026-08-26, deliberately and temporarily, to open the wallet to
- * every account. Two consequences to weigh before leaving it here: customer
- * generations now run on Heclus's provider keys, and the funding card's promise
- * that a switch reprices the subscription at renewal has nothing behind it
- * until /api/dodo/change-plan exists.
+ * Back ON 2026-09-01. It was off since 2026-08-26 to open the wallet on
+ * staging, where every account is ours. Promoting that to production honoured
+ * account_settings.funding_mode for real customers for the first time: the
+ * column defaults to 'wallet', 78 production accounts carried it, and with no
+ * Heclus plan behind them their balance is zero, so every one of them was
+ * refused at generation with "empty, cannot generate". Eleven were paying
+ * customers on legacy Starter and Pro.
+ *
+ * True restores exactly what production did before that deploy, which is to
+ * ignore the column and run every non-admin on their own keys. It belongs with
+ * the flags in lib/rollout.ts: the wallet is part of this release and should
+ * have shipped gated with the rest of it.
  */
-export const WALLET_FUNDING_ADMIN_ONLY = false;
+export const WALLET_FUNDING_ADMIN_ONLY = true;
 
 const cacheMap = new Map<string, { mode: FundingMode; at: number }>();
 const TTL_MS = 60_000;
