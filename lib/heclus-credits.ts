@@ -2,7 +2,8 @@ import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { getFundingMode } from "@/lib/funding";
 import { hasPaidAccess } from "@/lib/subscription";
-import { planSlugOf } from "@/lib/plans-gating";
+import { planSlugOf, tierForPlan } from "@/lib/plans-gating";
+import { tierFallbacks, type Tier } from "@/lib/plan-tier";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
 // runs on Heclus's own provider accounts.
@@ -10,7 +11,8 @@ import { planSlugOf } from "@/lib/plans-gating";
 // Deliberately the same shape as lib/credits.ts, so a call site reads the same
 // whichever wallet it draws on: reserve before the work, settle with what it
 // actually cost, release if nothing was produced. What differs is underneath —
-// no monthly grant, no expiry, and fractional credits, because KIE charges 1.7
+// a grant per billing period rather than a monthly reset, no expiry on what is
+// granted, and fractional credits, because KIE charges 1.7
 // for an image prompt rather than a whole unit. See migration 129, which renamed the old wallet to genai_credits so this one could take the general names.
 //
 // Every balance-changing operation is a Postgres function call rather than a
@@ -49,13 +51,15 @@ const EMPTY: HeclusBalance = { credits: 0, reserved: 0 };
  * refuses work, and that one is not fail-soft.
  */
 export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
-  // The starter grant is issued here, on first read, rather than at signup.
+  // The plan grant is issued here, on read, rather than by the renewal webhook.
   //
-  // Lazily for two reasons: no cron has to walk every account, and an account
-  // that never comes back never gets an allowance it cannot use. It also means
-  // accounts that predate the grant receive it the first time they look at their
-  // balance, which is what makes this rollout not need a backfill.
-  await ensureSignupGrant(user);
+  // Lazily for three reasons: no cron has to walk every account, an account
+  // that never comes back never gets an allowance it cannot use, and a renewal
+  // still pays out when the webhook that announced it was missed, replayed or
+  // never delivered. It also means accounts that predate the grant receive it
+  // the first time they look at their balance, which is what makes this rollout
+  // not need a backfill.
+  await ensurePeriodGrant(user);
 
   try {
     const { data, error } = await supabase
@@ -80,12 +84,24 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
 }
 
 /**
- * Grant the starter credits once, if this account should have them.
+ * Grant this billing period's credits, if this account should have them.
  *
- * Idempotent without any new schema: credits_add dedupes on the payment id, so
- * "signup:<user id>" spends the unique index the top-up path already relies on.
- * A second call is a no-op, which is what makes it safe to run on every balance
- * read.
+ * The plans sell an allowance per period, so it is issued on subscribing and
+ * again on every renewal. app_metadata.paid_at is the signal for both: the
+ * verify route stamps it on purchase and the Dodo webhook refreshes it on
+ * renewal, so a paid_at the account has no grant against is a period that has
+ * not been paid out yet.
+ *
+ * Driven off that stamp rather than off the renewal webhook itself, so the
+ * grant does not depend on an event firing at the right moment. The webhook
+ * moves paid_at; this notices. A missed or replayed delivery costs nothing
+ * either way.
+ *
+ * Idempotent without any new schema, two ways over. The period key
+ * "grant:<user id>:<paid_at>" spends the unique index on the payment id that
+ * the top-up path already relies on, and the ledger is checked for a grant
+ * inside the current period first so an account that was credited under the
+ * old "signup:<user id>" key is not paid twice for the period it already has.
  *
  * Only wallet-funded accounts. A BYO client spends their own provider keys, so
  * credits would sit there unusable, and getFundingMode also carries the
@@ -94,7 +110,7 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
  * Fail-soft throughout. A grant that cannot be issued must not stop the balance
  * from rendering, and the next read will try again.
  */
-async function ensureSignupGrant(user: User): Promise<void> {
+async function ensurePeriodGrant(user: User): Promise<void> {
   try {
     // Customers only. The grant is real provider spend and the plans sell it as
     // an allowance, so handing it to an account that has bought nothing gives
@@ -102,19 +118,59 @@ async function ensureSignupGrant(user: User): Promise<void> {
     // use it up honestly.
     if (!hasPaidAccess(user)) return;
     if (await getFundingMode(user) !== "wallet") return;
-    const credits = await signupGrantCredits(user);
+
+    const meta = (user.app_metadata ?? {}) as { paid_at?: unknown };
+    const paidAt = typeof meta.paid_at === "string" ? meta.paid_at : null;
+    // No stamp means nothing has told us a period started. Fall back to the
+    // original one-shot key so an account that predates paid_at still gets its
+    // first allowance, and gets it exactly once.
+    const periodKey = paidAt ? `grant:${user.id}:${paidAt}` : `signup:${user.id}`;
+
+    if (paidAt && await hasGrantSince(user.id, paidAt)) return;
+
+    const credits = await periodGrantCredits(user);
     if (credits <= 0) return;
     const granted = await addHeclusCredits({
       userId: user.id,
       credits,
       kind: "adjustment",
-      note: `${credits} signup credits`,
-      dodoPaymentId: `signup:${user.id}`,
+      note: `${credits} plan credits`,
+      dodoPaymentId: periodKey,
     });
-    if (granted) console.log(`[heclus-credits] granted ${credits} signup credits to ${user.id} (plan ${planSlugOf(user)})`);
+    if (granted) console.log(`[heclus-credits] granted ${credits} plan credits to ${user.id} (plan ${planSlugOf(user)}, period ${paidAt ?? "initial"})`);
   } catch (e) {
-    console.warn("[heclus-credits] signup grant failed:", e instanceof Error ? e.message : e);
+    console.warn("[heclus-credits] period grant failed:", e instanceof Error ? e.message : e);
   }
+}
+
+/**
+ * Whether this account already has a plan grant dated inside the current
+ * period.
+ *
+ * The check that makes the switch to per-period keys safe. An account credited
+ * under the old "signup:<user id>" key has a grant row stamped at roughly its
+ * paid_at, so that row sits inside the current period and this returns true
+ * until a renewal moves paid_at past it. Without it, every existing wallet
+ * would be paid a second time the first time its balance was read.
+ *
+ * Fail-soft in the direction that cannot cost money: an unreadable ledger is
+ * treated as already granted, because granting twice is worse than granting
+ * late, and the next read tries again.
+ */
+async function hasGrantSince(userId: string, periodStart: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("credit_ledger")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("kind", "adjustment")
+    .gte("created_at", periodStart)
+    .or(`dodo_payment_id.eq.signup:${userId},dodo_payment_id.like.grant:${userId}:%`)
+    .limit(1);
+  if (error) {
+    console.warn("[heclus-credits] grant lookup failed:", error.message);
+    return true;
+  }
+  return (data ?? []).length > 0;
 }
 
 /**
@@ -127,41 +183,46 @@ async function ensureSignupGrant(user: User): Promise<void> {
  * column falls back, which is the difference between "not configured" and
  * "configured to none".
  */
-async function signupGrantCredits(user: User): Promise<number> {
-  const pro = planIsPro(user);
-  const fallback = pro ? DEFAULT_SIGNUP_GRANT_PRO : DEFAULT_SIGNUP_GRANT_STARTER;
-  const column = pro ? "heclus_signup_grant_credits_pro" : "heclus_signup_grant_credits";
+async function periodGrantCredits(user: User): Promise<number> {
+  return packCreditsForTier(tierForPlan(planSlugOf(user)));
+}
 
+/**
+ * The credits one period on this tier is worth.
+ *
+ * Exported because an upgrade has to price the tier the customer is leaving as
+ * well as the one they are arriving on, and the difference between the two is
+ * what they are owed for the rest of the period.
+ */
+export async function packCreditsForTier(tier: Tier): Promise<number> {
+  const fallback = GRANT_FALLBACK[tier] ?? DEFAULT_SIGNUP_GRANT_STARTER;
+
+  // select("*"), not the three column names: PostgREST fails the whole query on
+  // one unknown column, so naming heclus_signup_grant_credits_max would make
+  // every tier fall back to its code figure on any database where migration 175
+  // has not been applied yet, silently discarding the configured Starter and
+  // Pro values. Same reasoning as the admin route, which says so too.
   const { data, error } = await supabase
     .from("product_config")
-    .select("heclus_signup_grant_credits, heclus_signup_grant_credits_pro")
+    .select("*")
     .eq("service", "_global")
     .maybeSingle();
   if (error) return fallback;
 
   const row = (data ?? {}) as Record<string, unknown>;
-  // Pro reading an unset Pro column drops to the starter figure rather than to
-  // the code default: an admin who lowered the starter grant meant to lower
-  // what a new account gets, and handing Pro more than that would be a
-  // surprise.
-  const raw = column in row && row[column] !== null && row[column] !== undefined
-    ? row[column]
-    : (pro ? row.heclus_signup_grant_credits : undefined);
-  if (raw === undefined || raw === null) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/**
- * Which tier the grant reads.
- *
- * Pro only. Founder is closed to new signups, so it gets no figure of its own;
- * an existing Founder account falls through to the Starter grant like any
- * unrecognised plan. Nobody new can arrive on it, so a rule for it would be a
- * rule about the past.
- */
-function planIsPro(user: User): boolean {
-  return planSlugOf(user) === "pro";
+  // A tier whose own column is unset drops to the nearest tier below rather
+  // than to the code default: an admin who lowered the starter grant meant to
+  // lower what a new account gets, and handing a higher tier more than that
+  // would be a surprise. Only when nothing on the ladder is configured does the
+  // code figure apply.
+  for (const below of tierFallbacks(tier)) {
+    const raw = row[GRANT_COLUMN[below]];
+    if (raw === undefined || raw === null) continue;
+    const n = Number(raw);
+    // A stored zero is a deliberate zero, not an absent value.
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  return fallback;
 }
 
 /**
@@ -178,6 +239,27 @@ function planIsPro(user: User): boolean {
  */
 const DEFAULT_SIGNUP_GRANT_STARTER = 1000;
 const DEFAULT_SIGNUP_GRANT_PRO = 2000;
+const DEFAULT_SIGNUP_GRANT_MAX = 6000;
+
+/**
+ * The config column each tier's grant is stored in.
+ *
+ * Founder is closed to new signups, so it gets no figure of its own; an
+ * existing Founder account reads the Starter column like any unrecognised plan.
+ * Nobody new can arrive on it, so a rule for it would be a rule about the past.
+ */
+const GRANT_COLUMN: Record<Tier, string> = {
+  starter: "heclus_signup_grant_credits",
+  pro: "heclus_signup_grant_credits_pro",
+  max: "heclus_signup_grant_credits_max",
+};
+
+const GRANT_FALLBACK: Record<Tier, number> = {
+  starter: DEFAULT_SIGNUP_GRANT_STARTER,
+  pro: DEFAULT_SIGNUP_GRANT_PRO,
+  max: DEFAULT_SIGNUP_GRANT_MAX,
+};
+
 
 /** Recent movements, newest first, for the Balance panel and admin views. */
 export async function listHeclusLedger(userId: string, limit = 50): Promise<HeclusLedgerRow[]> {

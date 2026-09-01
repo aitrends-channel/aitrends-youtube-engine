@@ -146,14 +146,51 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
     }
   }, [plans, selectedPlan, founderAvailable, visiblePlans]);
 
-  function handleSubscribe() {
+  async function handleSubscribe() {
     const plan = plans?.find(p => p.slug === selectedPlan);
+    setError(null);
+    setSubscribing(true);
+
+    // An existing subscriber moving up a tier is an adjustment to the
+    // subscription they already have, not a second checkout. Dodo prorates the
+    // difference, the renewal date stays where it is, and no second
+    // subscription is created for the verify route to have to cancel.
+    //
+    // The route answers adjusted:false when there is nothing to adjust, which
+    // covers every first-time subscriber and every downgrade, and the checkout
+    // below is then exactly the path they get today.
+    try {
+      const res = await fetch("/api/me/plan-upgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selectedPlan }),
+      });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (res.ok && data.adjusted) {
+        router.refresh();
+        onClose();
+        return;
+      }
+      // Only a failed adjustment stops the flow. Anything else (not signed in,
+      // an unknown plan, the route missing) falls through to checkout, which is
+      // where those cases belong anyway — blocking on them would lock a
+      // first-time subscriber out of paying at all.
+      if (res.status === 502 && typeof data.error === "string") {
+        setError(data.error);
+        setSubscribing(false);
+        return;
+      }
+    } catch {
+      // Our own route being unreachable is not a reason to block checkout,
+      // which is what a first-time subscriber needs regardless.
+    }
+
     const base = plan?.paymentLink;
     if (!base) {
       setError("Payment not configured for this plan. Contact support.");
+      setSubscribing(false);
       return;
     }
-    setSubscribing(true);
     // Save the pending plan in TWO places:
     //   - sessionStorage on this tab (unchanged, so a same-tab flow
     //     still works if a browser ever blocks the new-tab open)

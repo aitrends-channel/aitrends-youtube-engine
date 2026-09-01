@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
+import type { PricingReport, PricingLine, PricingPlan } from "@/app/api/admin/pricing/route";
 import type { BalancesResponse, ProviderBalance, BalanceRow } from "@/app/api/admin/balances/route";
 import type { RenderUsageRow } from "@/app/api/admin/render-usage/[projectId]/route";
 import type { UserUsage } from "@/app/api/admin/user-usage/[email]/route";
@@ -2808,6 +2809,7 @@ function HeclusCreditsPanel() {
   const [packPrice, setPackPrice] = useState("");
   const [grant, setGrant] = useState("");
   const [grantPro, setGrantPro] = useState("");
+  const [grantMax, setGrantMax] = useState("");
   const [rates, setRates] = useState<Record<string, string>>({});
   /** The per-model token overrides, edited as JSON: there is a row per model and
    *  the set changes whenever Anthropic ships one, so a fixed set of numeric
@@ -2826,6 +2828,7 @@ function HeclusCreditsPanel() {
     setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
     setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
     setGrantPro(data.signupGrantCreditsPro != null ? String(data.signupGrantCreditsPro) : "");
+    setGrantMax(data.signupGrantCreditsMax != null ? String(data.signupGrantCreditsMax) : "");
     const stored = (data.rates ?? {}) as Record<string, unknown>;
     setRates(Object.fromEntries(
       Object.entries(stored).filter(([, v]) => typeof v === "number").map(([k, v]) => [k, String(v)]),
@@ -3024,14 +3027,17 @@ function HeclusCreditsPanel() {
       {data && data.schema.signupGrant && !data.schema.signupGrantPro && (
         <MigrationWarning migration="140_signup_grant_by_plan.sql" what="the Pro signup grant" />
       )}
+      {data && data.schema.signupGrantPro && !data.schema.signupGrantMax && (
+        <MigrationWarning migration="175_max_plan.sql" what="the Max signup grant" />
+      )}
 
       {/* Starter grant */}
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Signup grant</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Plan grant</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            Granted once per account, the first time a balance is read. Existing accounts receive it too.
-            Empty disables it. Pro with no figure of its own reads Starter, and so does Founder, which is closed to new signups.
+            Granted on subscribing and again on every renewal, issued the first time a balance is read in the new period.
+            Empty disables it. A tier with no figure of its own reads the nearest tier below it, and so does Founder, which is closed to new signups.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -3055,10 +3061,21 @@ function HeclusCreditsPanel() {
               style={inputStyle}
             />
           </div>
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Max</label>
+            <input
+              type="number" min={1} step="any" value={grantMax}
+              onChange={(e) => setGrantMax(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
           <button
             onClick={() => save("grant", {
               signupGrantCredits: grant.trim() || null,
               signupGrantCreditsPro: grantPro.trim() || null,
+              signupGrantCreditsMax: grantMax.trim() || null,
             })}
             disabled={saving !== null || isLoading}
             className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
@@ -3262,18 +3279,18 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
             <WorthLine
               label="The Starter grant buys"
               value={b.grantVideos}
-              detail={data.signupGrantCredits ? `${n(data.signupGrantCredits)} credits per signup` : "No grant set"}
+              detail={data.signupGrantCredits ? `${n(data.signupGrantCredits)} credits per period` : "No grant set"}
               price={null}
-              cost={data.signupGrantCredits ? `costs us ${usd(data.signupGrantCredits)} per signup` : null}
+              cost={data.signupGrantCredits ? `costs us ${usd(data.signupGrantCredits)} per period` : null}
             />
             <WorthLine
               label="The Pro grant buys"
               value={data.signupGrantCreditsPro && b.totalCredits ? data.signupGrantCreditsPro / b.totalCredits : b.grantVideos}
               detail={data.signupGrantCreditsPro
-                ? `${n(data.signupGrantCreditsPro)} credits per signup`
+                ? `${n(data.signupGrantCreditsPro)} credits per period`
                 : "Reads the Starter figure"}
               price={null}
-              cost={data.signupGrantCreditsPro ? `costs us ${usd(data.signupGrantCreditsPro)} per signup` : null}
+              cost={data.signupGrantCreditsPro ? `costs us ${usd(data.signupGrantCreditsPro)} per period` : null}
             />
           </div>
 
@@ -6778,6 +6795,8 @@ const TAB_BLURB: Record<string, string> = {
   projects:  "Every video, its progress and what it cost",
   freeusage: "Perks Heclus pays for, and who is using them",
   revenue:   "Payments, plans and reconciliation",
+  plans:     "What we are selling, as a visitor is offered it",
+  pricing:   "What each plan costs us, and what it earns",
   reports:   "Generated reports and exports",
   jobs:      "Provider work in flight, and what is holding it up",
   logs:      "Errors and events from the running app",
@@ -7163,6 +7182,300 @@ function UsageTile({ label, value, share, sub }: {
   );
 }
 
+/** One table of plans. Shared so the on-sale and legacy sections cannot drift
+ *  into showing the same numbers two different ways. */
+function PricingTable({ title, subtitle, plans }: { title: string; subtitle?: string; plans: PricingPlan[] }) {
+  if (!plans.length) return null;
+  const money = (v: number) => `$${v.toFixed(2)}`;
+  const marginColour = (pct: number) =>
+    pct >= 55 ? "oklch(0.55 0.15 145)" : pct >= 40 ? "oklch(0.65 0.15 75)" : "oklch(0.6 0.22 25)";
+  const cellBorder = "1px solid #000";
+  const line = (p: PricingPlan, label: string) => p.cogs.find((l) => l.label === label);
+  const fee = (p: PricingPlan, label: string) => p.fees.find((l) => l.label === label);
+  const cell = (l?: PricingLine) => (l ? (l.usd > 0 ? `${l.qty} (${money(l.usd)})` : l.qty) : "—");
+  /** The columns, defined once. The table renders them across, the mobile card
+   *  renders them down, and neither can drift from the other. */
+  const columns = (p: PricingPlan): { label: string; value: string; strong?: boolean; colour?: string }[] => [
+    { label: "Credits", value: cell(line(p, "Heclus credits")) },
+    { label: "Clips", value: cell(line(p, "Free video credits")) },
+    { label: "Storage", value: cell(line(p, "Asset storage")) },
+    { label: "Images", value: cell(line(p, "Free images")) },
+    { label: "Voice", value: cell(line(p, "Free voiceover")) },
+    { label: "COGS", value: money(p.cogsTotal), strong: true },
+    { label: "Dodo 10%", value: money(fee(p, "Dodo")?.usd ?? 0), strong: true },
+    { label: "GOG 5%", value: money(fee(p, "GOG")?.usd ?? 0), strong: true },
+    { label: "Total", value: money(p.total), strong: true },
+    { label: "Margin", value: `${p.marginPct.toFixed(0)}%`, strong: true, colour: marginColour(p.marginPct) },
+    { label: "Net/user", value: money(p.net), strong: true, colour: p.net < 0 ? "oklch(0.6 0.22 25)" : undefined },
+  ];
+  const headers = ["Plan", "Price", ...columns(plans[0]).map((c) => c.label)];
+
+  return (
+    <div>
+      <p className="text-[15px] font-semibold" style={{ color: "var(--c-90)" }}>{title}</p>
+      {subtitle && <p className="text-[13px] mt-0.5 mb-2" style={{ color: "var(--c-55)" }}>{subtitle}</p>}
+      {/* Thirteen columns do not fit a phone, and a table that only scrolls
+          sideways is a table nobody reads on one. Below md each plan becomes a
+          card of label/value rows instead; the figures come from the same
+          columns() either way. */}
+      <div className="md:hidden mt-2 space-y-3">
+        {plans.map((p) => (
+          <div key={p.slug} className="rounded-lg overflow-hidden" style={{ border: cellBorder }}>
+            <div className="flex items-baseline justify-between gap-2 px-3 py-2" style={{ background: "var(--bg-input)", borderBottom: cellBorder }}>
+              <span className="font-semibold" style={{ color: "var(--c-90)" }}>{p.name}</span>
+              <span className="tabular-nums font-semibold" style={{ color: "var(--c-90)" }}>
+                {money(p.price)}
+                {p.annualised && <span className="ml-1 text-[10px] font-normal" style={{ color: "var(--c-45)" }}>/yr÷12</span>}
+              </span>
+            </div>
+            {columns(p).map((c, i, arr) => (
+              <div key={c.label}
+                className="flex items-baseline justify-between gap-3 px-3 py-1.5 text-[13px]"
+                style={{ borderBottom: i === arr.length - 1 ? undefined : cellBorder }}>
+                <span style={{ color: "var(--c-60)" }}>{c.label}</span>
+                <span className={`tabular-nums text-right ${c.strong ? "font-semibold" : ""}`}
+                  style={{ color: c.colour ?? (c.strong ? "var(--c-90)" : "var(--c-75)") }}>
+                  {c.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Wide by nature, so it scrolls inside its own box rather than
+          stretching every other tab to fit it. */}
+      <div className="hidden md:block overflow-x-auto -mx-1 px-1 mt-2">
+        <table className="w-full text-[13px]" style={{ borderCollapse: "collapse", minWidth: 900 }}>
+          <thead>
+            <tr>
+              {headers.map((h, i) => (
+                <th key={h}
+                  className={`py-2 px-2 font-semibold whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}
+                  style={{
+                    border: cellBorder,
+                    background: "var(--bg-input)",
+                    color: h.startsWith("Dodo") || h.startsWith("GOG") ? "var(--c-85)" : "var(--c-65)",
+                  }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {plans.map((p) => (
+              <tr key={p.slug}>
+                <td className="py-2 px-2 font-semibold whitespace-nowrap" style={{ border: cellBorder, color: "var(--c-90)" }}>{p.name}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-semibold whitespace-nowrap" style={{ border: cellBorder, color: "var(--c-90)" }}>
+                  {money(p.price)}
+                  {/* A yearly product divided by twelve, flagged so the row is
+                      not read as a very cheap monthly one. */}
+                  {p.annualised && <span className="ml-1 text-[10px] font-normal" style={{ color: "var(--c-45)" }}>/yr÷12</span>}
+                </td>
+                {columns(p).map((c) => (
+                  <td key={c.label}
+                    className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${c.strong ? "font-semibold" : ""}`}
+                    style={{ border: cellBorder, color: c.colour ?? (c.strong ? "var(--c-90)" : "var(--c-75)") }}>
+                    {c.value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What each plan earns, line by line.
+ *
+ * Every figure comes from the constants the product actually runs on, so an
+ * allowance changed in quota-config or a grant changed in the Credits tab moves
+ * these numbers without anyone editing this page.
+ *
+ * It is a ceiling, not a forecast: it assumes every customer exhausts every
+ * allowance every month, and the usage data says almost none of them do.
+ */
+function PricingPanel() {
+  const { data, isLoading, error } = useSWR<PricingReport>(
+    "/api/admin/pricing",
+    async (u: string) => {
+      const r = await fetch(u, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+  );
+
+  if (isLoading && !data) return <div className="flex items-center gap-2 text-sm py-10 justify-center" style={{ color: "var(--c-50)" }}><Spinner /> Working out the margins…</div>;
+  if (error || !data) return <p className="text-sm py-10 text-center" style={{ color: "oklch(0.7 0.2 25)" }}>Could not load the pricing breakdown.</p>;
+
+  return (
+    <div className="space-y-5">
+      <p className="text-[15px]" style={{ color: "var(--c-70)" }}>
+        Margin at full burn: every allowance exhausted, every month.
+      </p>
+
+      <PricingTable title="On sale" plans={data.plans} />
+      <PricingTable
+        title="Legacy"
+        subtitle="Not on sale. Assumes wallet funding; a customer on their own key costs us nothing to generate."
+        plans={data.legacy}
+      />
+
+      <div style={{ marginTop: 50 }} className="space-y-2.5 text-[14px]" >
+        <p style={{ color: "var(--c-80)" }}>
+          <strong style={{ color: "var(--c-90)" }}>These margins are a floor, not an estimate.</strong>{" "}
+          The wallet stops work when the grant runs out, so a plan cannot cost more than it shows here.
+        </p>
+        <p style={{ color: "var(--c-80)" }}>
+          <strong style={{ color: "var(--c-90)" }}>The top-up decides the real margin.</strong>{" "}
+          A median active user spends 2,877 credits a month and buys the difference. At $6 per 1,000 that
+          sale earns 1.7% after fees and drags Starter from 49% to 36%. At $12 it holds at 47%.
+        </p>
+        <p style={{ color: "var(--c-80)" }}>
+          <strong style={{ color: "var(--c-90)" }}>To reach 50%</strong>{" "}
+          the prices are {data.plans.map((p) => `${p.name} $${(p.cogsTotal / 0.35).toFixed(2)}`).join(", ")}.
+          Allowances cannot close the gap; only price can.
+        </p>
+        <p style={{ color: "var(--c-80)" }}>
+          <strong style={{ color: "oklch(0.6 0.22 25)" }}>One plan loses money.</strong>{" "}
+          Founder on the wallet costs more than it charges. No account is in that state today, but the
+          funding column defaults to wallet, so it is one toggle away.
+        </p>
+      </div>
+
+      {/* The constants everything above is derived from */}
+      <div className="rounded-xl p-4" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+        <p className="text-[15px] font-semibold mb-2" style={{ color: "var(--c-90)" }}>Rates</p>
+        <div className="grid gap-x-6 gap-y-1 text-[13px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+          <Rate label="Heclus credit" value={`$${data.rates.creditUsd}`} />
+          <Rate label="Free video clip" value={`$${data.rates.clipUsd.toFixed(3)}`} />
+          <Rate label="Free image (z-image)" value={`$${data.rates.imageUsd.toFixed(3)}`} />
+          <Rate label="R2 storage" value={`$${data.rates.storageUsdPerGb}/GB`} />
+          <Rate label="Voiceover" value={data.rates.ttsUsdPerMillion ? `$${data.rates.ttsUsdPerMillion}/1M chars` : "UNSET"} />
+        </div>
+        {!data.rates.ttsUsdPerMillion && (
+          <p className="text-[13px] mt-3 px-2 py-1.5 rounded-lg"
+            style={{ background: "oklch(0.65 0.15 75 / 0.12)", color: "oklch(0.72 0.15 75)" }}>
+            AI33_TTS_USD_PER_MILLION_CHARS is unset, so free voiceover costs nothing in the table above
+            and every margin here is a ceiling. Set it to see the real figure.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Rate({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span style={{ color: "var(--c-60)" }}>{label}</span>
+      <span className="tabular-nums font-medium" style={{ color: "var(--c-85)" }}>{value}</span>
+    </div>
+  );
+}
+
+interface VisitorPlanDTO {
+  slug: string;
+  name: string;
+  priceDisplay: string;
+  periodDisplay: string;
+  limitDisplay: string;
+  features: string[];
+  nichesPerMonth: number | null;
+  highlighted: boolean;
+  disabled: boolean;
+  isFounder: boolean;
+  sortOrder: number;
+}
+
+/**
+ * The plans exactly as a visitor is offered them.
+ *
+ * Reads /api/plans, the same endpoint SubscriptionModal calls, rather than the
+ * plans table directly. That is the point of the view: the public list drops
+ * retired products and carries the payment mode, so a row that is in the table
+ * but not on sale does not appear here either, and a figure edited in the
+ * editor shows up here exactly as late as it does for a customer.
+ *
+ * The editor is Config, then Plans. This one shows no payment links, no test
+ * and production split, nothing internal: only what is printed on the card.
+ */
+function VisitorPlansPanel() {
+  const { data, isLoading, error } = useSWR<{ plans?: VisitorPlanDTO[]; paymentMode?: string }>(
+    "/api/plans",
+    async (u: string) => {
+      const r = await fetch(u, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    { revalidateOnFocus: true },
+  );
+  const plans = [...(data?.plans ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  if (isLoading && !data) {
+    return <div className="flex items-center gap-2 text-sm py-10 justify-center" style={{ color: "var(--c-50)" }}><Spinner /> Loading plans…</div>;
+  }
+  if (error) {
+    return <p className="text-sm py-10 text-center" style={{ color: "oklch(0.7 0.2 25)" }}>Could not load the public plan list.</p>;
+  }
+  if (!plans.length) {
+    return <p className="text-sm py-10 text-center" style={{ color: "var(--c-50)" }}>No plans are on sale right now.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[15px]" style={{ color: "var(--c-70)" }}>
+        What a visitor sees in the upgrade modal, from the live /api/plans response.
+        {data?.paymentMode ? ` Checkout is in ${data.paymentMode} mode.` : ""}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {plans.map((plan) => (
+          <div
+            key={plan.slug}
+            className="relative rounded-xl p-4 flex flex-col"
+            style={{
+              background: "var(--bg-input)",
+              border: plan.highlighted ? "1px solid oklch(0.72 0.25 285 / 0.50)" : "1px solid var(--bd-card)",
+              opacity: plan.disabled ? 0.8 : 1,
+            }}
+          >
+            {/* The same badges the modal paints, so a card that reads as
+                Popular or Soon to a customer reads that way here too. */}
+            {plan.highlighted && (
+              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>💪 Popular</span>
+            )}
+            {plan.disabled && (
+              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                style={{ background: "oklch(0.45 0 0)", color: "oklch(0.85 0 0)" }}>Soon</span>
+            )}
+            <p className="text-[15px] font-semibold mb-1" style={{ color: "var(--c-80)" }}>{plan.name}</p>
+            <p className="text-3xl font-bold" style={{ color: "var(--c-90)" }}>
+              {plan.priceDisplay}
+              <span className="text-sm font-normal ml-1" style={{ color: "var(--c-65)" }}>{plan.periodDisplay}</span>
+            </p>
+            <p className="text-[14px] mt-1 mb-4" style={{ color: "var(--c-65)" }}>{plan.limitDisplay}</p>
+            <ul className="space-y-2">
+              {plan.features.map((f) => (
+                <li key={f} className="flex items-start gap-2.5 text-[15px] leading-snug" style={{ color: "var(--c-85)" }}>
+                  <span className="w-4 h-4 mt-[3px] rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.55 0.15 145)" }}>
+                    <Check size={9} strokeWidth={3} />
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
   { id: "balances", label: "Balance",  icon: Wallet },
@@ -7175,6 +7488,8 @@ const ADMIN_NAV = [
   { id: "jobs",     label: "Jobs",     icon: Activity },
   { id: "freeusage", label: "Free Resources Usage", icon: Gift },
   { id: "revenue",  label: "Revenue",  icon: DollarSign },
+  { id: "plans",    label: "Plans",    icon: CreditCard },
+  { id: "pricing",  label: "Pricing",  icon: Gauge },
   { id: "reports",  label: "Reports",  icon: FileText },
   { id: "logs",     label: "Logs",     icon: FileText },
   { id: "emails",   label: "Emails",   icon: Mail },
@@ -7332,11 +7647,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "jobs" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "jobs" | "freeusage" | "revenue" | "plans" | "pricing" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "balances", "activity", "usage", "users", "projects", "jobs", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "balances", "activity", "usage", "users", "projects", "jobs", "freeusage", "revenue", "plans", "pricing", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -9644,6 +9959,18 @@ export default function AdminPage() {
         {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "freeusage" && <FreeUsagePanel />}
+
+        {activeTab === "pricing" && (
+          <section id="pricing" className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <PricingPanel />
+          </section>
+        )}
+
+        {activeTab === "plans" && (
+          <section id="plans" className="rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <VisitorPlansPanel />
+          </section>
+        )}
 
         {activeTab === "query" && (
           <section id="query" className="rounded-2xl max-w-full min-w-0"

@@ -31,6 +31,8 @@ export interface HeclusCreditsConfig {
   signupGrantCredits: number | null;
   /** Pro and Founder. Unset means they read the Starter figure. */
   signupGrantCreditsPro: number | null;
+  /** Max. Unset means it reads the nearest tier below that has one. */
+  signupGrantCreditsMax: number | null;
   /** Only the keys an admin has overridden. The rest fall back to the defaults,
    *  which are sent alongside so the form can show what it would use. */
   rates: Partial<CreditRates>;
@@ -39,7 +41,7 @@ export interface HeclusCreditsConfig {
   activeEnv: "test" | "production";
   /** Columns migrations 130, 132 and 133 add. False means the tab can display
    *  but not save that field, and says why. */
-  schema: { pack: boolean; signupGrant: boolean; signupGrantPro: boolean; rates: boolean };
+  schema: { pack: boolean; signupGrant: boolean; signupGrantPro: boolean; signupGrantMax: boolean; rates: boolean };
   /** The keys the wallet spends. Set on the API Keys tab, shown here because a
    *  wallet with no provider key behind it fails every generation. */
   keys: { kie: boolean; elevenlabs: boolean };
@@ -116,6 +118,7 @@ export async function GET() {
     packPriceUsd: num(row.heclus_pack_price_usd),
     signupGrantCredits: num(row.heclus_signup_grant_credits),
     signupGrantCreditsPro: num(row.heclus_signup_grant_credits_pro),
+    signupGrantCreditsMax: num(row.heclus_signup_grant_credits_max),
     rates,
     defaultRates: DEFAULT_CREDIT_RATES,
     activeEnv: getEffectivePaymentMode(),
@@ -123,6 +126,7 @@ export async function GET() {
       pack: "heclus_pack_checkout_url_test" in row,
       signupGrant: "heclus_signup_grant_credits" in row,
       signupGrantPro: "heclus_signup_grant_credits_pro" in row,
+      signupGrantMax: "heclus_signup_grant_credits_max" in row,
       rates: "credit_rates" in row,
     },
     keys: { kie, elevenlabs },
@@ -139,6 +143,7 @@ export interface HeclusCreditsPatch {
   packPriceUsd?: number | string | null;
   signupGrantCredits?: number | string | null;
   signupGrantCreditsPro?: number | string | null;
+  signupGrantCreditsMax?: number | string | null;
   rates?: Partial<Record<keyof CreditRates, number | string | null>>;
 }
 
@@ -180,6 +185,7 @@ export async function PATCH(req: Request) {
     ["packPriceUsd", "heclus_pack_price_usd"],
     ["signupGrantCredits", "heclus_signup_grant_credits"],
     ["signupGrantCreditsPro", "heclus_signup_grant_credits_pro"],
+    ["signupGrantCreditsMax", "heclus_signup_grant_credits_max"],
   ] as const) {
     const raw = body[field];
     if (raw === undefined) continue;

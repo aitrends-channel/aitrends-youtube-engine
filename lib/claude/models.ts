@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
 import { getRoutingForUser, isClientPaid, isWorkflowStep, type WorkflowStep } from "@/lib/claude/routing";
 import { getModelForProvider, getPromptProvider, isKieProvider } from "@/lib/claude/providers";
-import { PRO_TIER_PLANS, planSlugOf } from "@/lib/plans-gating";
+import { meetsTier, tierForPlan, tierRank, planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
@@ -278,13 +278,13 @@ export async function resolveDefaultModel(step?: WorkflowStep, userId?: string):
  *  carries project.user_id) gets the same gate as the request-scoped routes.
  *  Pass `user` when you already have it to skip the auth lookup. */
 async function isProTierById(userId: string, user?: User | null): Promise<boolean> {
-  if (user) return isAdminUser(user) || PRO_TIER_PLANS.has(planSlugOf(user));
+  if (user) return isAdminUser(user) || meetsTier(user, "pro");
   try {
     const { data } = await supabase.auth.admin.getUserById(userId);
     if (isAdminUser(data?.user)) return true;
     const meta = (data?.user?.app_metadata ?? {}) as { plan?: unknown };
     const slug = typeof meta.plan === "string" && meta.plan.trim() ? meta.plan.trim().toLowerCase() : "starter";
-    return PRO_TIER_PLANS.has(slug);
+    return tierRank(tierForPlan(slug)) >= tierRank("pro");
   } catch {
     // Fail closed: an unreadable plan means no upgrade, never a free one.
     return false;

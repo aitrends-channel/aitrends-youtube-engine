@@ -18,6 +18,44 @@
 // would be pulled into all three.
 
 /**
+ * The entitlement ladder, lowest first.
+ *
+ * Here rather than in plans-gating.ts because quota-config.ts needs it too, and
+ * this module is the one both can import: it pulls in nothing, on purpose.
+ */
+export const TIER_ORDER = ["starter", "pro", "max"] as const;
+export type Tier = typeof TIER_ORDER[number];
+
+/** The top of the ladder. What an admin is entitled to, everywhere.
+ *
+ *  Derived rather than written down, so adding a tier above Max lifts every
+ *  admin onto it instead of quietly leaving them a tier behind. Hardcoding
+ *  "pro" here is exactly how they were left on Pro when Max arrived. */
+export const TOP_TIER: Tier = TIER_ORDER[TIER_ORDER.length - 1];
+
+/** The slug make-admin writes into app_metadata.plan. Not a tier of its own:
+ *  it resolves to the top of the ladder wherever entitlements are read. */
+export const ADMIN_PLAN = "admin";
+
+/** Where a tier sits on the ladder, or -1 when it is not on it. Unknown ranks
+ *  below starter so an unrecognised plan loses features rather than gaining
+ *  them. */
+export function tierRank(tier: string | null | undefined): number {
+  return TIER_ORDER.indexOf((tier ?? "").trim().toLowerCase() as Tier);
+}
+
+/** This tier and every one beneath it, highest first.
+ *
+ *  What a lookup keyed by tier should walk when the exact tier has no entry:
+ *  a new tier above Pro inherits Pro's allowance instead of resolving to
+ *  nothing, which is what an unfilled config would otherwise hand it. */
+export function tierFallbacks(tier: string | null | undefined): Tier[] {
+  const rank = tierRank(tier);
+  if (rank < 0) return [];
+  return TIER_ORDER.slice(0, rank + 1).reverse() as unknown as Tier[];
+}
+
+/**
  * Billing plan to entitlement tier.
  *
  * Only add a row here when a new product sells an existing tier at a different
@@ -27,6 +65,7 @@
 const BILLING_TO_TIER: Record<string, string> = {
   heclus_starter: "starter",
   heclus_pro: "pro",
+  heclus_max: "max",
   "production-test": "starter",
 };
 

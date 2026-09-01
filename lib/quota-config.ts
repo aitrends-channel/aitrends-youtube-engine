@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import { entitlementTier } from "@/lib/plan-tier";
+import { entitlementTier, tierFallbacks, TOP_TIER, ADMIN_PLAN } from "@/lib/plan-tier";
 import { type FreeUsageKind } from "@/lib/freeUsage";
 
 // Free/perk allowances, allocated per plan. Stored on
@@ -12,6 +12,9 @@ import { type FreeUsageKind } from "@/lib/freeUsage";
 // uninitialized const and threw.
 export const AI33_TTS_CAP_STARTER = Number(process.env.AI33_TTS_CAP_STARTER ?? 100_000);
 export const AI33_TTS_CAP_PRO = Number(process.env.AI33_TTS_CAP_PRO ?? 200_000);
+/** 500k is about 40 videos a month at the measured median of 12,648 characters
+ *  per project, which is the shape of a tier sold on unlimited niches. */
+export const AI33_TTS_CAP_MAX = Number(process.env.AI33_TTS_CAP_MAX ?? 500_000);
 
 /** What ai33 bills us per 1M characters, in USD — powers the "costs us
  *  ≈$X/user/month" figure on the quota row. Env-only and unset by default:
@@ -147,23 +150,32 @@ export const QUOTA_DEFAULTS: QuotaConfig = {
     // 300 clips is one $6 GenAIPro pack, about two finished videos at the
     // median beat count. Founder is absent on purpose: the plan gets no
     // allowance and the Free videos tab does not appear for it at all.
-    byPlan: { founder: 0, starter: 300, pro: 300 },
+    //
+    // Trimmed to leave room for the free image allowance that is still to
+    // come. This is the only line here billed as hard per-unit spend, $0.02 a
+    // clip with no refund path, where Heclus credits settle on what the work
+    // actually cost and hand the difference back — so it is the first place to
+    // find headroom rather than the wallet.
+    //
+    // Starter drops to 150, which is what its card has always advertised: the
+    // 300 here was a config that quietly paid out double the promise.
+    byPlan: { founder: 0, starter: 150, pro: 200, max: 400 },
   },
   ai33_tts_chars: {
-    byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO },
+    byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO, max: AI33_TTS_CAP_MAX },
   },
   voice_clones: {
     // Unlimited for Pro; Starter is 0 for now, so the feature ships to Pro
     // only. Both are admin-tunable, so opening it to Starter — unlimited or
     // capped — is a config change, not a deploy.
-    byPlan: { founder: 0, starter: 0, pro: QUOTA_UNLIMITED },
+    byPlan: { founder: 0, starter: 0, pro: QUOTA_UNLIMITED, max: QUOTA_UNLIMITED },
   },
   storage_bytes: {
     // Above measured usage (heaviest account 37.9 GB, p90 6.9 GB) so nobody is
     // retroactively over cap; a user at the 200 GB Pro cap costs ~$3/month.
     // No paid add-on — like the rest of the category, overage is resolved by
     // deleting media or moving up a tier.
-    byPlan: { founder: 100, starter: 100, pro: 200 },
+    byPlan: { founder: 100, starter: 100, pro: 200, max: 400 },
   },
 };
 
@@ -249,9 +261,27 @@ export function capFromConfig(
   // Normalised, or heclus_pro would miss every byPlan key and resolve to 0,
   // which is the "a plan is never handed spend by omission" rule firing on a
   // plan that should have been recognised.
-  const slug = isAdmin ? "pro" : entitlementTier(plan);
-  const allowance = config[kind].byPlan[slug];
-  return typeof allowance === "number" ? allowance : 0;
+  // Admins take the top of the ladder, not a tier named here: pinning them to
+  // "pro" is what left them below Max the moment Max existed.
+  //
+  // The stored slug is checked as well as the flag, because make-admin writes
+  // plan="admin" into app_metadata and not every caller has an isAdmin to pass.
+  // Without this, "admin" is an unknown tier, and an unknown tier resolves to
+  // zero — no storage, no voice clones, no video credits.
+  const tier = entitlementTier(plan);
+  const slug = isAdmin || tier === ADMIN_PLAN ? TOP_TIER : tier;
+  const byPlan = config[kind].byPlan;
+  const exact = byPlan[slug];
+  if (typeof exact === "number") return exact;
+  // A tier with no entry of its own inherits the nearest one below it, so
+  // adding a tier above Pro does not silently cap it at zero everywhere the
+  // config has not been filled in yet. A slug that is not on the ladder at all
+  // still resolves to 0: omission grants nothing.
+  for (const below of tierFallbacks(slug)) {
+    const v = byPlan[below];
+    if (typeof v === "number") return v;
+  }
+  return 0;
 }
 
 export async function resolveQuotaCap(
