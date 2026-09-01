@@ -7324,6 +7324,25 @@ function PricingPanel() {
         plans={data.legacy}
       />
 
+      {/* The constants everything above is derived from */}
+      <div className="rounded-xl p-4" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+        <p className="text-[15px] font-semibold mb-2" style={{ color: "var(--c-90)" }}>Rates</p>
+        <div className="grid gap-x-6 gap-y-1 text-[13px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+          <Rate label="Heclus credit" value={`$${data.rates.creditUsd}`} />
+          <Rate label="Free video clip" value={`$${data.rates.clipUsd.toFixed(3)}`} />
+          <Rate label="Free image (z-image)" value={`$${data.rates.imageUsd.toFixed(3)}`} />
+          <Rate label="R2 storage" value={`$${data.rates.storageUsdPerGb}/GB`} />
+          <Rate label="Voiceover" value={data.rates.ttsUsdPerMillion ? `$${data.rates.ttsUsdPerMillion}/1M chars` : "UNSET"} />
+        </div>
+        {!data.rates.ttsUsdPerMillion && (
+          <p className="text-[13px] mt-3 px-2 py-1.5 rounded-lg"
+            style={{ background: "oklch(0.65 0.15 75 / 0.12)", color: "oklch(0.72 0.15 75)" }}>
+            AI33_TTS_USD_PER_MILLION_CHARS is unset, so free voiceover costs nothing in the table above
+            and every margin here is a ceiling. Set it to see the real figure.
+          </p>
+        )}
+      </div>
+
       <div style={{ marginTop: 50 }} className="space-y-2.5 text-[14px]" >
         <p style={{ color: "var(--c-80)" }}>
           <strong style={{ color: "var(--c-90)" }}>These margins are a floor, not an estimate.</strong>{" "}
@@ -7367,24 +7386,6 @@ function PricingPanel() {
         </div>
       </div>
 
-      {/* The constants everything above is derived from */}
-      <div className="rounded-xl p-4" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-        <p className="text-[15px] font-semibold mb-2" style={{ color: "var(--c-90)" }}>Rates</p>
-        <div className="grid gap-x-6 gap-y-1 text-[13px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-          <Rate label="Heclus credit" value={`$${data.rates.creditUsd}`} />
-          <Rate label="Free video clip" value={`$${data.rates.clipUsd.toFixed(3)}`} />
-          <Rate label="Free image (z-image)" value={`$${data.rates.imageUsd.toFixed(3)}`} />
-          <Rate label="R2 storage" value={`$${data.rates.storageUsdPerGb}/GB`} />
-          <Rate label="Voiceover" value={data.rates.ttsUsdPerMillion ? `$${data.rates.ttsUsdPerMillion}/1M chars` : "UNSET"} />
-        </div>
-        {!data.rates.ttsUsdPerMillion && (
-          <p className="text-[13px] mt-3 px-2 py-1.5 rounded-lg"
-            style={{ background: "oklch(0.65 0.15 75 / 0.12)", color: "oklch(0.72 0.15 75)" }}>
-            AI33_TTS_USD_PER_MILLION_CHARS is unset, so free voiceover costs nothing in the table above
-            and every margin here is a ceiling. Set it to see the real figure.
-          </p>
-        )}
-      </div>
     </div>
   );
 }
