@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -756,6 +757,9 @@ function measureAudioSeconds(file: File): Promise<number | null> {
  * recognisable: nothing should ever PATCH or DELETE one of these, because the
  * server has never heard of it.
  */
+/** The placed-sound panel's width. Named because the drag clamp needs it. */
+const PLACED_PANEL_W = 250;
+
 const tempRowId = () => `tmp-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 const isTempRow = (id: string | null | undefined) => typeof id === "string" && id.startsWith("tmp-");
 
@@ -1445,17 +1449,26 @@ export default function AssemblePage({ params }: PageProps) {
   // beats, music is not. Its own ref, separate from the music card's inline
   // preview player, so the two cannot pause each other.
   const timelineBgmRef = useRef<HTMLAudioElement | null>(null);
-  /** The effect currently sounding. One at a time: auditioning a second sound
-   *  while the first is still running is two sounds, not a preview of either. */
-  const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
+  /** Every effect currently sounding, so the transport can silence all of them.
+   *
+   *  A set, not a single element, because two cues can legitimately overlap:
+   *  the render mixes them with amix, and a placed sound landing on a beat that
+   *  carries its own is the normal case rather than a mistake. What must not
+   *  overlap is auditioning, which is a different thing and asks for it
+   *  explicitly. */
+  const sfxAudioRef = useRef<Set<HTMLAudioElement>>(new Set());
+  /** Which sound is being auditioned, so its tile can offer to stop it. Only
+   *  ever one, because auditioning is exclusive. */
+  const [auditioning, setAuditioning] = useState<string | null>(null);
 
-  /** Silence whatever effect is sounding. Safe to call when none is. */
+  /** Silence every effect sounding. Safe to call when none is. */
   const stopSound = useCallback(() => {
-    const prev = sfxAudioRef.current;
-    sfxAudioRef.current = null;
-    if (!prev) return;
-    prev.onended = null;
-    try { prev.pause(); prev.currentTime = 0; } catch { /* already finished */ }
+    for (const a of sfxAudioRef.current) {
+      a.onended = null;
+      try { a.pause(); a.currentTime = 0; } catch { /* already finished */ }
+    }
+    sfxAudioRef.current.clear();
+    setAuditioning(null);
   }, []);
 
   const playIndexRef = useRef(0);
@@ -1533,11 +1546,18 @@ export default function AssemblePage({ params }: PageProps) {
    *  project's, and its own pitch. preservesPitch off is what makes playback
    *  rate a pitch shift rather than a speed change.
    *
-   *  One at a time. Clicking down a library stacked every sound on top of the
-   *  last, which is a chord rather than an audition, and dragging a volume
-   *  slider fired one per step. */
-  const playSound = useCallback((id: string, volume = 1, pitch = 1) => {
-    stopSound();
+   *  Auditioning is exclusive: clicking down a library stacked every sound on
+   *  top of the last, which is a chord rather than an audition, and dragging a
+   *  volume slider fired one per step.
+   *
+   *  Playback is not. Cues overlap in the render, and a placed sound sitting on
+   *  a beat that carries its own is ordinary rather than a mistake. Making the
+   *  transport exclusive silenced whichever of the two fired first, which is
+   *  why a custom sound placed at 0s appeared not to play at all: beat one's
+   *  swish landed on the same frame and cut it off. */
+  const playSound = useCallback((id: string, volume = 1, pitch = 1, exclusive = true) => {
+    if (exclusive) stopSound();
+    if (exclusive) setAuditioning(id);
     // A built-in ships in /public; an upload is served from R2. Resolved here
     // rather than by the callers, all of which pass an id and nothing else.
     const custom = isCustomRef(id) ? customAssets.find((x) => customRef(x.id) === id) : null;
@@ -1552,8 +1572,13 @@ export default function AssemblePage({ params }: PageProps) {
     a.playbackRate = Math.max(0.5, Math.min(2, pitch));
     // Cleared on its own end so the ref never holds a finished element, and a
     // later stop cannot rewind something that already stopped.
-    a.onended = () => { if (sfxAudioRef.current === a) sfxAudioRef.current = null; };
-    sfxAudioRef.current = a;
+    a.onended = () => {
+      sfxAudioRef.current.delete(a);
+      // Back to a play glyph when it finishes on its own, so the tile never
+      // sits offering to stop something that already stopped.
+      if (exclusive) setAuditioning((cur) => (cur === id ? null : cur));
+    };
+    sfxAudioRef.current.add(a);
     void a.play().catch(() => { /* autoplay rules */ });
   }, [sfxVolume, customAssets, stopSound]);
 
@@ -1581,7 +1606,7 @@ export default function AssemblePage({ params }: PageProps) {
     // The beat's own sound, at its start, at the level the render will use. The
     // same file the worker mixes, so what is heard here is what is heard there.
     if (beat.soundEffect && startAt <= 0.01 && sfxVolume > 0) {
-      playSound(beat.soundEffect, beat.soundVolume ?? 1, beat.soundPitch ?? 1);
+      playSound(beat.soundEffect, beat.soundVolume ?? 1, beat.soundPitch ?? 1, false);
     }
 
     const audio = new Audio(beat.voiceoverUrl);
@@ -1726,6 +1751,26 @@ export default function AssemblePage({ params }: PageProps) {
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [selectedSound, setSelectedSound] = useState<string | null>(null);
+
+  /** Where the placed-sound panel sits, in viewport coordinates.
+   *
+   *  Viewport rather than an offset inside the timeline, because the timeline
+   *  scrolls sideways and is only a couple of hundred pixels tall: a panel
+   *  confined to it can be scrolled away from the block it belongs to, and
+   *  cannot be moved somewhere that is simply out of the way.
+   *
+   *  Null means it has never been dragged, and it anchors under its block. Once
+   *  moved it stays put, including across selections, so somebody who parked it
+   *  clear of a crowded lane does not have to move it again for the next
+   *  sound. */
+  const [soundPanelPos, setSoundPanelPos] = useState<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!selectedSound || soundPanelPos) return;
+    const el = document.querySelector(`[data-overlay="${selectedSound}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setSoundPanelPos({ x: r.left, y: r.bottom + 6 });
+  }, [selectedSound, soundPanelPos]);
   /** A sound following the pointer, so a drop lands where it looked. */
   const [draggingSound, setDraggingSound] = useState<{ id: string; x: number; y: number } | null>(null);
   /** Which of the text panel's option sets is open. One at a time: three grids
@@ -1986,7 +2031,7 @@ export default function AssemblePage({ params }: PageProps) {
       // near a cue rather than on it, and a slow frame can step right over one.
       if (playhead >= snd.at_sec && playhead < snd.at_sec + 0.4) {
         firedSounds.current.add(snd.id);
-        playSound(snd.sound, snd.volume, snd.pitch);
+        playSound(snd.sound, snd.volume, snd.pitch, false);
       }
     }
   }, [playhead, playing, projectSounds, sfxVolume, playSound]);
@@ -3124,6 +3169,92 @@ export default function AssemblePage({ params }: PageProps) {
   );
 
   /**
+   * The controls for one placed sound: what it is, when, how loud, how high.
+   *
+   * Rendered at the block on the timeline rather than in the panel above. The
+   * panel is four hundred pixels from the thing being edited, and a level
+   * slider you cannot see the block of is a slider you adjust by guesswork.
+   */
+  const renderPlacedSoundControls = (snd: ProjectSound) => {
+    const name = soundLibrary.find((x) => x.id === snd.sound)?.label ?? snd.sound;
+    const sounding = auditioning === snd.sound;
+    return (
+      <>
+        <div className="flex items-center justify-between gap-2">
+          {/* The title is the handle. Dragging from anywhere would fight the
+              sliders, and a bar with nothing on it would cost a row of height
+              for no information. */}
+          <p
+            className="text-[11px] font-semibold min-w-0 truncate cursor-grab active:cursor-grabbing select-none"
+            style={{ color: "var(--c-85)" }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const startX = e.clientX;
+              const startY = e.clientY;
+              const from = soundPanelPos ?? { x: startX, y: startY };
+              const move = (m: PointerEvent) => {
+                // Clamped to the viewport, leaving a corner of the panel always
+                // reachable: dragged fully off screen it could not be dragged
+                // back, and it does not close on its own.
+                const x = Math.max(8 - PLACED_PANEL_W + 60, Math.min(window.innerWidth - 60, from.x + (m.clientX - startX)));
+                const y = Math.max(8, Math.min(window.innerHeight - 40, from.y + (m.clientY - startY)));
+                setSoundPanelPos({ x, y });
+              };
+              const up = () => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+              };
+              window.addEventListener("pointermove", move);
+              window.addEventListener("pointerup", up);
+            }}
+          >
+            {name}
+            <span className="font-normal" style={{ color: "var(--c-45)" }}>{` · ${fmtClock(snd.at_sec)}`}</span>
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button"
+              onClick={() => sounding ? stopSound() : playSound(snd.sound, snd.volume, snd.pitch)}
+              disabled={assembling}
+              className="text-[11px] underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+              {sounding ? "Pause" : "Play"}
+            </button>
+            <button type="button" onClick={() => void removeSound(snd.id)} disabled={assembling}
+              className="text-[11px] underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
+              Remove
+            </button>
+          </div>
+        </div>
+        {/* Level and pitch, the two things a placed sound has beyond when it
+            happens. Committed on release, so a drag is not a write per frame. */}
+        {([["Volume", "volume", 0, 2, snd.volume],
+           ["Pitch", "pitch", 0.5, 2, snd.pitch]] as const).map(([label, key, lo, hi, val]) => (
+          <div key={key} className="flex items-center gap-2">
+            <span className="shrink-0 w-12 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+              {label}
+            </span>
+            <input
+              type="range" min={lo} max={hi} step={0.05}
+              value={val}
+              disabled={assembling}
+              onChange={(e) => updateSound(snd.id, { [key]: Number(e.target.value) }, false)}
+              onPointerUp={(e) => {
+                const v = Number((e.target as HTMLInputElement).value);
+                updateSound(snd.id, { [key]: v });
+                playSound(snd.sound, key === "volume" ? v : snd.volume, key === "pitch" ? v : snd.pitch);
+              }}
+              className="flex-1 min-w-0 accent-[oklch(0.65_0.15_145)] disabled:opacity-40"
+            />
+            <span className="shrink-0 w-9 text-right text-[10px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+              {key === "volume" ? `${Math.round(val * 100)}%` : `${val.toFixed(2)}x`}
+            </span>
+          </div>
+        ))}
+      </>
+    );
+  };
+
+  /**
    * One sound tile: audition on click, drag onto the timeline to place it.
    *
    * Lifted out of the library grid so the Custom tab renders the same control
@@ -3134,6 +3265,9 @@ export default function AssemblePage({ params }: PageProps) {
             const active = editingBeat
               ? editingBeat.soundEffect === snd.id
               : pickedSound === snd.id;
+            // Sounding right now, so the glyph offers to stop it rather than
+            // to start it again.
+            const sounding = auditioning === snd.id;
             return (
               <button
                 key={snd.id}
@@ -3188,7 +3322,11 @@ export default function AssemblePage({ params }: PageProps) {
                   const onThisBeat = editingBeat?.soundEffect === snd.id;
                   const volume = onThisBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
                   const pitch = onThisBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
-                  playSound(snd.id, volume, pitch);
+                  // A second click on the one that is sounding stops it.
+                  // Restarting from the top was all a click could do, which
+                  // made a long sound impossible to cut short.
+                  if (sounding) stopSound();
+                  else playSound(snd.id, volume, pitch);
                   setPickedSound(active ? null : snd.id);
                   if (editingBeat) {
                     setBeatSound(
@@ -3219,7 +3357,9 @@ export default function AssemblePage({ params }: PageProps) {
                     ? { background: "oklch(0.72 0.25 285 / 0.35)", color: "var(--accent-purple-text)" }
                     : { background: "var(--bd-card)", color: "var(--c-55)" }}
                 >
-                  <Play size={9} fill="currentColor" strokeWidth={0} />
+                  {sounding
+                    ? <Pause size={9} fill="currentColor" strokeWidth={0} />
+                    : <Play size={9} fill="currentColor" strokeWidth={0} />}
                 </span>
                 <span className="min-w-0 flex-1 flex flex-col gap-1">
                   <span className="flex items-center gap-1">
@@ -5473,61 +5613,11 @@ export default function AssemblePage({ params }: PageProps) {
                 </>
                 ) : effectsTab === "sound" ? (
                 <>
-                  {selectedSound && (() => {
-                    const snd = projectSounds.find((x) => x.id === selectedSound);
-                    if (!snd) return null;
-                    const name = soundLibrary.find((x) => x.id === snd.sound)?.label ?? snd.sound;
-                    return (
-                      <div data-overlay-keep className="mb-3 rounded-xl px-3 py-2.5 space-y-2.5"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-semibold" style={{ color: "oklch(0.75 0.15 145)" }}>
-                            {name}
-                            <span className="font-normal" style={{ color: "var(--c-40)" }}>
-                              {` · at ${fmtClock(snd.at_sec)}`}
-                            </span>
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => playSound(snd.sound, snd.volume, snd.pitch)}
-                              disabled={assembling}
-                              className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
-                              Play
-                            </button>
-                            <button type="button" onClick={() => void removeSound(snd.id)} disabled={assembling}
-                              className="text-xs underline underline-offset-2 disabled:opacity-40" style={{ color: "var(--c-50)" }}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                        {/* Level and pitch, the two things a placed sound has
-                            beyond when it happens. Committed on release, so a
-                            drag is not a write per frame. */}
-                        {([["Level", "volume", 0, 2, snd.volume],
-                           ["Pitch", "pitch", 0.5, 2, snd.pitch]] as const).map(([label, key, lo, hi, val]) => (
-                          <div key={key} className="flex items-center gap-2">
-                            <span className="shrink-0 w-10 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                              {label}
-                            </span>
-                            <input
-                              type="range" min={lo} max={hi} step={0.05}
-                              value={val}
-                              disabled={assembling}
-                              onChange={(e) => updateSound(snd.id, { [key]: Number(e.target.value) }, false)}
-                              onPointerUp={(e) => {
-                                const v = Number((e.target as HTMLInputElement).value);
-                                updateSound(snd.id, { [key]: v });
-                                playSound(snd.sound, key === "volume" ? v : snd.volume, key === "pitch" ? v : snd.pitch);
-                              }}
-                              className="flex-1 min-w-0 accent-[oklch(0.65_0.15_145)] disabled:opacity-40"
-                            />
-                            <span className="shrink-0 w-10 text-right text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
-                              {key === "volume" ? `${Math.round(val * 100)}%` : `${val.toFixed(2)}x`}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  {/* The placed-sound editor used to live here. It is at the
+                      block on the timeline now: see renderPlacedSoundControls.
+                      Keeping a copy here as well would be two panels for one
+                      sound, and the far one would win an argument about which
+                      value is current. */}
                   {/* A sound belongs to a beat, not to the project: it is an
                       accent on a moment. So this tab needs one selected, and
                       says so rather than quietly doing nothing. */}
@@ -7173,6 +7263,34 @@ export default function AssemblePage({ params }: PageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* The placed-sound controls, floating over everything.
+          Portalled to the body and positioned in viewport coordinates, so no
+          ancestor's transform or overflow can clip it and it can be parked
+          anywhere on screen rather than inside the timeline it belongs to. */}
+      {typeof document !== "undefined" && selectedSound && soundPanelPos && (() => {
+        const snd = projectSounds.find((x) => x.id === selectedSound);
+        if (!snd) return null;
+        return createPortal(
+          <div
+            data-overlay-keep
+            className="fixed rounded-xl px-3 py-2.5 space-y-2"
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              left: soundPanelPos.x,
+              top: soundPanelPos.y,
+              width: PLACED_PANEL_W,
+              zIndex: 60,
+              background: "var(--bg-card)",
+              border: "1px solid oklch(0.65 0.15 145 / 0.5)",
+              boxShadow: "0 8px 24px oklch(0 0 0 / 0.35)",
+            }}
+          >
+            {renderPlacedSoundControls(snd)}
+          </div>,
+          document.body,
+        );
+      })()}
 
       {showUpgradeModal && (
         <SubscriptionModal
