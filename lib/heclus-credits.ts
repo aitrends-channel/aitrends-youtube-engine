@@ -2,8 +2,8 @@ import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { getFundingMode } from "@/lib/funding";
 import { hasPaidAccess } from "@/lib/subscription";
-import { planSlugOf, tierForPlan } from "@/lib/plans-gating";
-import { tierFallbacks, type Tier } from "@/lib/plan-tier";
+import { planSlugOf } from "@/lib/plans-gating";
+import { tierFallbacks, tierRank, type Tier } from "@/lib/plan-tier";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
 // runs on Heclus's own provider accounts.
@@ -184,7 +184,18 @@ async function hasGrantSince(userId: string, periodStart: string): Promise<boole
  * "configured to none".
  */
 async function periodGrantCredits(user: User): Promise<number> {
-  return packCreditsForTier(tierForPlan(planSlugOf(user)));
+  // The raw entitlement tier, not tierForPlan, which maps anything it does not
+  // recognise to "starter". That is the right answer for a feature gate, where
+  // being generous costs nothing, and the wrong one here, where the answer is
+  // money: it handed Founder a 1,000-credit grant worth $5 against $3.33 of
+  // revenue, because "founder" is not on the ladder.
+  //
+  // Fail closed instead, the same rule capFromConfig uses: a tier nobody has
+  // allocated gets nothing. A plan that should have a grant carries its own
+  // entry in GRANT_COLUMN.
+  const tier = planSlugOf(user);
+  if (tierRank(tier) < 0) return 0;
+  return packCreditsForTier(tier as Tier);
 }
 
 /**
