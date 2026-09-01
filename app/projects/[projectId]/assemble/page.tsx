@@ -1444,6 +1444,19 @@ export default function AssemblePage({ params }: PageProps) {
     setAssetBusy(true);
     try {
       for (const file of Array.from(files)) {
+        // Already here. Uploading the same file twice made two assets with
+        // two ids, and everything downstream treats an id as the identity of a
+        // sound: the guard that stops one overlapping itself let both play,
+        // because to the code they were different sounds. Same name and same
+        // byte count is a duplicate for this purpose, and the cost of being
+        // wrong is a reused asset rather than a second copy of a track.
+        const dupe = customAssets.find(
+          (a) => a.kind === kind && a.name === file.name.replace(/\.[^.]+$/, "").slice(0, 60),
+        );
+        if (dupe) {
+          toast.info(`${dupe.name} is already in your library`);
+          continue;
+        }
         const presign = await fetch("/api/upload/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1533,6 +1546,9 @@ export default function AssemblePage({ params }: PageProps) {
     (best, v, i) => Math.abs(v - pxPerSecond) < Math.abs(ZOOM_STEPS[best] - pxPerSecond) ? i : best, 0,
   );
   const timelineViewportRef = useRef<HTMLDivElement | null>(null);
+  /** Set by seekTo, read and cleared by the cue watcher. A seek is an event,
+   *  not something to deduce from a clock that corrects itself. */
+  const seekSignal = useRef(false);
 
   // Squeeze the whole video into the width available, the way CapCut's fit
   // does. Not a zoom step: the right scale depends on the window and on how
@@ -1672,14 +1688,22 @@ export default function AssemblePage({ params }: PageProps) {
    *  swish landed on the same frame and cut it off. */
   const playSound = useCallback((id: string, volume = 1, pitch = 1, exclusive = true) => {
     if (exclusive) stopSound();
-    // Already sounding, so this cue would be a second copy of the same file
-    // playing over the first. Auditioning is exempt: it just stopped everything
-    // and is meant to restart from the top.
-    else if (sfxAudioRef.current.has(id)) return;
     if (exclusive) setAuditioning(id);
     // A built-in ships in /public; an upload is served from R2. Resolved here
     // rather than by the callers, all of which pass an id and nothing else.
     const custom = isCustomRef(id) ? customAssets.find((x) => customRef(x.id) === id) : null;
+    // What counts as "the same sound" for the overlap guard.
+    //
+    // The id will not do on its own. The same file uploaded twice becomes two
+    // assets with two ids, and to the code they are different sounds, so both
+    // play and you hear one track over itself. Two uploads with the same name
+    // are the same audio for this purpose, which collapses those into one
+    // regardless of how they got there.
+    const voice = custom ? `upload:${custom.name}` : id;
+    // Already sounding, so this cue would be a second copy playing over the
+    // first. Auditioning is exempt: it just stopped everything and is meant to
+    // restart from the top.
+    if (!exclusive && sfxAudioRef.current.has(voice)) return;
     const a = new Audio(custom ? custom.url : `/sfx/${id}.mp3`);
     // Exactly what the render mixes: the sound's own level against the
     // project's. Anything else here is a preview that lies.
@@ -1694,12 +1718,12 @@ export default function AssemblePage({ params }: PageProps) {
     a.onended = () => {
       // Only if it is still the current one: a later cue for the same sound
       // replaces the entry, and the older element must not delete it.
-      if (sfxAudioRef.current.get(id) === a) sfxAudioRef.current.delete(id);
+      if (sfxAudioRef.current.get(voice) === a) sfxAudioRef.current.delete(voice);
       // Back to a play glyph when it finishes on its own, so the tile never
       // sits offering to stop something that already stopped.
       if (exclusive) setAuditioning((cur) => (cur === id ? null : cur));
     };
-    sfxAudioRef.current.set(id, a);
+    sfxAudioRef.current.set(voice, a);
     void a.play().catch(() => { /* autoplay rules */ });
   }, [sfxVolume, customAssets, stopSound]);
 
@@ -1789,6 +1813,13 @@ export default function AssemblePage({ params }: PageProps) {
 
   const seekTo = useCallback((seconds: number, commit = true) => {
     const { t, index, within } = locate(seconds);
+    // Says a seek happened, rather than leaving the cue watcher to infer one
+    // from how far the playhead moved. It cannot: the playhead is a frame clock
+    // corrected against audio.currentTime, so it steps backwards on its own,
+    // and any threshold that ignores that also ignores a small real scrub.
+    // This is the only place a seek originates, so it is the only place that
+    // has to say so.
+    seekSignal.current = true;
     setPlayhead(t);
     setShowFinished(false);
     const landedOn = playable[index];
@@ -2140,20 +2171,19 @@ export default function AssemblePage({ params }: PageProps) {
   // on it.
   //
   // A seek re-arms the cues it lands before, so scrubbing back over a sound
-  // plays it again. What counts as a seek is the delicate part: the playhead is
-  // a frame clock corrected against audio.currentTime, and that correction
-  // steps BACKWARDS by up to 0.25s on its own. A 0.05s threshold called every
-  // one of those a seek, wiped the whole set, and re-fired any cue still inside
-  // its 0.4s window. A short sound survived it, because the old exclusive
-  // playback cut the first copy off; once cues were allowed to overlap the
-  // duplicate became audible, and on a two-minute upload it meant two copies
-  // running against each other for the rest of the video.
-  const SEEK_JUMP = 0.35;
+  // plays it again. What counts as a seek is the delicate part, and it is not
+  // something to measure: the playhead is a frame clock corrected against
+  // audio.currentTime, and that correction steps BACKWARDS by up to 0.25s on
+  // its own. Any threshold small enough to catch a short scrub also catches
+  // those, which wiped the fired set and re-fired every cue still inside its
+  // 0.4s window; a threshold large enough to ignore them ignores real scrubs
+  // too. seekTo sets a flag instead, because it is the only place a seek comes
+  // from and the only place that knows one happened.
   const firedSounds = useRef<Set<string>>(new Set());
-  const lastPlayhead = useRef(0);
   useEffect(() => {
-    if (!playing) { firedSounds.current.clear(); lastPlayhead.current = playhead; return; }
-    const jumped = Math.abs(playhead - lastPlayhead.current) > SEEK_JUMP;
+    if (!playing) { firedSounds.current.clear(); seekSignal.current = false; return; }
+    const jumped = seekSignal.current;
+    seekSignal.current = false;
     if (jumped) {
       // Only the cues now ahead of the head. Clearing all of them would re-fire
       // everything already passed the moment the head crossed it again.
@@ -2164,7 +2194,6 @@ export default function AssemblePage({ params }: PageProps) {
       // playing from a position the video is no longer at.
       stopSound();
     }
-    lastPlayhead.current = playhead;
     if (sfxVolume <= 0) return;
     for (const snd of projectSounds) {
       if (firedSounds.current.has(snd.id)) continue;
@@ -4712,7 +4741,13 @@ export default function AssemblePage({ params }: PageProps) {
                           as two numbers is a position nobody gets right. */}
                       {[...projectElements]
                         .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
-                        .filter((el) => playhead >= el.start_sec && playhead < el.end_sec)
+                        // The selected one draws whatever the playhead says.
+                        // A drop lands a three second span at the playhead, so
+                        // one dropped while the preview is running vanished
+                        // three seconds later, out from under whoever was still
+                        // positioning it. What you are editing stays on screen.
+                        .filter((el) => selectedElement === el.id
+                          || (playhead >= el.start_sec && playhead < el.end_sec))
                         .map((el) => {
                           // Not gated on the tab any more: the overlay only
                           // draws when the page is off the finished render, and
@@ -4803,7 +4838,10 @@ export default function AssemblePage({ params }: PageProps) {
                           show a frame the video never has. */}
                       {[...projectTexts]
                         .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0))
-                        .filter((t) => playhead >= t.start_sec && playhead < t.end_sec)
+                        // Same as the elements: the line being edited stays on
+                        // screen even once the playhead has run past its span.
+                        .filter((t) => selectedText === t.id
+                          || (playhead >= t.start_sec && playhead < t.end_sec))
                         .map((t) => {
                           const editable = !assembling;
                           const picked = selectedText === t.id;
