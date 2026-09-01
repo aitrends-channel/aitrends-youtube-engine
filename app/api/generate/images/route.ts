@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { claimFreeImage } from "@/lib/free-images";
 import { assertProviderFunded } from "@/lib/providers/preflight";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
@@ -124,13 +125,20 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
+          // The plan's free image allowance comes first, and only for the model
+          // it is priced against. Claimed rather than checked, so two
+          // generations in the same batch cannot both spend the last one.
+          const free = await claimFreeImage(user, modelId);
           // Held before the provider is called, settled with what it reported.
           // Two of these run at once inside a batch, so the atomic hold is what
-          // stops both spending the same credits.
-          const { hold, refused } = await holdForOne({
-            userId: user.id, kind: "image", modelId, operator: op.id,
-            provider: op.id, resolution, projectId, beatNumber: beat.beatNumber,
-          });
+          // stops both spending the same credits. Skipped entirely on a free
+          // image: there is nothing to hold against.
+          const { hold, refused } = free
+            ? { hold: null, refused: false }
+            : await holdForOne({
+                userId: user.id, kind: "image", modelId, operator: op.id,
+                provider: op.id, resolution, projectId, beatNumber: beat.beatNumber,
+              });
           if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
 
           const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
@@ -141,7 +149,23 @@ export async function POST(req: Request) {
             })),
           );
           const elapsedMs = Date.now() - t0;
-          if (creditsConsumed) {
+          // A free image still gets a cost row, because it is real provider
+          // spend and the margin figures are built from these. It carries no
+          // reservation, which is what marks it as ours rather than theirs.
+          if (creditsConsumed && free) {
+            await logProjectCost({
+              projectId,
+              userId: user.id,
+              step: "image_gen",
+              provider: op.id === "poyo" ? "poyo" : "kie",
+              model: modelId,
+              units: creditsConsumed,
+              unitKind: op.unitKind,
+              resolution,
+              elapsedMs,
+              reservationId: null,
+            });
+          } else if (creditsConsumed) {
             await logProjectCost({
               projectId,
               userId: user.id,

@@ -30,7 +30,7 @@ export const AI33_TTS_USD_PER_MILLION_CHARS =
  *  it has no counter. Only perks we pay for are allocated here — Google
  *  TTS and Cloudflare images run on the user's own key, and Qwen isn't
  *  reachable in the picker. */
-export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars">
+export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars" | "free_image_credits">
   | "voice_clones" | "storage_bytes" | "genaipro_video_credits";
 
 export type QuotaAllocation = {
@@ -45,6 +45,15 @@ export type QuotaConfig = Record<QuotaKind, QuotaAllocation>;
 /** GenAIPro sells 300 clips for $6, so one clip costs $0.02 and a million
  *  would be $20,000. Expressed per-million to match the other rates. */
 export const GENAIPRO_USD_PER_MILLION_CLIPS = 20_000;
+
+/** The model the free image allowance runs on. z-image bills 0.8 KIE credits,
+ *  the cheapest in the catalogue: a twentieth of nano-banana-pro and a fifth of
+ *  the $0.0231 blended rate across everything production actually generates on.
+ *  Pinning the allowance to one cheap model is what makes it affordable to give
+ *  away, so it is named here rather than left to the caller. */
+export const FREE_IMAGE_MODEL = "z-image";
+/** 0.8 credits at $0.005 is $0.004 an image, so $4,000 per million. */
+export const FREE_IMAGE_USD_PER_MILLION = 4_000;
 
 export const QUOTA_VALUE_MAX = 50_000_000;
 
@@ -110,6 +119,16 @@ export const QUOTA_FIELDS: {
     description: "Clips of free video generation per user each month, one credit per clip. We pay for these. Unused credits expire at month end; bought credits do not. 0 = not included on this plan.",
   },
   {
+    key: "free_image_credits",
+    label: "Free images",
+    unit: "images",
+    period: "monthly",
+    funding: "heclus",
+    usdPerMillionUnits: FREE_IMAGE_USD_PER_MILLION,
+    perPlan: true,
+    description: `Images a user can generate free each month on ${FREE_IMAGE_MODEL}, the cheapest model we carry. We pay for these. Past the allowance the model still works, it just bills the wallet like any other. 0 = not included on this plan.`,
+  },
+  {
     key: "voice_clones",
     label: "Custom voice clones",
     unit: "voices",
@@ -164,6 +183,12 @@ export const QUOTA_DEFAULTS: QuotaConfig = {
   ai33_tts_chars: {
     byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO, max: AI33_TTS_CAP_MAX },
   },
+  free_image_credits: {
+    // Cheap enough to be generous with: 300 images costs $1.20 against
+    // Starter's $29.99. The same 300 on the blended rate would be $6.93, and on
+    // nano-banana-pro $27, which is why the allowance names one model.
+    byPlan: { founder: 0, starter: 300, pro: 900, max: 1500 },
+  },
   voice_clones: {
     // Unlimited for Pro; Starter is 0 for now, so the feature ships to Pro
     // only. Both are admin-tunable, so opening it to Starter — unlimited or
@@ -193,6 +218,7 @@ function coerceValue(raw: unknown, allowUnlimited = false): number | null {
 export function coerceQuotaConfig(raw: unknown): QuotaConfig {
   const out: QuotaConfig = {
     genaipro_video_credits: { byPlan: { ...QUOTA_DEFAULTS.genaipro_video_credits.byPlan } },
+    free_image_credits: { byPlan: { ...QUOTA_DEFAULTS.free_image_credits.byPlan } },
     ai33_tts_chars: { byPlan: { ...QUOTA_DEFAULTS.ai33_tts_chars.byPlan } },
     voice_clones: { byPlan: { ...QUOTA_DEFAULTS.voice_clones.byPlan } },
     storage_bytes: { byPlan: { ...QUOTA_DEFAULTS.storage_bytes.byPlan } },

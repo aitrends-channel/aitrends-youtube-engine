@@ -52,22 +52,23 @@ function CallbackContent() {
       // when the product's return URL provides one, plus storage set at click
       // time so it works whatever the product is configured with.
       //
-      // Which wallet, as well as whether: "credits" is the GenAI video wallet
-      // and "heclus" is the general one. They credit different balances from
+      // Which wallet, as well as whether: "credits" is the GenAI video wallet,
+      // "heclus" is the general one and "free_images" is the image allowance.
+      // They credit different balances from
       // different routes, so guessing between them would hand a customer the
       // wrong thing for their money.
       const marker = (): string | null => {
         const fromUrl = searchParams.get("type");
-        if (fromUrl === "credits" || fromUrl === "heclus") return fromUrl;
+        if (fromUrl === "credits" || fromUrl === "heclus" || fromUrl === "free_images") return fromUrl;
         // localStorage before sessionStorage: it is what survives a new-tab
         // checkout, which is how the Balance page opens Dodo.
         try {
           const v = localStorage.getItem(PENDING_CREDIT_PURCHASE_KEY);
-          if (v === "credits" || v === "heclus") return v;
+          if (v === "credits" || v === "heclus" || v === "free_images") return v;
         } catch {}
         try {
           const v = sessionStorage.getItem(PENDING_CREDIT_PURCHASE_KEY);
-          if (v === "credits" || v === "heclus") return v;
+          if (v === "credits" || v === "heclus" || v === "free_images") return v;
         } catch {}
         return null;
       };
@@ -81,7 +82,13 @@ function CallbackContent() {
           return;
         }
         try {
-          const res = await fetch(wallet === "heclus" ? "/api/heclus-credits/topup" : "/api/credits/topup", {
+          // One route per wallet, because each grants a different thing.
+          const topupRoute = wallet === "heclus"
+            ? "/api/heclus-credits/topup"
+            : wallet === "free_images"
+              ? "/api/free-images/topup"
+              : "/api/credits/topup";
+          const res = await fetch(topupRoute, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ payment_id: paymentId }),
