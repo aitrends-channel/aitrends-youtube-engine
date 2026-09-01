@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/admin-server";
 import { getAllPlans } from "@/lib/plans";
 import { packCreditsForTier } from "@/lib/heclus-credits";
 import { tierForPlan } from "@/lib/plans-gating";
-import { QUOTA_DEFAULTS, GENAIPRO_USD_PER_MILLION_CLIPS, AI33_TTS_USD_PER_MILLION_CHARS } from "@/lib/quota-config";
+import { QUOTA_DEFAULTS, GENAIPRO_USD_PER_MILLION_CLIPS, AI33_TTS_USD_PER_MILLION_CHARS, FREE_IMAGE_USD_PER_MILLION } from "@/lib/quota-config";
 import { USD_PER_CREDIT } from "@/lib/credit-unit";
 import { supabase } from "@/lib/supabase/client";
 
@@ -22,15 +22,6 @@ import { supabase } from "@/lib/supabase/client";
 
 /** Cloudflare R2 standard storage. */
 const R2_USD_PER_GB = 0.015;
-
-/** Free images run on z-image at 0.8 KIE credits, the cheapest model we carry.
- *  The blended rate across everything production generates on is $0.0231, so
- *  pinning the free allowance to z-image is what keeps it affordable. */
-const FREE_IMAGE_CREDITS = 0.8;
-
-/** Not a quota kind yet: there is no counter or migration behind these, only
- *  the numbers on the plan cards. Here so the margin is honest about them. */
-const FREE_IMAGES: Record<string, number> = { starter: 300, pro: 900, max: 1500 };
 
 /**
  * Taken off gross revenue rather than off cost: both are a slice of what the
@@ -73,7 +64,7 @@ export async function GET() {
   if (!guard.ok) return guard.response;
 
   const clipUsd = GENAIPRO_USD_PER_MILLION_CLIPS / 1e6;
-  const imageUsd = FREE_IMAGE_CREDITS * USD_PER_CREDIT;
+  const imageUsd = FREE_IMAGE_USD_PER_MILLION / 1e6;
 
   // getAllPlans, not getPlans: the retired products are the point of the second
   // table, and getPlans drops them.
@@ -91,7 +82,7 @@ export async function GET() {
     const clips = cap("genaipro_video_credits", tier);
     const gb = cap("storage_bytes", tier);
     const chars = cap("ai33_tts_chars", tier);
-    const images = FREE_IMAGES[tier] ?? 0;
+    const images = cap("free_image_credits", tier);
 
     const cogs: PricingLine[] = [
       { label: "Heclus credits", qty: `${credits.toLocaleString()} cr`, usd: credits * USD_PER_CREDIT },

@@ -356,6 +356,22 @@ export function ModelPicker(props: ModelPickerProps) {
     }
   }, [selectedModelId, hasFree, freeModels]);
 
+  // The other direction: opening the Free tab selects the free model.
+  //
+  // The tab holds one option and choosing it is the only reason to be there, so
+  // making somebody click it again is a step that asks nothing. It also closes
+  // a trap: with a paid model still selected, the free tab showed a card that
+  // looked chosen and generated on the paid one.
+  //
+  // Only when the selection is not already free, so it never overrides a
+  // deliberate pick, and only while there is a free model to select.
+  useEffect(() => {
+    if (tab !== "free" || !hasFree) return;
+    if (freeModels.some((m) => m.id === selectedModelId)) return;
+    const free = freeModels[0];
+    onSelectModel(free.id, (free as { operator?: string }).operator);
+  }, [tab, hasFree, freeModels, selectedModelId, onSelectModel]);
+
   const list: KieModel[] | null = (() => {
     if (!models) return null;
     const base = models.slice();
@@ -601,9 +617,16 @@ export function ModelPicker(props: ModelPickerProps) {
               disabled={disabled}
               onSelect={() => onSelectModel(m.id, op)}
               liveCredits={
-                selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
-                  ? props.unitCredits
-                  : null
+                // Never on a free model. The live figure is what the wallet
+                // would be charged for this run, and a free one charges it
+                // nothing: the 0.8 it quoted was the provider's cost leaking
+                // onto a card that is not asking anyone to pay it. Falling
+                // back to costPerUnit lets the free lane state its own rate.
+                isFreeTierModel(m)
+                  ? null
+                  : selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
+                    ? props.unitCredits
+                    : null
               }
               liveSeconds={props.type === "video" ? Number(props.selectedDuration) || null : null}
               atResolution={props.selectedResolution}

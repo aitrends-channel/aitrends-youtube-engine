@@ -32,6 +32,7 @@ import { poyoImageConfig } from "@/lib/poyo/imageModels";
 import { OPERATOR_POYO } from "@/lib/operators";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
+import { FreeImagesPanel } from "@/components/FreeImagesPanel";
 import { paidModelsOnly, isFreeTierModel } from "@/lib/model-tier";
 import { isVideoInFlight, videoStatusLabel, isGenAIProModel } from "@/lib/genaipro/status";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
@@ -2459,6 +2460,11 @@ export default function GeneratePage({ params }: PageProps) {
               <ModelPicker
                 type="image"
                 fillHeight
+                // Only under Free, same as the video credits panel: it is the
+                // allowance for that lane, and above the paid list it would
+                // read as the balance for everything.
+                belowTabs={<FreeImagesPanel />}
+                belowTabsOnly="free"
                 unitCredits={imageUnit?.perUnit ?? null}
                 models={imageModels}
                 selectedModelId={selectedImageModel}

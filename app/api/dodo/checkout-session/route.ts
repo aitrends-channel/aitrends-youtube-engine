@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getFreeImagePack } from "@/lib/free-image-pack";
+import { walletParam, type TopUpWallet } from "@/lib/credits-checkout";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { resolveDodoCredentials } from "@/lib/dodo/credentials";
@@ -79,8 +81,12 @@ export async function POST(req: Request) {
   } else if (wallet === "genai") {
     fallbackUrl = await genaiPackUrl(mode);
     productId = productIdFromCheckoutUrl(fallbackUrl);
+  } else if (wallet === "free_images") {
+    const pack = await getFreeImagePack();
+    fallbackUrl = pack.checkoutUrl;
+    productId = productIdFromCheckoutUrl(pack.checkoutUrl);
   } else {
-    return NextResponse.json({ error: "wallet must be 'heclus' or 'genai', or pass a plan" }, { status: 400 });
+    return NextResponse.json({ error: "wallet must be 'heclus', 'genai' or 'free_images', or pass a plan" }, { status: 400 });
   }
 
   if (!productId) {
@@ -95,7 +101,9 @@ export async function POST(req: Request) {
   if (plan) {
     returnUrl.searchParams.set("plan", plan);
   } else {
-    returnUrl.searchParams.set("type", wallet === "heclus" ? "heclus" : "credits");
+    // walletParam, not a ternary: three wallets now, and the callback picks a
+    // crediting route off this string.
+    returnUrl.searchParams.set("type", walletParam((wallet ?? "genai") as TopUpWallet));
   }
 
   const resolved = await resolveDodoCredentials(mode);

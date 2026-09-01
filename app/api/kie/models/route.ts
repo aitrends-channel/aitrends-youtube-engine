@@ -1,5 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { freeImageAllowance } from "@/lib/free-images";
+import { FREE_IMAGE_MODEL } from "@/lib/quota-config";
+import { FREE_MODEL_TAG } from "@/lib/model-tier";
 import { listTTSVoices } from "@/lib/kie/tts";
 import { listImageCatalog, type CatalogModel } from "@/lib/operators/image";
 import { getPoyoImageModel } from "@/lib/poyo/imageModels";
@@ -138,6 +141,57 @@ function gateByOperator(models: KieModel[], operator: string): KieModel[] {
   });
 }
 
+/**
+ * Present the free image lane, when this account still has allowance for it.
+ *
+ * The model is abstracted away deliberately. Which one we run is our choice and
+ * our cost, and naming it invites the wrong question: a customer comparing
+ * "Z-Image by Alibaba" against the paid list is shopping for a model, when the
+ * offer is simply "images, included". It also leaves us free to switch the
+ * model underneath without the free lane appearing to change product.
+ *
+ * So the entry keeps its id, which is what selection and generation need, and
+ * loses everything that identifies it: the name, the vendor and speed tags, and
+ * the per-image price, which is not what this costs the customer anyway.
+ *
+ * An account with nothing left, or a plan that does not include it, has no free
+ * models at all: the tab stays a coming-soon teaser on its own, without a
+ * second flag. When the allowance runs out mid-month the entry reverts to the
+ * ordinary paid one, under its real name, in the All tab.
+ *
+ * Founder is the plan that means: freeImageAllowance returns 0 for it in every
+ * state, so the tab is never live for a Founder.
+ */
+function withFreeImageTier(models: KieModel[], allowance: { cap: number; remaining: number }): KieModel[] {
+  if (allowance.remaining <= 0) return models;
+  return models.map((m) => (
+    m.id === FREE_IMAGE_MODEL
+      ? {
+          ...m,
+          name: "Heclus Free",
+          description: `${allowance.remaining.toLocaleString()} of ${allowance.cap.toLocaleString()} left this month`,
+          tags: [FREE_MODEL_TAG],
+          // One credit an image, whole, and only on this card.
+          //
+          // Not what z-image bills, which is 0.8, and not what the customer
+          // pays, which is nothing while the allowance lasts. It is the rate
+          // the allowance is drawn down at, and the allowance counts images. A
+          // chip reading "0.8 cr" beside a free option was answering a question
+          // nobody asked with a number that is neither the price nor the count.
+          //
+          // Every other tab still quotes the real observed figure: this is the
+          // free lane's own presentation, not a change to how models are
+          // priced.
+          costPerUnit: "1",
+          costByResolution: undefined,
+          costIsFloor: undefined,
+          servedBy: undefined,
+          avgSpeedMs: undefined,
+        }
+      : m
+  ));
+}
+
 /** Decorate models with the observed average wall-clock generation
  *  time (ms) from the ledger. Powers the picker's "Fastest" tab —
  *  the page sorts by avgSpeedMs ascending and hides models without
@@ -198,14 +252,18 @@ export async function GET(req: Request) {
       return NextResponse.json(models);
     }
     if (type === "image") {
-      const [models, defaults, mins, poyoMins, speeds] = await Promise.all([
+      const [models, defaults, mins, poyoMins, speeds, freeImages] = await Promise.all([
         getMediaOperatorForUser(user.id, "image").then(listImageCatalog),
         getAdminDefaults(),
         getMinKieCreditsByModel("image_gen"),
         getMinKieCreditsByModel("image_gen", "poyo"),
         getAvgElapsedByModel("image_gen"),
+        freeImageAllowance(user),
       ]);
-      return NextResponse.json(promote(withPoyoCredits(withAvgSpeed(withMinCredits(models, mins), speeds), poyoMins), defaults.image));
+      return NextResponse.json(promote(
+        withFreeImageTier(withPoyoCredits(withAvgSpeed(withMinCredits(models, mins), speeds), poyoMins), freeImages),
+        defaults.image,
+      ));
     }
     if (type === "video") {
       const [models, defaults, mins, speeds] = await Promise.all([

@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 const DAYS = 30;
 
 /** Kinds worth reporting, in display order. */
-const REPORTED_KINDS = ["ai33_tts_chars"] as const;
+const REPORTED_KINDS = ["ai33_tts_chars", "free_image_credits"] as const;
 const IS_REPORTED = (kind: string) => (REPORTED_KINDS as readonly string[]).includes(kind);
 
 /** Only ai33 has a configured per-plan allowance to compare usage against. */

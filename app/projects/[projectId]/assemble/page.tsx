@@ -749,6 +749,16 @@ function measureAudioSeconds(file: File): Promise<number | null> {
   });
 }
 
+/**
+ * The id an optimistic row carries until the server hands back a real one.
+ *
+ * Prefixed rather than a bare uuid so a row that is still in flight is
+ * recognisable: nothing should ever PATCH or DELETE one of these, because the
+ * server has never heard of it.
+ */
+const tempRowId = () => `tmp-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+const isTempRow = (id: string | null | undefined) => typeof id === "string" && id.startsWith("tmp-");
+
 /** A sound or element the customer uploaded, as /api/me/assets returns it. */
 interface CustomAsset {
   id: string;
@@ -1746,6 +1756,10 @@ export default function AssemblePage({ params }: PageProps) {
   const addElement = useCallback(async (el: {
     element: string; start_sec: number; end_sec: number; x: number; y: number; size: number; lane?: number;
   }) => {
+    const tempId = tempRowId();
+    const optimistic: ProjectElement = { id: tempId, ...el, lane: el.lane ?? 0 };
+    void mutateElements((cur) => ({ elements: [...(cur?.elements ?? []), optimistic] }), { revalidate: false });
+    setSelectedElement(tempId);
     try {
       const res = await fetch(`/api/projects/${projectId}/elements`, {
         method: "POST",
@@ -1754,9 +1768,18 @@ export default function AssemblePage({ params }: PageProps) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? "Could not add it");
-      await mutateElements();
-      setSelectedElement(out.element?.id ?? null);
+      const realId = out.element?.id as string | undefined;
+      if (abortedRows.current.delete(tempId)) {
+        if (realId) void fetch(`/api/projects/${projectId}/elements?id=${realId}`, { method: "DELETE" }).catch(() => {});
+        return;
+      }
+      void mutateElements((cur) => ({
+        elements: (cur?.elements ?? []).map((x) => x.id === tempId ? (out.element as ProjectElement) : x),
+      }), { revalidate: false });
+      setSelectedElement((cur) => cur === tempId ? (realId ?? null) : cur);
     } catch (err) {
+      void mutateElements((cur) => ({ elements: (cur?.elements ?? []).filter((x) => x.id !== tempId) }), { revalidate: false });
+      setSelectedElement((cur) => cur === tempId ? null : cur);
       toast.error(err instanceof Error ? err.message : "Could not add it");
     }
   }, [projectId, mutateElements]);
@@ -1765,6 +1788,7 @@ export default function AssemblePage({ params }: PageProps) {
   // frame would make it crawl. The write is debounced behind it.
   const elementPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateElement = useCallback((id: string, patch: Partial<ProjectElement>, commit = true) => {
+    if (isTempRow(id)) commit = false;
     void mutateElements((cur) => cur && ({
       elements: cur.elements.map((el) => el.id === id ? { ...el, ...patch } : el),
     }), { revalidate: false });
@@ -1790,6 +1814,16 @@ export default function AssemblePage({ params }: PageProps) {
     content: string; start_sec: number; end_sec: number; x: number; y: number;
     size: number; colour?: string; style?: string; lane?: number;
   }) => {
+    const tempId = tempRowId();
+    const optimistic: ProjectText = {
+      id: tempId, content: t.content, start_sec: t.start_sec, end_sec: t.end_sec,
+      x: t.x, y: t.y, size: t.size,
+      colour: t.colour ?? "#ffffff",
+      style: (t.style ?? "plain") as ProjectText["style"],
+      bg_colour: null, bg_opacity: 1, lane: t.lane ?? 0,
+    };
+    void mutateTexts((cur) => ({ texts: [...(cur?.texts ?? []), optimistic] }), { revalidate: false });
+    setSelectedText(tempId);
     try {
       const res = await fetch(`/api/projects/${projectId}/texts`, {
         method: "POST",
@@ -1798,9 +1832,18 @@ export default function AssemblePage({ params }: PageProps) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? "Could not add it");
-      await mutateTexts();
-      setSelectedText(out.text?.id ?? null);
+      const realId = out.text?.id as string | undefined;
+      if (abortedRows.current.delete(tempId)) {
+        if (realId) void fetch(`/api/projects/${projectId}/texts?id=${realId}`, { method: "DELETE" }).catch(() => {});
+        return;
+      }
+      void mutateTexts((cur) => ({
+        texts: (cur?.texts ?? []).map((x) => x.id === tempId ? (out.text as ProjectText) : x),
+      }), { revalidate: false });
+      setSelectedText((cur) => cur === tempId ? (realId ?? null) : cur);
     } catch (err) {
+      void mutateTexts((cur) => ({ texts: (cur?.texts ?? []).filter((x) => x.id !== tempId) }), { revalidate: false });
+      setSelectedText((cur) => cur === tempId ? null : cur);
       toast.error(err instanceof Error ? err.message : "Could not add it");
     }
   }, [projectId, mutateTexts]);
@@ -1809,6 +1852,7 @@ export default function AssemblePage({ params }: PageProps) {
   // continuous, and a round trip per keystroke would make either crawl.
   const textPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateText = useCallback((id: string, patch: Partial<ProjectText>, commit = true) => {
+    if (isTempRow(id)) commit = false;
     void mutateTexts((cur) => cur && ({
       texts: cur.texts.map((t) => t.id === id ? { ...t, ...patch } : t),
     }), { revalidate: false });
@@ -1826,6 +1870,9 @@ export default function AssemblePage({ params }: PageProps) {
   const removeText = useCallback(async (id: string) => {
     void mutateTexts((cur) => cur && ({ texts: cur.texts.filter((t) => t.id !== id) }), { revalidate: false });
     setSelectedText((cur) => (cur === id ? null : cur));
+    // Still in flight: the server has no id to delete yet, and refetching would
+    // bring the row back the moment the insert lands. Flag it for the add path.
+    if (isTempRow(id)) { abortedRows.current.add(id); return; }
     await fetch(`/api/projects/${projectId}/texts?id=${id}`, { method: "DELETE" }).catch(() => {});
     await mutateTexts();
   }, [projectId, mutateTexts]);
@@ -1841,6 +1888,18 @@ export default function AssemblePage({ params }: PageProps) {
   const addSound = useCallback(async (snd: {
     sound: string; at_sec: number; volume?: number; pitch?: number; lane?: number;
   }) => {
+    // Drawn before the write, not after it. A drop is the end of a gesture, and
+    // waiting on a POST and then a refetch put a visible gap between letting go
+    // and the block appearing, which reads as a missed drop and invites a
+    // second one. The row is swapped for the server's when it lands.
+    const tempId = tempRowId();
+    const optimistic: ProjectSound = {
+      id: tempId, sound: snd.sound, at_sec: snd.at_sec,
+      volume: snd.volume ?? 1, pitch: snd.pitch ?? 1,
+      duration_sec: null, lane: snd.lane ?? 0,
+    };
+    void mutateSounds((cur) => ({ sounds: [...(cur?.sounds ?? []), optimistic] }), { revalidate: false });
+    setSelectedSound(tempId);
     try {
       const res = await fetch(`/api/projects/${projectId}/sounds`, {
         method: "POST",
@@ -1849,15 +1908,37 @@ export default function AssemblePage({ params }: PageProps) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? "Could not add it");
-      await mutateSounds();
-      setSelectedSound(out.sound?.id ?? null);
+      const realId = out.sound?.id as string | undefined;
+      // Deleted while the insert was in flight: undo it on the server rather
+      // than leaving a row the customer already removed.
+      if (abortedRows.current.delete(tempId)) {
+        if (realId) void fetch(`/api/projects/${projectId}/sounds?id=${realId}`, { method: "DELETE" }).catch(() => {});
+        return;
+      }
+      void mutateSounds((cur) => ({
+        sounds: (cur?.sounds ?? []).map((x) => x.id === tempId ? (out.sound as ProjectSound) : x),
+      }), { revalidate: false });
+      // Only if they have not clicked something else in the meantime.
+      setSelectedSound((cur) => cur === tempId ? (realId ?? null) : cur);
     } catch (err) {
+      // Take it back off, or a block sits there that no longer exists anywhere.
+      void mutateSounds((cur) => ({ sounds: (cur?.sounds ?? []).filter((x) => x.id !== tempId) }), { revalidate: false });
+      setSelectedSound((cur) => cur === tempId ? null : cur);
       toast.error(err instanceof Error ? err.message : "Could not add it");
     }
   }, [projectId, mutateSounds]);
 
+  // Temp rows deleted before their insert came back. The add path checks this
+  // and removes the real row the server just created, which is the only way a
+  // drop-then-immediately-delete does not leave one behind.
+  const abortedRows = useRef<Set<string>>(new Set());
+
   const soundPatch = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateSound = useCallback((id: string, patch: Partial<ProjectSound>, commit = true) => {
+    // A row still in flight has no server id to PATCH. Draw the change and let
+    // the insert carry it: dragging a block the instant it lands is exactly
+    // when this happens.
+    if (isTempRow(id)) commit = false;
     void mutateSounds((cur) => cur && ({
       sounds: cur.sounds.map((x) => x.id === id ? { ...x, ...patch } : x),
     }), { revalidate: false });
@@ -1875,6 +1956,9 @@ export default function AssemblePage({ params }: PageProps) {
   const removeSound = useCallback(async (id: string) => {
     void mutateSounds((cur) => cur && ({ sounds: cur.sounds.filter((x) => x.id !== id) }), { revalidate: false });
     setSelectedSound((cur) => (cur === id ? null : cur));
+    // Still in flight: the server has no id to delete yet, and refetching would
+    // bring the row back the moment the insert lands. Flag it for the add path.
+    if (isTempRow(id)) { abortedRows.current.add(id); return; }
     await fetch(`/api/projects/${projectId}/sounds?id=${id}`, { method: "DELETE" }).catch(() => {});
     await mutateSounds();
   }, [projectId, mutateSounds]);
@@ -1957,6 +2041,9 @@ export default function AssemblePage({ params }: PageProps) {
   const removeElement = useCallback(async (id: string) => {
     void mutateElements((cur) => cur && ({ elements: cur.elements.filter((el) => el.id !== id) }), { revalidate: false });
     setSelectedElement((cur) => (cur === id ? null : cur));
+    // Still in flight: the server has no id to delete yet, and refetching would
+    // bring the row back the moment the insert lands. Flag it for the add path.
+    if (isTempRow(id)) { abortedRows.current.add(id); return; }
     await fetch(`/api/projects/${projectId}/elements?id=${id}`, { method: "DELETE" }).catch(() => {});
     await mutateElements();
   }, [projectId, mutateElements]);

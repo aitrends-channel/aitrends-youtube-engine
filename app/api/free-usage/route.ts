@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { freeImageAllowance } from "@/lib/free-images";
+import { getFreeImagePack } from "@/lib/free-image-pack";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { qwenCapForPlan } from "@/lib/replicate/tts";
@@ -17,10 +19,12 @@ export async function GET() {
   const plan = planSlugOf(user);
   const isAdmin = isAdminUser(user);
 
-  const [qwenTtsChars, ai33TtsChars, quotas] = await Promise.all([
+  const [qwenTtsChars, ai33TtsChars, quotas, images, imagePack] = await Promise.all([
     getFreeUsageThisMonth(user.id, "qwen_tts_chars"),
     getFreeUsageThisMonth(user.id, "ai33_tts_chars"),
     getQuotaConfig(),
+    freeImageAllowance(user),
+    getFreeImagePack(),
   ]);
   return NextResponse.json({
     qwenTtsChars,
@@ -30,5 +34,16 @@ export async function GET() {
     // Plan-tiered from the admin allocation: 0 = ai33 not included on
     // this plan (Founder by default, but any plan can be set to 0).
     ai33TtsCap: capFromConfig(quotas, "ai33_tts_chars", plan, isAdmin),
+    // From freeImageAllowance rather than the quota alone: the cap includes
+    // bought images, and the panel would otherwise show somebody less than
+    // they have.
+    freeImagesUsed: images.used,
+    freeImagesCap: images.cap,
+    freeImagesMonthly: images.monthly,
+    freeImagesBonus: images.bonus,
+    freeImagePack: imagePack.images !== null && imagePack.priceUsd !== null
+      ? { images: imagePack.images, priceUsd: imagePack.priceUsd }
+      : null,
+    freeImageCheckoutUrl: imagePack.checkoutUrl,
   });
 }

@@ -16,16 +16,26 @@ export const PENDING_CREDIT_PURCHASE_KEY = "dodo_pending_purchase";
 /**
  * Which wallet a top-up is buying into.
  *
- * Two wallets take money now, and they are not interchangeable: "genai" grants
- * video clips from genai_credits, "heclus" grants the general Heclus Credits.
+ * Three wallets take money now, and none are interchangeable: "genai" grants
+ * video clips from genai_credits, "heclus" grants the general Heclus Credits,
+ * and "free_images" grants images on the free lane's model. Each has its own
+ * product, its own checkout link and its own crediting route, so a mismatch
+ * here is a customer paying for one and receiving another.
  * The marker travels with the purchase so the return page credits the one that
  * was actually bought. "credits" is the genai value for backwards compatibility
  * with links already in flight when this split landed.
  */
-export type TopUpWallet = "genai" | "heclus";
+export type TopUpWallet = "genai" | "heclus" | "free_images";
 
+/** The ?type on the return URL, which is how the callback knows which route to
+ *  hand the payment to. Each wallet grants a different thing, so getting this
+ *  wrong is a customer paying for one and receiving another. */
 export function walletParam(wallet: TopUpWallet): string {
-  return wallet === "heclus" ? "heclus" : "credits";
+  switch (wallet) {
+    case "heclus": return "heclus";
+    case "free_images": return "free_images";
+    default: return "credits";
+  }
 }
 
 export function buildTopUpUrl(

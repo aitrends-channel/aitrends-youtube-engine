@@ -17,6 +17,7 @@ import {
 type QuotasResponse = {
   config: QuotaConfig;
   plans: PlanRef[];
+  legacyPlans: PlanRef[];
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -28,6 +29,7 @@ export function QuotasPanel() {
     { revalidateOnFocus: false },
   );
 
+  const [tab, setTab] = useState<"new" | "legacy">("new");
   const [draft, setDraft] = useState<QuotaDraft | null>(null);
   const [savingKey, setSavingKey] = useState<QuotaKind | null>(null);
   const hydratedRef = useRef(false);
@@ -40,13 +42,24 @@ export function QuotasPanel() {
     const allPresent = QUOTA_FIELDS.every((f) => !!data.config?.[f.key]?.byPlan);
     if (!allPresent) return;
     hydratedRef.current = true;
-    setDraft(toDraft(data.config, data.plans ?? []));
+    // Both sets at once. The draft is keyed by tier, and a legacy plan shares
+    // its tier with the product that replaced it, so hydrating one set is
+    // hydrating the other; doing it together just means switching tabs never
+    // shows an empty cell.
+    setDraft(toDraft(data.config, [...(data.plans ?? []), ...(data.legacyPlans ?? [])]));
   }, [data]);
 
-  const plans = data?.plans ?? [];
+  const plans = (tab === "new" ? data?.plans : data?.legacyPlans) ?? [];
+  // Tiers a legacy plan shares with one still on sale. Editing either column
+  // edits the same number, and saying so is cheaper than somebody discovering
+  // it by changing Founder and watching Starter move.
+  const sharedTiers = new Set(
+    (data?.legacyPlans ?? []).map((l) => l.tier)
+      .filter((t) => (data?.plans ?? []).some((p) => p.tier === t)),
+  );
 
-  function setOverride(key: QuotaKind, slug: string, value: string) {
-    setDraft((d) => (d ? { ...d, [key]: { ...d[key], [slug]: value } } : d));
+  function setOverride(key: QuotaKind, tier: string, value: string) {
+    setDraft((d) => (d ? { ...d, [key]: { ...d[key], [tier]: value } } : d));
   }
 
   async function saveField(key: QuotaKind) {
@@ -84,10 +97,35 @@ export function QuotasPanel() {
           </h3>
           <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
             How much free usage each plan gets. Blank or
-            <span className="font-semibold"> 0</span> = that plan doesn&apos;t get it. Admins count as Pro.
+            <span className="font-semibold"> 0</span> = that plan doesn&apos;t get it. Admins get the top tier.
           </p>
         </div>
       </div>
+
+      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--bg-input)", maxWidth: 280 }}>
+        {([["new", "New plans"], ["legacy", "Legacy"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all"
+            style={tab === id
+              ? { background: "oklch(0.72 0.25 285 / 0.18)", color: "var(--accent-purple-text)" }
+              : { color: "var(--c-50)" }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "legacy" && sharedTiers.size > 0 && (
+        <p className="text-xs leading-relaxed px-3 py-2 rounded-lg"
+          style={{ background: "oklch(0.65 0.15 75 / 0.10)", color: "oklch(0.72 0.15 75)" }}>
+          Allowances are stored per entitlement tier, not per product. {[...sharedTiers].join(" and ")}{" "}
+          {sharedTiers.size === 1 ? "is" : "are"} shared with a plan still on sale, so changing a column
+          here changes it there too. Founder is the only tier this tab reaches on its own.
+        </p>
+      )}
 
       {!isLoading && data && !data.config && (
         <div className="p-3.5 rounded-xl text-xs leading-relaxed"
@@ -110,7 +148,7 @@ export function QuotasPanel() {
             saving={savingKey === f.key}
             savingOther={savingKey !== null && savingKey !== f.key}
             disabled={isLoading || savingKey === f.key || !draft}
-            onOverrideChange={(slug, v) => setOverride(f.key, slug, v)}
+            onOverrideChange={(tier, v) => setOverride(f.key, tier, v)}
             onSave={() => saveField(f.key)}
           />
         ))}

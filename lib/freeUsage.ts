@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 
 // Historical rows for the removed BYO providers ("image", "tts_chars")
 // stay in the table; nothing reads or writes them now.
-export type FreeUsageKind = "qwen_tts_chars" | "ai33_tts_chars";
+export type FreeUsageKind = "qwen_tts_chars" | "ai33_tts_chars" | "free_image_credits";
 
 // Fail-soft: a lost/failed counter write must never break a generation.
 export async function incrementFreeUsage(userId: string, kind: FreeUsageKind, amount = 1): Promise<void> {
