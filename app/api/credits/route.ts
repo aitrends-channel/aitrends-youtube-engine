@@ -67,14 +67,17 @@ export async function GET() {
   // Withholding the link is how the Top up button disappears: every surface
   // that renders it does so only when this is non-null, so closing it here
   // closes all of them at once rather than in four components.
-  const purchasable = VIDEO_CREDITS_TOPUP_OPEN ? checkoutUrl : null;
+  // Admins are not part of the closure. The lane is shut to customers while
+  // the feature is held back, but an admin has to be able to buy a pack to
+  // check that the purchase, the grant and the ledger still work end to end.
+  const purchasable = VIDEO_CREDITS_TOPUP_OPEN || isAdminUser(user) ? checkoutUrl : null;
 
   // A missing checkout link is a configuration gap, not a customer-facing
   // state: they get no button, which is correct, but an admin looking at the
   // same screen has no way to tell whether it is broken or unconfigured. Say so,
   // to admins only. Not while top-ups are closed, though: then the absent
   // button is the intent, not a gap.
-  const setupHint = VIDEO_CREDITS_TOPUP_OPEN && !checkoutUrl && isAdminUser(user)
+  const setupHint = !checkoutUrl && isAdminUser(user)
     ? "No top-up link configured. Add the credit-pack checkout link in Admin → Payment → Dodo Variables."
     : null;
 
@@ -85,7 +88,8 @@ export async function GET() {
     eligible: balance.monthlyGrant > 0 || balance.paid > 0,
     pack: CREDIT_PACK,
     // Both closures: production's VIDEO_CREDITS_TOPUP_OPEN, folded into
-    // purchasable above, and staging's paid-accounts-only rule.
+    // purchasable above, and the paid-accounts-only rule. hasPaidAccess is
+    // true for admins, so neither closes on them.
     checkoutUrl: hasPaidAccess(user) ? purchasable : null,
     ledger,
   });
