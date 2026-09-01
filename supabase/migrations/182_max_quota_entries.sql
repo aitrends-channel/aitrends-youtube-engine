@@ -41,8 +41,14 @@ UPDATE product_config
 -- Free images has no stored entry anywhere yet, so it still resolves from the
 -- defaults. Added here too, so the first save from the editor does not have to
 -- be the thing that creates it.
+-- The whole entry in one step, not '{free_image_credits,byPlan}'.
+-- jsonb_set creates only the LAST missing level of a path: with
+-- free_image_credits absent entirely, the two-level form cannot create the
+-- intermediate object and returns the original value unchanged. The row still
+-- matches, still reports as updated, and nothing lands -- which is how this
+-- migration ran clean against production and left the quota missing.
 UPDATE product_config
-   SET free_quotas = jsonb_set(free_quotas, '{free_image_credits,byPlan}',
-         '{"founder": 0, "starter": 300, "pro": 900, "max": 1500}'::jsonb, true)
+   SET free_quotas = jsonb_set(free_quotas, '{free_image_credits}',
+         '{"byPlan": {"founder": 0, "starter": 300, "pro": 900, "max": 1500}}'::jsonb, true)
  WHERE service = '_global'
    AND NOT (free_quotas ? 'free_image_credits');
