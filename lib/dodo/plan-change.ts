@@ -27,6 +27,12 @@ interface DodoMeta {
   pending_plan_effective_at?: unknown;
 }
 
+/** The live subscription id, or null when the account has never subscribed. */
+export function dodoSubscriptionId(user: User): string | null {
+  const id = dodoMetaOf(user).subscription_id;
+  return typeof id === "string" && id ? id : null;
+}
+
 function dodoMetaOf(user: User): DodoMeta {
   return ((user.app_metadata ?? {}) as { dodo?: DodoMeta }).dodo ?? {};
 }

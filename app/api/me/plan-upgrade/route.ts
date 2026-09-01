@@ -6,10 +6,11 @@ import type { User } from "@supabase/supabase-js";
 import { billingPlanOf, tierForPlan } from "@/lib/plans-gating";
 import { tierRank } from "@/lib/plan-tier";
 import { getPlanBySlug } from "@/lib/plans";
-import { upgradeHeclusPlanNow } from "@/lib/dodo/plan-change";
+import { upgradeHeclusPlanNow, scheduleHeclusPlanChange, dodoSubscriptionId } from "@/lib/dodo/plan-change";
 import { getFundingMode } from "@/lib/funding";
 import { addHeclusCredits, packCreditsForTier } from "@/lib/heclus-credits";
 import { logSystemEvent } from "@/lib/system-logger";
+import { canSeeNewPlans, isGatedPlan } from "@/lib/rollout";
 
 // Moving up a tier, in place, on the subscription the customer already has.
 //
@@ -43,12 +44,60 @@ export async function POST(req: Request) {
   if (!plan) return NextResponse.json({ error: `Unknown plan ${target}` }, { status: 400 });
   if (plan.disabled) return NextResponse.json({ error: `${plan.name} is not on sale` }, { status: 400 });
 
-  const fromTier = tierForPlan(billingPlanOf(user));
+  // The in-place upgrade path is a purchase too: it moves a live subscription
+  // onto a new product and bills the difference. Gated for the same reason the
+  // checkout is.
+  if (isGatedPlan(target) && !canSeeNewPlans(user)) {
+    return NextResponse.json({ error: "That plan is not available yet." }, { status: 403 });
+  }
+
+  const billing = billingPlanOf(user);
+  const fromTier = tierForPlan(billing);
   const toTier = tierForPlan(target);
-  // Downgrades and same-tier moves keep the scheduled, unbilled path in
-  // /api/me/funding. Charging for a downgrade would be the wrong way round.
+
+  // Already on it. Nothing to change, and a checkout would sell them a second
+  // subscription to the plan they are on.
+  if (billing === target) {
+    return NextResponse.json({ adjusted: false, reason: "already-on-plan" });
+  }
+
+  // Same tier, different product: a repricing, not an upgrade.
+  //
+  // This is a legacy Starter or Pro moving onto the Heclus product that
+  // replaced it. Answering "not-an-upgrade" sent them to a fresh checkout,
+  // which charges a full period for a plan they are already paying for and
+  // starts a second subscription; /api/dodo/verify cancels the old one at its
+  // period end, so they end up having paid twice for the overlap. Forty live
+  // subscriptions sit on the legacy products (24 Pro, 16 Starter, Sept 2026).
+  //
+  // A downgrade takes the same path. Charging today for less service starting
+  // at renewal is the wrong way round.
   if (tierRank(toTier) <= tierRank(fromTier)) {
-    return NextResponse.json({ adjusted: false, reason: "not-an-upgrade" });
+    // Checked here rather than read off the schedule call, which treats a
+    // missing subscription as a no-op and would have us report a change that
+    // was never made. Somebody with no subscription belongs in a checkout.
+    if (!dodoSubscriptionId(user)) {
+      return NextResponse.json({ adjusted: false, reason: "no-subscription" });
+    }
+    const scheduled = await scheduleHeclusPlanChange(user, target);
+    if (!scheduled.ok) {
+      return NextResponse.json({ error: scheduled.error }, { status: 502 });
+    }
+    await logSystemEvent({
+      level: "info",
+      source: "plan-upgrade",
+      message: `${user.email ?? user.id} scheduled ${billing} to ${target} at renewal`,
+      userId: user.id,
+      metadata: { from: billing, to: target, effectiveAt: scheduled.effectiveAt },
+    }).catch(() => { /* logging must not fail the change */ });
+    return NextResponse.json({
+      adjusted: true,
+      scheduled: true,
+      plan: target,
+      name: plan.name,
+      effectiveAt: scheduled.effectiveAt,
+      credits: 0,
+    });
   }
 
   const result = await upgradeHeclusPlanNow(user, target);

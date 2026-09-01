@@ -42,6 +42,10 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
   const [error, setError] = useState<string | null>(null);
+  // A change that happens at renewal rather than now. Distinct from error:
+  // it succeeded, but closing on it silently would leave somebody believing
+  // they had already moved.
+  const [notice, setNotice] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
 
   // SWR caches the response in-memory across modal opens for instant
@@ -149,6 +153,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
   async function handleSubscribe() {
     const plan = plans?.find(p => p.slug === selectedPlan);
     setError(null);
+    setNotice(null);
     setSubscribing(true);
 
     // An existing subscriber moving up a tier is an adjustment to the
@@ -168,7 +173,29 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
       if (res.ok && data.adjusted) {
         router.refresh();
+        // Scheduled, not immediate: the customer keeps what they have until
+        // renewal and is charged nothing today. Saying so is the whole point
+        // of the branch — this is the legacy-plan move, where the alternative
+        // used to be a second subscription at full price.
+        if (data.scheduled) {
+          const on = typeof data.effectiveAt === "string"
+            ? new Date(data.effectiveAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })
+            : null;
+          setNotice(
+            `You're moving to ${plan?.name ?? selectedPlan}${on ? ` on ${on}` : " at your next renewal"}. `
+            + "Nothing is charged today, and your current plan runs until then.",
+          );
+          setSubscribing(false);
+          return;
+        }
         onClose();
+        return;
+      }
+      // Already on it. Falling through would open a checkout and sell a second
+      // subscription to the plan they are paying for.
+      if (res.ok && data.reason === "already-on-plan") {
+        setNotice(`You're already on ${plan?.name ?? selectedPlan}.`);
+        setSubscribing(false);
         return;
       }
       // Only a failed adjustment stops the flow. Anything else (not signed in,
@@ -407,6 +434,19 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
               </ul>
             )}
           </>
+        )}
+
+        {notice && (
+          <p
+            className="text-xs px-3 py-2 rounded-lg mb-4"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.1)",
+              color: "var(--accent-purple-text)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+            }}
+          >
+            {notice}
+          </p>
         )}
 
         {error && (
