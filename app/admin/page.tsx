@@ -7346,6 +7346,27 @@ function PricingPanel() {
         </p>
       </div>
 
+      {/* What each column means. Here rather than in a doc, because the page
+          is where somebody is when the question occurs to them. */}
+      <div className="rounded-xl p-4" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+        <p className="text-[15px] font-semibold mb-2" style={{ color: "var(--c-90)" }}>Terms</p>
+        <div className="grid gap-x-8 gap-y-2.5 text-[13px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+          <Term k="COGS" v="Cost of goods sold. What one customer costs us for a month of service: credits, clips, images, storage and voiceover. Not fees, not infrastructure." />
+          <Term k="Credits" v="The Heclus wallet. Spent on generation, settled on what the work actually cost, and the unspent part comes back." />
+          <Term k="Clips" v="Free video generations through GenAIPro. Hard spend at $0.02 each, with no refund if unused." />
+          <Term k="Images" v="Free image generations on z-image, the cheapest model we carry. Twenty times cheaper than nano-banana-pro, which is what makes the allowance affordable." />
+          <Term k="Voice" v="Free voiceover characters through ai33." />
+          <Term k="Storage" v="R2 cap per account, at $0.015 per GB a month. A ceiling rather than usage: the median account holds under a gigabyte." />
+          <Term k="Dodo 10%" v="Payment processing, taken off gross revenue. It scales with price, not with usage, so it costs more on Max than any single allowance." />
+          <Term k="GOG 5%" v="Government of Ghana levy on bank withdrawals of funds received by wire transfer. Charged when money is taken out, not when a customer pays, so counting it as 5% of revenue assumes everything received is eventually withdrawn." />
+          <Term k="Total" v="COGS plus fees. What the month costs us all in." />
+          <Term k="Margin" v="Price minus total, over price. Gross margin, before salaries, infrastructure and acquisition." />
+          <Term k="Net/user" v="Price minus total, in dollars. What one customer contributes each month." />
+          <Term k="Full burn" v="Every allowance exhausted every month. The wallet enforces it as a ceiling, so a plan cannot cost more than this." />
+          <Term k="/yr÷12" v="A yearly price divided into a month, so every row compares over the same period." />
+        </div>
+      </div>
+
       {/* The constants everything above is derived from */}
       <div className="rounded-xl p-4" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
         <p className="text-[15px] font-semibold mb-2" style={{ color: "var(--c-90)" }}>Rates</p>
@@ -7364,6 +7385,15 @@ function PricingPanel() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function Term({ k, v }: { k: string; v: string }) {
+  return (
+    <div>
+      <span className="font-semibold" style={{ color: "var(--c-85)" }}>{k}</span>
+      <span style={{ color: "var(--c-65)" }}> {v}</span>
     </div>
   );
 }

@@ -32,8 +32,16 @@ const FREE_IMAGE_CREDITS = 0.8;
  *  the numbers on the plan cards. Here so the margin is honest about them. */
 const FREE_IMAGES: Record<string, number> = { starter: 300, pro: 900, max: 1500 };
 
-/** Taken off gross revenue rather than off cost: both are a slice of what the
- *  customer pays, so they scale with price and not with usage. */
+/**
+ * Taken off gross revenue rather than off cost: both are a slice of what the
+ * customer pays, so they scale with price and not with usage.
+ *
+ * Dodo is per transaction. GOG is the Government of Ghana levy on bank
+ * withdrawals of funds received by wire, so it lands when money is taken out
+ * rather than when a customer pays. Charging it against revenue here assumes
+ * everything received is eventually withdrawn, which is the conservative
+ * reading and the only one that can be modelled per plan.
+ */
 const FEES = [
   { key: "dodo", label: "Dodo", rate: 0.10 },
   { key: "gog", label: "GOG", rate: 0.05 },
