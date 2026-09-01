@@ -3,7 +3,8 @@ import type { User } from "@supabase/supabase-js";
 import { getFundingMode } from "@/lib/funding";
 import { hasPaidAccess } from "@/lib/subscription";
 import { planSlugOf } from "@/lib/plans-gating";
-import { tierFallbacks, tierRank, type Tier } from "@/lib/plan-tier";
+import { tierFallbacks, tierRank, TOP_TIER, type Tier } from "@/lib/plan-tier";
+import { isAdminUser } from "@/lib/admin";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
 // runs on Heclus's own provider accounts.
@@ -193,7 +194,14 @@ async function periodGrantCredits(user: User): Promise<number> {
   // Fail closed instead, the same rule capFromConfig uses: a tier nobody has
   // allocated gets nothing. A plan that should have a grant carries its own
   // entry in GRANT_COLUMN.
-  const tier = planSlugOf(user);
+  // Admins first, and deliberately before the fail-closed check below. An
+  // admin's literal plan is often "founder", which is off the ladder and would
+  // fall straight through to zero -- the same ordering mistake that once took
+  // free images off an admin. They draw the top tier here for the reason
+  // tierOf and capFromConfig give them the top tier everywhere else: an admin
+  // is meant to have everything, and testing the new plans means having the
+  // credits the new plans sell.
+  const tier = isAdminUser(user) ? TOP_TIER : planSlugOf(user);
   if (tierRank(tier) < 0) return 0;
   return packCreditsForTier(tier as Tier);
 }
