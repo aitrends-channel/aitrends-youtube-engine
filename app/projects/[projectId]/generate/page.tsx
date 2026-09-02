@@ -2533,8 +2533,39 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Image gallery */}
-            {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
+            {/* No beats to show, and nothing on this panel that says so. The
+                video column has said "no video prompts yet" and pointed at
+                Prompt Studio since it was built; this one showed an empty
+                black panel above a Generate button. */}
+            {totalBeats === 0 && (
+              <div className="px-5 pt-4">
+                <div className="rounded-xl p-6 flex flex-col items-center gap-3 text-center"
+                  style={{ background: "var(--bg-progress)", border: "1px dashed var(--bd-8)" }}>
+                  <ImageIcon size={22} style={{ color: "var(--c-35)" }} />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>No image prompts yet</p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
+                      Split the script into beats and write their prompts in Prompt Studio, then generate here.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/projects/${projectId}/prompts`)}
+                    className="mt-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    Open Prompt Studio
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Image gallery. Every beat, from the moment it has a prompt,
+                the way the video panel already lists every beat carrying a
+                video prompt: the tiles are the scaffold of the work, and
+                waiting for the first image to appear before drawing them
+                left this panel blank on exactly the screen where somebody is
+                deciding whether to spend money generating them. */}
+            {(totalBeats > 0 || regenBeats.size > 0) && (
               <div className="px-5">
                 {/* Directly above the bar it describes: what the next images
                     will be generated with, beside how many there are. */}
