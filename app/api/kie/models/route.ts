@@ -144,52 +144,57 @@ function gateByOperator(models: KieModel[], operator: string): KieModel[] {
 /**
  * Present the free image lane, when this account still has allowance for it.
  *
- * The model is abstracted away deliberately. Which one we run is our choice and
- * our cost, and naming it invites the wrong question: a customer comparing
- * "Z-Image by Alibaba" against the paid list is shopping for a model, when the
- * offer is simply "images, included". It also leaves us free to switch the
- * model underneath without the free lane appearing to change product.
+ * The model appears twice while the allowance lasts: once in the paid list
+ * under its own name, where somebody looking for Z-Image can find it, and once
+ * in the Free tab as the lane, where the offer is simply "images, included".
+ * The free card still loses everything that identifies the model, because
+ * which one we run there is our choice and our cost, and naming it invites a
+ * customer to shop the lane against the paid list.
  *
- * So the entry keeps its id, which is what selection and generation need, and
- * loses everything that identifies it: the name, the vendor and speed tags, and
- * the per-image price, which is not what this costs the customer anyway.
+ * Both entries carry the same id, which is what selection and generation need.
+ * They are not two products: a generation on this model draws the allowance
+ * first whichever card was clicked, so the paid card says so rather than
+ * quoting a price the customer will not pay yet.
  *
- * An account with nothing left, or a plan that does not include it, has no free
- * models at all: the tab stays a coming-soon teaser on its own, without a
- * second flag. When the allowance runs out mid-month the entry reverts to the
- * ordinary paid one, under its real name, in the All tab.
+ * An account with nothing left, or a plan that does not include it, sees only
+ * the paid entry, and the Free tab stays a coming-soon teaser on its own.
  *
  * Founder is the plan that means: freeImageAllowance returns 0 for it in every
  * state, so the tab is never live for a Founder.
  */
 function withFreeImageTier(models: KieModel[], allowance: { cap: number; remaining: number }): KieModel[] {
   if (allowance.remaining <= 0) return models;
-  return models.map((m) => (
-    m.id === FREE_IMAGE_MODEL
-      ? {
-          ...m,
-          name: "Heclus Free",
-          description: `${allowance.remaining.toLocaleString()} of ${allowance.cap.toLocaleString()} left this month`,
-          tags: [FREE_MODEL_TAG],
-          // One credit an image, whole, and only on this card.
-          //
-          // Not what z-image bills, which is 0.8, and not what the customer
-          // pays, which is nothing while the allowance lasts. It is the rate
-          // the allowance is drawn down at, and the allowance counts images. A
-          // chip reading "0.8 cr" beside a free option was answering a question
-          // nobody asked with a number that is neither the price nor the count.
-          //
-          // Every other tab still quotes the real observed figure: this is the
-          // free lane's own presentation, not a change to how models are
-          // priced.
-          costPerUnit: "1",
-          costByResolution: undefined,
-          costIsFloor: undefined,
-          servedBy: undefined,
-          avgSpeedMs: undefined,
-        }
-      : m
-  ));
+  const left = allowance.remaining.toLocaleString();
+  const out: KieModel[] = [];
+  for (const m of models) {
+    if (m.id !== FREE_IMAGE_MODEL) { out.push(m); continue; }
+    // The paid entry, kept whole: real name, vendor tags, observed price and
+    // speed. The one addition is why that price is not what happens today.
+    out.push({ ...m, description: `Free while your ${left} included image${allowance.remaining === 1 ? "" : "s"} last` });
+    out.push({
+      ...m,
+      name: "Heclus Free",
+      description: `${left} of ${allowance.cap.toLocaleString()} left this month`,
+      tags: [FREE_MODEL_TAG],
+      // One credit an image, whole, and only on this card.
+      //
+      // Not what z-image bills, which is 0.8, and not what the customer
+      // pays, which is nothing while the allowance lasts. It is the rate
+      // the allowance is drawn down at, and the allowance counts images. A
+      // chip reading "0.8 cr" beside a free option was answering a question
+      // nobody asked with a number that is neither the price nor the count.
+      //
+      // Every other tab still quotes the real observed figure: this is the
+      // free lane's own presentation, not a change to how models are
+      // priced.
+      costPerUnit: "1",
+      costByResolution: undefined,
+      costIsFloor: undefined,
+      servedBy: undefined,
+      avgSpeedMs: undefined,
+    });
+  }
+  return out;
 }
 
 /** Decorate models with the observed average wall-clock generation

@@ -1777,7 +1777,11 @@ function ModelDefaultsPanel() {
     default_image_model: string | null;
     default_video_model: string | null;
   }>("/api/admin/default-models", fetcher, { revalidateOnFocus: false });
-  const { data: imageModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=image", fetcher);
+  // Paid entries only. The free image lane is the same model listed a second
+  // time under the lane's name, and a default picked from that row would set
+  // the same id twice over with a label nobody could match to a model.
+  const { data: imageModelRows } = useSWR<{ id: string; name: string; tags?: string[] }[]>("/api/kie/models?type=image", fetcher);
+  const imageModels = imageModelRows ? paidModelsOnly(imageModelRows) : imageModelRows;
   // Tags come through so the free-tier model can be excluded: making a
   // Heclus-funded model the platform default would have every eligible user
   // spending free credits by default, which is a cost decision rather than a

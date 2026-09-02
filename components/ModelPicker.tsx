@@ -344,17 +344,24 @@ export function ModelPicker(props: ModelPickerProps) {
   // still shows its teaser for those.
   const freeModels = (models ?? []).filter(isFreeTierModel);
   const hasFree = freeModels.length > 0;
+  // A model can be in both lanes: the free image model is also listed as a
+  // paid one under its own name while the allowance lasts. Only a free-ONLY
+  // selection should pull the picker to the Free tab, or picking that model
+  // from All would land you on a tab you did not choose.
+  const freeOnly = freeModels.filter(
+    (f) => !(models ?? []).some((p) => p.id === f.id && !isFreeTierModel(p)),
+  );
 
   // A free model is only listed under the Free tab, so a user coming back to a
   // saved free selection would open on All and see nothing selected. Land them
   // on the tab that holds their choice — once, so it never fights a click.
   useEffect(() => {
     if (openedOnFree.current || !selectedModelId || !hasFree) return;
-    if (freeModels.some((m) => m.id === selectedModelId)) {
+    if (freeOnly.some((m) => m.id === selectedModelId)) {
       openedOnFree.current = true;
       setTab("free");
     }
-  }, [selectedModelId, hasFree, freeModels]);
+  }, [selectedModelId, hasFree, freeOnly]);
 
   // The other direction: opening the Free tab selects the free model.
   //
