@@ -12,6 +12,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
+import { useViewerPlan } from "@/lib/admin-view";
 import { refreshBalance } from "@/store/balanceStore";
 import { TTS_MODEL, TTS_MODELS, ttsCreditsPerKChars } from "@/lib/tts-models";
 import { toast } from "sonner";
@@ -155,6 +156,9 @@ function FreeQuotaBar({ used, cap, loaded, badge, badgeNote }: { used: number; c
 }
 
 export default function VoiceoverPage({ params }: PageProps) {
+  // Heclus Credits accounts spend credits, not a vendor's balance, so the
+  // confirmations must not name one.
+  const { onCredits } = useViewerPlan();
   const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
@@ -1031,7 +1035,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           {" "}and re-render it with the selected voice. The current audio for this beat will be replaced.
         </>
       ),
-      footnote: "KIE credits will be charged for this regeneration.",
+      footnote: onCredits ? "Credits will be charged for this regeneration." : "KIE credits will be charged for this regeneration.",
       icon: "↻",
       iconColor: "oklch(0.72 0.25 285)",
       iconBg: "oklch(0.72 0.25 285 / 0.12)",
@@ -1158,7 +1162,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           </span> and re-render every beat with the selected voice. Your current audio for these beats will be replaced.
         </>
       ),
-      footnote: "KIE credits will be charged for each regenerated beat.",
+      footnote: onCredits ? "Credits will be charged for each regenerated beat." : "KIE credits will be charged for each regenerated beat.",
       icon: "↻",
       iconColor: "oklch(0.72 0.25 285)",
       iconBg: "oklch(0.72 0.25 285 / 0.12)",
@@ -1459,7 +1463,7 @@ export default function VoiceoverPage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}

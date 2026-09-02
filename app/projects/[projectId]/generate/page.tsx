@@ -21,7 +21,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { friendlyError, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
+import { friendlyError, forCreditsViewer, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
+import { useViewerPlan } from "@/lib/admin-view";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
 import { reportOutOfCredits, blockIfShort, confirmSwitch } from "@/store/outOfCreditsStore";
 import { refreshBalance } from "@/store/balanceStore";
@@ -426,6 +427,16 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
  *  returns the beat to the project's setting, which is where every beat starts.
  *  `short` is what fits in an 18px badge on a tile. */
 export default function GeneratePage({ params }: PageProps) {
+  // Whose provider accounts these are. On Heclus Credits they are ours, so no
+  // failure here may bill the customer for a vendor balance or send them to
+  // its top-up page. Held in a ref as well, because the value arrives after
+  // the auth read and callbacks memoised before that would keep the old one.
+  const { onCredits } = useViewerPlan();
+  const onCreditsRef = useRef(onCredits);
+  onCreditsRef.current = onCredits;
+  const viewerError = (raw: string | undefined | null, operator?: string | null) =>
+    forCreditsViewer(friendlyError(raw ?? null, operator ?? null, { platformFunded: onCreditsRef.current }), onCreditsRef.current);
+
   const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
@@ -742,7 +753,7 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; alreadyRunning?: number[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       if (data.failures?.length) {
-        setVideoRunError(friendlyError(data.failures[0].error));
+        setVideoRunError(viewerError(data.failures[0].error));
       } else if (data.alreadyRunning?.includes(beat.beatNumber)) {
         // Not re-queued, and deliberately so: it is still running. Saying
         // "re-queued" here is what made the button look broken, since nothing
@@ -757,7 +768,7 @@ export default function GeneratePage({ params }: PageProps) {
       // optimistic flip if the submit was rejected per-beat).
       await mutate();
     } catch (err) {
-      setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      setVideoRunError(viewerError(err instanceof Error ? err.message : null));
       await mutate(); // revert the optimistic flip on failure
     } finally {
       setRegeneratingBeats((prev) => {
@@ -1351,7 +1362,7 @@ export default function GeneratePage({ params }: PageProps) {
   useEffect(() => {
     if (reportOutOfCredits(videoRunError)) return;
     const refused = beats.find((b) => b.videoStatus === "failed" && isOutOfCreditsMessage(b.videoError));
-    if (refused) reportOutOfCredits(friendlyError(refused.videoError!));
+    if (refused) reportOutOfCredits(viewerError(refused.videoError!));
   }, [beats, videoRunError]);
 
   // Auto-clear the sticky out-of-credits banner once the refreshed
@@ -1625,7 +1636,7 @@ export default function GeneratePage({ params }: PageProps) {
         lastError = data.firstError;
         // Push into the section banner — single source of truth for
         // video failure context, no more disappearing toasts.
-        setVideoRunError(friendlyError(data.firstError));
+        setVideoRunError(viewerError(data.firstError));
         // Terminal "the model rejected this" errors will keep failing
         // for every remaining queued/rendering beat with the same
         // model. Sweep them all to failed in one shot so the worker
@@ -1710,7 +1721,7 @@ export default function GeneratePage({ params }: PageProps) {
         throw new Error("Voiceover generation ended unexpectedly — the connection closed before completing. Try again.");
       }
     } catch (err) {
-      toast.error(friendlyError(err instanceof Error ? err.message : null));
+      toast.error(viewerError(err instanceof Error ? err.message : null));
     } finally {
       setGeneratingTts(false);
       setTtsProgress(null);
@@ -1954,7 +1965,7 @@ export default function GeneratePage({ params }: PageProps) {
             // Overwrite the banner with the latest error so the user
             // always sees the most recent failure rather than a
             // growing list.
-            setImageRunError(friendlyError(reason, selectedImageOperator));
+            setImageRunError(viewerError(reason, selectedImageOperator));
           }
         }
         if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
@@ -2015,7 +2026,7 @@ export default function GeneratePage({ params }: PageProps) {
               if (!firstPollError) firstPollError = reason;
               // Overwrite the banner — only the most recent error
               // ever shows.
-              setImageRunError(friendlyError(reason, selectedImageOperator));
+              setImageRunError(viewerError(reason, selectedImageOperator));
               toRemove.push(i);
             }
             // status === "error" (a transient route/upstream failure — a
@@ -2049,7 +2060,7 @@ export default function GeneratePage({ params }: PageProps) {
         // while generation actually succeeded on KIE moments later.
         const realError = firstPollError ?? firstSubmitError;
         if (realError) {
-          setImageRunError((prev) => prev ?? friendlyError(realError, selectedImageOperator));
+          setImageRunError((prev) => prev ?? viewerError(realError, selectedImageOperator));
         } else if (remaining.length > 0) {
           toast.info(`Still generating ${remaining.length} image${remaining.length === 1 ? "" : "s"} — they'll appear here when ready`);
         }
@@ -2065,7 +2076,7 @@ export default function GeneratePage({ params }: PageProps) {
       // aborted-branch above, so we only land here on real failures.
       // Surface the error in the section banner instead of toasting.
       if (!abortSignal.aborted) {
-        setImageRunError(friendlyError(err instanceof Error ? err.message : null, selectedImageOperator));
+        setImageRunError(viewerError(err instanceof Error ? err.message : null, selectedImageOperator));
       }
     } finally {
       // Reset any beat still "queued" — those never reached a KIE submit
@@ -2131,7 +2142,7 @@ export default function GeneratePage({ params }: PageProps) {
       toast.success(`Beat ${beat.beatNumber} regenerated`);
       await mutate();
     } catch (err) {
-      toast.error(friendlyError(err instanceof Error ? err.message : null));
+      toast.error(viewerError(err instanceof Error ? err.message : null));
     } finally {
       setRegenBeats((prev) => { const next = new Set(prev); next.delete(beat.beatNumber); return next; });
     }
@@ -2151,7 +2162,7 @@ export default function GeneratePage({ params }: PageProps) {
       toast.success(`Paused ${data.paused ?? 0} pending clips`);
       await mutate();
     } catch (err) {
-      setVideoRunError(friendlyError(err instanceof Error ? err.message : "Pause failed"));
+      setVideoRunError(viewerError(err instanceof Error ? err.message : "Pause failed"));
     } finally {
       setPausingVideos(false);
     }
@@ -2179,7 +2190,7 @@ export default function GeneratePage({ params }: PageProps) {
       setVideosSubmitted(true);
       await mutate();
     } catch (err) {
-      setVideoRunError(friendlyError(err instanceof Error ? err.message : "Resume failed"));
+      setVideoRunError(viewerError(err instanceof Error ? err.message : "Resume failed"));
     } finally {
       setResumingVideos(false);
     }
@@ -2277,12 +2288,12 @@ export default function GeneratePage({ params }: PageProps) {
         toast.info(`${running} clip${running === 1 ? " is" : "s are"} still generating and cannot be re-queued yet.`);
       }
       if (data.failures?.length) {
-        setVideoRunError(friendlyError(data.failures[0].error));
+        setVideoRunError(viewerError(data.failures[0].error));
       }
       // Reconcile the optimistic flip with server truth.
       await mutate();
     } catch (err) {
-      setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      setVideoRunError(viewerError(err instanceof Error ? err.message : null));
       await mutate(); // revert the optimistic flip on failure
     } finally {
       setQueuingVideos(false);
@@ -2336,6 +2347,7 @@ export default function GeneratePage({ params }: PageProps) {
         currentState={14}
         highestState={project?.current_state}
         channelName={project?.channel_name}
+        channelUrl={project?.channel_url}
         topRightExtra={
           <button
             onClick={exportDocx}
@@ -2729,7 +2741,7 @@ export default function GeneratePage({ params }: PageProps) {
                 // would send a customer to kie.ai to top up an account they
                 // never opened. Their own empty-wallet refusal comes back from
                 // the generating routes and shows in the error banner below.
-                const walletFunded = apiStatus?.fundingMode === "wallet";
+                const walletFunded = apiStatus?.fundingMode === "wallet" || onCredits;
                 const kieCredits = apiStatus?.kie?.credits;
                 const showCreditBanner = !walletFunded
                   && (outOfCredits || (typeof kieCredits === "number" && kieCredits <= 0));
@@ -3221,7 +3233,7 @@ export default function GeneratePage({ params }: PageProps) {
                 const distinctBeatErrors = Array.from(new Set(
                   beats
                     .filter((b) => b.videoStatus === "failed" && b.videoError)
-                    .map((b) => friendlyError(b.videoError!)),
+                    .map((b) => viewerError(b.videoError!)),
                 ));
                 // The empty-wallet refusal is shown by the modal, so it is
                 // filtered out here rather than repeated in red.

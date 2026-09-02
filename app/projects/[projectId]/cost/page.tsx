@@ -297,6 +297,7 @@ export default function ProjectCostPage({ params }: PageProps) {
         currentState={project?.current_state ?? 1}
         highestState={project?.current_state}
         channelName={project?.channel_name}
+        channelUrl={project?.channel_url}
         hideSteps={summaryMode}
       />
 

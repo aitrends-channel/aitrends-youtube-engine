@@ -120,7 +120,45 @@ function providerName(msg: string, operator?: string | null): string | null {
   return null;
 }
 
-export function friendlyError(raw: string | undefined | null, operator?: string | null): string {
+/**
+ * What an empty provider balance means on a Heclus Credits account.
+ *
+ * That KIE (or PoYo, or Anthropic) account is ours: the customer never opened
+ * it and cannot pay it. Their own credits are a separate ledger and are not
+ * what ran out, so sending them to a top-up page is advice they cannot act on
+ * and a bill they should not think they owe.
+ */
+const PLATFORM_OUT_OF_CREDIT =
+  "We have run out of generation credit on our side. Your Heclus credits are untouched, so this needs support rather than a top-up.";
+
+/**
+ * Take the vendor top-up out of a sentence that was worded for a BYO account.
+ *
+ * Two cases need it. A failure persisted before this account moved to credits
+ * (or before this rule existed) still carries "Top up at kie.ai" in the
+ * database, and an admin previewing the credits experience is reading text a
+ * server that knows nothing of that preview wrote. Both are the same repair:
+ * the counts and the resume instruction are worth keeping, the billing page is
+ * not.
+ */
+export function forCreditsViewer(text: string | null | undefined, platformFunded: boolean): string {
+  const t = (text ?? "").trim();
+  if (!platformFunded || !t) return t;
+  if (!/kie\.ai|kie credits/i.test(t)) return t;
+  return t
+    .replace(/KIE credits exhausted\.\s*Top up at kie\.ai\./i, PLATFORM_OUT_OF_CREDIT)
+    .replace(/Ran out of KIE credits/i, "We ran out of generation credit on our side")
+    .replace(/Top up at kie\.ai,\s*then click/i, "Once we have topped our side up, click")
+    .replace(/Top up (your account )?at kie\.ai(\/billing)?\.?/i, "This one is ours to fix.");
+}
+
+export interface FriendlyErrorContext {
+  /** True when the run signs with our provider keys rather than the
+   *  customer's, which is every wallet-funded (Heclus Credits) account. */
+  platformFunded?: boolean;
+}
+
+export function friendlyError(raw: string | undefined | null, operator?: string | null, ctx?: FriendlyErrorContext): string {
   const original = (raw ?? "").trim();
   if (!original) return "Something went wrong. Please try again.";
 
@@ -210,14 +248,18 @@ export function friendlyError(raw: string | undefined | null, operator?: string 
   // tell the two apart.
   if ((msg.includes("credit balance") || msg.includes("purchase credits") || msg.includes("too low"))
     && (msg.includes("anthropic") || msg.includes("plans & billing") || msg.includes("plans and billing")))
-    return "Out of Anthropic credit. If this step runs on your own Anthropic key, top up at console.anthropic.com or switch back to KIE in Setup.";
+    return ctx?.platformFunded
+      ? PLATFORM_OUT_OF_CREDIT
+      : "Out of Anthropic credit. If this step runs on your own Anthropic key, top up at console.anthropic.com or switch back to KIE in Setup.";
   // Whose account is empty decides what the user can do about it. A KIE
   // balance can be theirs; PoYo runs on Heclus's key with no per-client path,
   // so sending that customer to top something up would be advice they cannot
   // act on.
-  const outOfProviderCredit = provider === "PoYo"
-    ? "PoYo is out of credit. That account is ours, so this needs support rather than a top-up."
-    : "KIE credits exhausted. Top up at kie.ai.";
+  const outOfProviderCredit = ctx?.platformFunded
+    ? PLATFORM_OUT_OF_CREDIT
+    : provider === "PoYo"
+      ? "PoYo is out of credit. That account is ours, so this needs support rather than a top-up."
+      : "KIE credits exhausted. Top up at kie.ai.";
   if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return outOfProviderCredit;
   if (msg.includes("credits remaining") || msg.includes("credit balance"))

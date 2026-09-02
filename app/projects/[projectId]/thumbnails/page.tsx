@@ -1129,7 +1129,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           onNav={setPreviewIndex}
         />
       )}
-      <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={!!(project?.assembled_url)} thumbnailsComplete={allImagesGenerated} />
+      <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} progressComplete={!!(project?.assembled_url)} thumbnailsComplete={allImagesGenerated} />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}

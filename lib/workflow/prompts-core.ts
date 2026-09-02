@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { modelParamsFor, maxTokensFor } from "@/lib/claude/models";
 import { KIE_MIN_USABLE_CREDITS, looksLikeInsufficientCredits } from "@/lib/kie/client";
+import { getFundingModeById } from "@/lib/funding";
 import {
   buildBeatsCached,
   buildBeatsDynamic,
@@ -175,10 +176,14 @@ async function recordPromptsFailure(
 ): Promise<void> {
   const raw = err instanceof Error ? err.message : String(err);
   if (raw === CANCELLED_MSG) return;
+  // A wallet account's work runs on our provider keys, so "top up at kie.ai"
+  // would name an account the customer never opened. Cached per user, so this
+  // is a map lookup on all but the first failure in a TTL.
+  const platformFunded = (await getFundingModeById(userId)) === "wallet";
   const { error } = await supabase
     .from("projects")
     .update({
-      prompts_last_error: friendlyError(raw),
+      prompts_last_error: friendlyError(raw, null, { platformFunded }),
       prompts_last_error_step: step,
       prompts_last_error_at: new Date().toISOString(),
     })
@@ -2005,8 +2010,10 @@ export async function fillPrompts(
       // and they're all saved. Reporting it as a generic failure sent users
       // looking for a bug instead of to the top-up page.
       if (outOfCredits) {
-        throw new Error(
-          `Ran out of KIE credits after ${done} of ${done + stillMissing} beats. Those ${done} are saved. Top up at kie.ai, then click Resume to finish the remaining ${stillMissing}.`,
+        const platformFunded = (await getFundingModeById(userId)) === "wallet";
+        throw new Error(platformFunded
+          ? `We ran out of generation credit on our side after ${done} of ${done + stillMissing} beats. Those ${done} are saved, your Heclus credits are untouched, and Resume will finish the remaining ${stillMissing} once we have topped our account up.`
+          : `Ran out of KIE credits after ${done} of ${done + stillMissing} beats. Those ${done} are saved. Top up at kie.ai, then click Resume to finish the remaining ${stillMissing}.`,
         );
       }
       if (deadlineHit) {
@@ -2312,8 +2319,10 @@ export async function generateVideos(projectId: string, userId: string, send: (d
 
   if (cancellation) throw cancellation;
   if (outOfCredits) {
-    throw new Error(
-      `Ran out of KIE credits after ${completed} of ${chunks.length} sections. Those are saved. Top up at kie.ai, then click Generate Remaining to finish the rest.`,
+    const platformFunded = (await getFundingModeById(userId)) === "wallet";
+    throw new Error(platformFunded
+      ? `We ran out of generation credit on our side after ${completed} of ${chunks.length} sections. Those are saved, your Heclus credits are untouched, and Generate Remaining will finish the rest once we have topped our account up.`
+      : `Ran out of KIE credits after ${completed} of ${chunks.length} sections. Those are saved. Top up at kie.ai, then click Generate Remaining to finish the rest.`,
     );
   }
   if (deadlineHit) {

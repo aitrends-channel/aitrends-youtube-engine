@@ -17,6 +17,7 @@ import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 import { setAdminPlanView, useAdminPlanView, useOnCreditsPlan } from "@/lib/admin-view";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { CopyButton } from "@/components/CopyButton";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
 import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -77,6 +78,8 @@ interface WizardNavProps {
   currentState: number;
   highestState?: number;
   channelName?: string;
+  /** The niche's channel address, offered for copying beside its name. */
+  channelUrl?: string;
   activeOverridePath?: string;
   /** The main video is done — its final MP4 assembled. Drives the 100%
    *  progress bar and the Assemble step's green tick. Independent of
@@ -94,7 +97,7 @@ interface WizardNavProps {
   hideSteps?: boolean;
 }
 
-export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, thumbnailsComplete, topRightExtra, hideSteps }: WizardNavProps) {
+export function WizardNav({ projectId, currentState, highestState, channelName, channelUrl, activeOverridePath, progressComplete, thumbnailsComplete, topRightExtra, hideSteps }: WizardNavProps) {
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
@@ -419,7 +422,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
       {/* ── Desktop top-left: Heclus logo (only when the sidebar is
             hidden — otherwise the logo lives inside the sidebar). */}
       {hideSteps && (
-        <div className="hidden md:flex fixed top-4 left-4 z-50 items-center gap-3">
+        <div className="hidden md:flex fixed top-4 left-4 z-50 items-center gap-1.5">
           <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group">
             <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
               <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
@@ -435,6 +438,9 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               )}
             </div>
           </button>
+          {/* Outside the button, not inside it: one button cannot hold
+              another, and this one goes somewhere else entirely. */}
+          {channelUrl && <CopyButton text={channelUrl} title="Copy channel URL" className="self-end mb-0.5" />}
         </div>
       )}
 
@@ -802,6 +808,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                   )}
                 </div>
               </Link>
+              {channelUrl && <CopyButton text={channelUrl} title="Copy channel URL" className="ml-1.5 self-end mb-0.5" />}
               <button
                 onClick={closeDrawer}
                 className="p-1.5 rounded-lg transition-all hover:opacity-80 shrink-0"
@@ -820,8 +827,8 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         <aside className="hidden md:flex w-64 shrink-0 flex-col h-screen sticky top-0 overflow-hidden"
           style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
 
-          <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group w-full">
+          <div className="px-5 py-5 border-b flex items-center gap-1.5" style={{ borderColor: "var(--bd-7)" }}>
+            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group min-w-0 flex-1">
               <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
                 <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
               </div>
@@ -836,6 +843,9 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 </p>
               </div>
             </button>
+            {/* Beside the name it belongs to, and outside the button that
+                carries you back to the dashboard. */}
+            {channelUrl && <CopyButton text={channelUrl} title="Copy channel URL" className="self-end mb-0.5" />}
           </div>
 
           {stepList}

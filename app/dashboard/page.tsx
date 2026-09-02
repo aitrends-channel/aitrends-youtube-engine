@@ -14,6 +14,7 @@ import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
+import { CopyButton } from "@/components/CopyButton";
 import { ApiKeysRequiredModal } from "@/components/ApiKeysRequiredModal";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import type { ElevenLabsCheck, KieCheck } from "@/lib/key-check";
@@ -816,6 +817,10 @@ export default function HomePage() {
         map.set(key, { channelName: key, channelUrl: p.channel_url, projects: [], lastActive: p.created_at });
       }
       const group = map.get(key)!;
+      // Whichever video in the niche carries the address. The first one need
+      // not have it, and one missing URL there would hide the copy control
+      // everywhere the niche appears.
+      if (!group.channelUrl && p.channel_url) group.channelUrl = p.channel_url;
       group.projects.push(p);
       if (p.created_at > group.lastActive) group.lastActive = p.created_at;
     }
@@ -1149,15 +1154,42 @@ export default function HomePage() {
                 {channelGroups.map((g) => {
                   const on = nicheFilter === g.channelName;
                   return (
-                    <button
+                    // A div, not a button: the copy control lives inside the
+                    // row and a button cannot contain another one.
+                    <div
                       key={g.channelName}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => selectNiche(g.channelName)}
-                      className={`flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${on ? "" : "hover-nudge"}`}
+                      onKeyDown={(e) => {
+                        // Only the row itself. Enter on the copy button inside
+                        // it would otherwise copy and change the filter at once.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectNiche(g.channelName); }
+                      }}
+                      className={`group flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${on ? "" : "hover-nudge"}`}
                       style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
                     >
                       <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
-                      <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{g.projects.length}</span>
-                    </button>
+                      {/* Copy takes the count's place on hover rather than
+                          sitting beside it: one slot, so the name does not
+                          shorten and the row does not shuffle under the
+                          pointer. The count is not what you are reaching for
+                          at that moment anyway. */}
+                      <span className="relative shrink-0 flex items-center justify-center min-w-5 h-5">
+                        <span className={`tabular-nums text-[11px] transition-opacity ${g.channelUrl ? "group-hover:opacity-0 group-focus-within:opacity-0" : ""}`}
+                          style={{ color: "var(--c-38)" }}>
+                          {g.projects.length}
+                        </span>
+                        {g.channelUrl && (
+                          <CopyButton
+                            text={g.channelUrl}
+                            title="Copy channel URL"
+                            className="absolute inset-0 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+                          />
+                        )}
+                      </span>
+                    </div>
                   );
                 })}
               </div>
@@ -2091,7 +2123,13 @@ export default function HomePage() {
           // its own, and recency is what people come back for.
           const visible = [...scoped].sort((a, b) => b.created_at.localeCompare(a.created_at));
           const nicheOf = new Map();
-          for (const g of channelGroups) for (const pr of g.projects) nicheOf.set(pr.id, g.channelName);
+          // Its address too, so the niche a video belongs to can be copied
+          // from the video, without going to the niche first.
+          const nicheUrlOf = new Map<string, string | undefined>();
+          for (const g of channelGroups) for (const pr of g.projects) {
+            nicheOf.set(pr.id, g.channelName);
+            nicheUrlOf.set(pr.id, g.channelUrl);
+          }
 
           return (
             <div className="space-y-5">
@@ -2102,12 +2140,15 @@ export default function HomePage() {
                     {group ? group.channelName : "All videos"}
                   </h2>
                   {group?.channelUrl ? (
-                    <Link href={group.channelUrl} target="_blank" rel="noopener noreferrer"
-                      className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
-                      style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
-                      title={group.channelUrl}>
-                      {group.channelUrl}
-                    </Link>
+                    <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                      <Link href={group.channelUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs min-w-0 truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
+                        style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
+                        title={group.channelUrl}>
+                        {group.channelUrl}
+                      </Link>
+                      <CopyButton text={group.channelUrl} title="Copy channel URL" />
+                    </div>
                   ) : (
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>
                       {visible.length} {visible.length === 1 ? "video" : "videos"} across {channelGroups.length} {channelGroups.length === 1 ? "niche" : "niches"}
@@ -2185,6 +2226,9 @@ export default function HomePage() {
                           <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: "var(--c-38)" }}>
                             {/* The niche column is redundant once one is selected. */}
                             {!group && <span className="truncate max-w-[40%]">{nicheOf.get(pr.id)}</span>}
+                            {!group && nicheUrlOf.get(pr.id) && (
+                              <CopyButton text={nicheUrlOf.get(pr.id)!} title="Copy channel URL" size={11} style={{ color: "var(--c-38)" }} />
+                            )}
                             {!group && <span aria-hidden>·</span>}
                             <span>{timeAgo(pr.created_at)}</span>
                           </div>
@@ -2308,7 +2352,12 @@ export default function HomePage() {
                           {pr.selected_topic ?? "No topic selected"}
                         </p>
                         {!group && (
-                          <p className="text-[11px] mb-4 truncate" style={{ color: "var(--c-38)" }}>{nicheOf.get(pr.id)}</p>
+                          <div className="flex items-center gap-1.5 mb-4 min-w-0">
+                            <span className="text-[11px] truncate" style={{ color: "var(--c-38)" }}>{nicheOf.get(pr.id)}</span>
+                            {nicheUrlOf.get(pr.id) && (
+                              <CopyButton text={nicheUrlOf.get(pr.id)!} title="Copy channel URL" size={12} style={{ color: "var(--c-38)" }} />
+                            )}
+                          </div>
                         )}
 
                         {pr.auto_pilot && !assembled && !ONE_CLICK_HIDDEN && (

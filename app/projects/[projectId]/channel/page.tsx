@@ -17,13 +17,14 @@ import { checkChannelInput, channelInputMessage, type ChannelInputProblem } from
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
+import { useViewerPlan } from "@/lib/admin-view";
 import type { ChannelInfo, TopVideo } from "@/lib/types";
 import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
 type FailedStage = "channel" | "transcripts" | "analyze";
 type HumanError = { title: string; body: string; hint?: string };
 
-function humanizeAnalysisError(stage: FailedStage, raw: string | null): HumanError {
+function humanizeAnalysisError(stage: FailedStage, raw: string | null, platformFunded = false): HumanError {
   const msg = (raw ?? "").trim();
   const lower = msg.toLowerCase();
 
@@ -103,11 +104,20 @@ function humanizeAnalysisError(stage: FailedStage, raw: string | null): HumanErr
   }
 
   if (/credits? insufficient|insufficient credits?|top up|402/.test(lower)) {
-    return {
-      title: "AI credits exhausted",
-      body: "Your KIE balance isn't enough to run this analysis.",
-      hint: "Top up your KIE account at kie.ai and try again.",
-    };
+    // Whose balance is empty decides what to tell them. On Heclus Credits the
+    // provider account is ours: naming a vendor's billing page there is a bill
+    // the customer does not owe and cannot pay.
+    return platformFunded
+      ? {
+        title: "Out of generation credit",
+        body: "We have run out of provider credit on our side. Your Heclus credits are untouched.",
+        hint: "Tell support and we will top our account up.",
+      }
+      : {
+        title: "AI credits exhausted",
+        body: "Your KIE balance isn't enough to run this analysis.",
+        hint: "Top up your KIE account at kie.ai and try again.",
+      };
   }
   if (/anthropic|claude/.test(lower)) {
     if (/401|invalid api key|unauthorized/.test(lower)) {
@@ -290,6 +300,9 @@ export default function ChannelPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId === "new" ? null : projectId);
+  // Heclus Credits accounts (and admins previewing that view) never own the
+  // provider accounts, so the out-of-credit advice differs for them.
+  const { onCredits } = useViewerPlan();
 
   const [channelUrl, setChannelUrl] = useState("");
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
@@ -806,7 +819,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-x-hidden">
-      <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} />
 
       <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         <div className="px-5 sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
@@ -1072,7 +1085,7 @@ export default function ChannelPage({ params }: PageProps) {
                   failedId === "channel" ? "channel"
                     : failedId === "transcripts" ? "transcripts"
                     : "analyze";
-                const err = humanizeAnalysisError(stage, analysisError);
+                const err = humanizeAnalysisError(stage, analysisError, onCredits);
                 return (
                   <div className="mt-3 rounded-xl p-4 flex gap-3"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>

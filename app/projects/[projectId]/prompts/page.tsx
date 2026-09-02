@@ -14,14 +14,19 @@ import { joinSegments } from "@/lib/text/joinSegments";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs, MIN_BEAT_WORDS } from "@/lib/text/mergePlan";
 import { MERGE_BEATS_HIDDEN, PROMPTS_THREE_STEP } from "@/lib/feature-flags";
-import { friendlyError } from "@/lib/errors/friendly";
+import { friendlyError, forCreditsViewer } from "@/lib/errors/friendly";
+import { useViewerPlan } from "@/lib/admin-view";
 import { reportOutOfCredits } from "@/store/outOfCreditsStore";
 
 /** A step's error text, with the empty-wallet refusal taken out: that one goes
  *  to the modal, and leaving it here as well says the same thing twice on the
- *  same screen. The step still shows as failed. */
-function stepError(raw: string | null | undefined): string {
-  const msg = friendlyError(raw ?? null);
+ *  same screen. The step still shows as failed.
+ *
+ *  platformFunded is the viewer's own plan: on Heclus Credits the provider
+ *  accounts are ours, and an out-of-credit sentence must not send them to a
+ *  vendor's billing page. */
+function stepError(raw: string | null | undefined, platformFunded: boolean): string {
+  const msg = forCreditsViewer(friendlyError(raw ?? null, null, { platformFunded }), platformFunded);
   return reportOutOfCredits(msg) ? "" : msg;
 }
 import { PREFIX_MAX_CHARS } from "@/lib/prefix-limit";
@@ -474,6 +479,9 @@ function RunningCaption({ progress }: { progress?: { current: number; total: num
 }
 
 function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, errorAction, disabled, optional, actionLabel, hideAction, extraAction, onClear, onStop, onGenerate }: StepCardProps) {
+  // Which billing story the failure note tells. Read here rather than passed
+  // down: every caller would have to carry the same prop for one sentence.
+  const { onCredits } = useViewerPlan();
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -595,8 +603,10 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
               style={{ background: "oklch(0.62 0.15 220 / 0.10)", border: "1px solid oklch(0.62 0.15 220 / 0.35)", color: "var(--c-60)" }}>
               <span aria-hidden>ⓘ</span>
               <span>
-                <strong style={{ color: "var(--c-90)" }}>NOTE:</strong> Attempts that fail aren&apos;t charged.
-                KIE only bills generations it completes, and prompts already saved are kept.
+                <strong style={{ color: "var(--c-90)" }}>NOTE:</strong> Attempts that fail aren&apos;t charged.{" "}
+                {onCredits
+                  ? "Credits are only spent on generations that complete, and prompts already saved are kept."
+                  : "KIE only bills generations it completes, and prompts already saved are kept."}
               </span>
             </div>
             {errorAction}
@@ -1168,6 +1178,10 @@ export default function PromptsPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
+  // Which account this is, for the failure copy: on Heclus Credits the
+  // provider accounts are ours, so nothing here may send them to kie.ai.
+  // Admins previewing the credits view get the credits wording too.
+  const { onCredits } = useViewerPlan();
 
   // Account-level character-consistency default, fetched once. Feeds both
   // the per-project panel (placeholder) and the per-beat "will be
@@ -1666,9 +1680,9 @@ export default function PromptsPage({ params }: PageProps) {
   const persistedErrorStep = (project as { prompts_last_error_step?: string | null } | undefined)?.prompts_last_error_step ?? null;
   // "fill" is card 2's run in the three-step flow, so its failures belong to
   // the image card.
-  const persistedImageError = persistedErrorStep === "images" || persistedErrorStep === "fill" ? persistedError : null;
-  const persistedVideoError = persistedErrorStep === "videos" ? persistedError : null;
-  const persistedBeatsError = persistedErrorStep === "beats" ? persistedError : null;
+  const persistedImageError = forCreditsViewer(persistedErrorStep === "images" || persistedErrorStep === "fill" ? persistedError : null, onCredits) || null;
+  const persistedVideoError = forCreditsViewer(persistedErrorStep === "videos" ? persistedError : null, onCredits) || null;
+  const persistedBeatsError = forCreditsViewer(persistedErrorStep === "beats" ? persistedError : null, onCredits) || null;
 
   // A split that never finished. generateBeats writes prompts_script_hash only
   // on its success path, so beats with no hash are a partial walk. Restricted
@@ -1951,7 +1965,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setImageStep({ status: "error", message: "", error: stepError(msg) });
+        setImageStep({ status: "error", message: "", error: stepError(msg, onCredits) });
       }
     } finally {
       imageAbortRef.current = null;
@@ -2250,7 +2264,7 @@ export default function PromptsPage({ params }: PageProps) {
         setBeatsStep(IDLE);
         await mutate();
       } else {
-        setBeatsStep({ status: "error", message: "", error: stepError(err instanceof Error ? err.message : "Failed") });
+        setBeatsStep({ status: "error", message: "", error: stepError(err instanceof Error ? err.message : "Failed", onCredits) });
       }
     } finally {
       beatsAbortRef.current = null;
@@ -2299,7 +2313,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setVideoStep({ status: "error", message: "", error: stepError(msg) });
+        setVideoStep({ status: "error", message: "", error: stepError(msg, onCredits) });
       }
     } finally {
       videoAbortRef.current = null;
@@ -2571,7 +2585,7 @@ export default function PromptsPage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} />
 
       <main ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}

@@ -120,7 +120,7 @@ export default function TopicPage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         <div className="px-5 sm:px-8 py-5"

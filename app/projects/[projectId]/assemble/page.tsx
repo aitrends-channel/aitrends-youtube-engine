@@ -3599,7 +3599,7 @@ export default function AssemblePage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={!!(project?.assembled_url)} />
+      <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} progressComplete={!!(project?.assembled_url)} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
