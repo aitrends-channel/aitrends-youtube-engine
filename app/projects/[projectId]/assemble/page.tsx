@@ -783,8 +783,11 @@ function measureAudioSeconds(file: File): Promise<number | null> {
  * Portalled to the body so no ancestor's overflow or transform can clip it, and
  * scrollable inside, because the captions panel is taller than a laptop screen.
  */
-function CardOverlay({ title, onClose, children }: {
+function CardOverlay({ title, headerAction, onClose, children }: {
   title: string;
+  /** Rendered in the title bar, left of the close button. For a control that
+   *  governs the whole panel rather than one row of it. */
+  headerAction?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -863,15 +866,18 @@ function CardOverlay({ title, onClose, children }: {
           }}
         >
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{title}</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
-          >
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {headerAction}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
         {/* The scroller, so shrinking the window scrolls its contents rather
             than clipping them. */}
@@ -4221,10 +4227,10 @@ export default function AssemblePage({ params }: PageProps) {
               {/* Captions */}
               <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 {/* The whole row opens the section, so the target is the row
-                    rather than the words. The switch only appears once it is
-                    open: collapsed, the summary already says on or off, and a
-                    switch sitting on a clickable row is a thing to hit by
-                    accident while trying to expand it. */}
+                    rather than the words. The switch lives in the dialog's
+                    title bar instead: a switch sitting on a clickable row is a
+                    thing to hit by accident while trying to expand it. The row
+                    says on or off in words so the state still reads closed. */}
                 <div
                   role="button"
                   tabIndex={0}
@@ -4241,18 +4247,7 @@ export default function AssemblePage({ params }: PageProps) {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                  {captionsOpen && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCaptionsEnabled((v) => !v); }}
-                      disabled={assembling}
-                      aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
-                      className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
-                      style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
-                    >
-                      <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                        style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
-                    </button>
-                  )}
+                  <span className="text-xs" style={{ color: "var(--c-45)" }}>{captionsEnabled ? "On" : "Off"}</span>
                   {/* The arrow lives at the far edge, where the eye goes to find
                       out whether a row opens. Left of the title it competed with
                       the heading; here it reads as the affordance for the row. */}
@@ -4262,8 +4257,32 @@ export default function AssemblePage({ params }: PageProps) {
                   </div>
                 </div>
 
-                {captionsOpen && captionsEnabled && (
-                <CardOverlay title="Captions" onClose={() => setCaptionsOpen(false)}>
+                {captionsOpen && (
+                <CardOverlay
+                  title="Captions"
+                  headerAction={
+                    <button
+                      type="button"
+                      onClick={() => setCaptionsEnabled((v) => !v)}
+                      disabled={assembling}
+                      aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
+                      className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
+                      style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                    >
+                      <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                        style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+                    </button>
+                  }
+                  onClose={() => setCaptionsOpen(false)}
+                >
+                  {/* Off, the settings below would all be decisions about
+                      something that will not be rendered, so the switch is the
+                      only thing left on screen. */}
+                  {!captionsEnabled ? (
+                  <p className="text-xs py-2" style={{ color: "var(--c-45)" }}>
+                    Captions are off. Turn them on to set style, size and language.
+                  </p>
+                  ) : (
                   <div className="space-y-4">
                     {/* What the choices add up to, on one of the project's own
                         frames. Style, size and position are three lists of
@@ -4484,6 +4503,7 @@ export default function AssemblePage({ params }: PageProps) {
                       </div>
                     </div>
                   </div>
+                  )}
                 </CardOverlay>
                 )}
               </div>
