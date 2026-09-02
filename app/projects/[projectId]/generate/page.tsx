@@ -92,11 +92,26 @@ function useGridVirtualizer(count: number, externalRef: { current: HTMLDivElemen
       viewBottom = el.scrollTop + el.clientHeight;
     } else {
       const rect = el.getBoundingClientRect();
-      viewTop = Math.max(0, -rect.top);
-      viewBottom = Math.max(0, window.innerHeight - rect.top);
+      // The zoom control writes documentElement.style.zoom, and a zoomed page
+      // reports getBoundingClientRect() scaled while window.innerHeight stays
+      // unscaled. At 150% an element 700px down the page reported top 1050
+      // against an 900px viewport, so every row was "below the fold" and the
+      // grid rendered nothing: a tall empty block where the beats should be,
+      // with the padding still reserving their height. offsetWidth is
+      // unscaled, so the ratio is the exact factor to divide the rect by, and
+      // it corrects for a transformed ancestor as well.
+      const raw = el.offsetWidth > 0 ? rect.width / el.offsetWidth : 1;
+      const scale = Number.isFinite(raw) && raw > 0.05 && raw < 20 ? raw : 1;
+      const top = rect.top / scale;
+      viewTop = Math.max(0, -top);
+      viewBottom = Math.max(0, window.innerHeight - top);
     }
-    const startRow = Math.max(0, Math.floor(viewTop / rowH) - GRID_OVERSCAN);
-    const endRow = Math.min(rows, Math.ceil(viewBottom / rowH) + GRID_OVERSCAN);
+    let startRow = Math.max(0, Math.floor(viewTop / rowH) - GRID_OVERSCAN);
+    let endRow = Math.min(rows, Math.ceil(viewBottom / rowH) + GRID_OVERSCAN);
+    // Never nothing. If the window maths ever puts the whole grid off screen
+    // again, one row is a cheap thing to draw and a blank panel is not
+    // something a customer can read as anything but broken.
+    if (count > 0 && endRow <= startRow) { startRow = 0; endRow = 1; }
     const start = startRow * cols;
     const end = Math.min(count, endRow * cols);
     const topPad = Math.max(0, startRow * rowH - GRID_GAP);
