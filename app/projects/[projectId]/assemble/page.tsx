@@ -4516,7 +4516,12 @@ export default function AssemblePage({ params }: PageProps) {
             {movableBeats > 0 && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               {/* Same row-as-toggle as captions, and the summary carries the
-                  current setting so it is readable while closed. */}
+                  current setting so it is readable while closed.
+
+                  Wraps on a phone. The buttons are shrink-0 and there are up to
+                  three of them, so on a narrow screen the summary was squeezed
+                  into a 90px column and broke one or two words to a line. Below
+                  sm the two halves stack; from sm up nothing changes. */}
               <div
                 role="button"
                 tabIndex={0}
@@ -4525,9 +4530,9 @@ export default function AssemblePage({ params }: PageProps) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEffectsOpen((v) => !v); }
                 }}
-                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${effectsOpen ? "mb-4" : ""}`}
+                className={`flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between gap-x-3 gap-y-2 cursor-pointer select-none ${effectsOpen ? "mb-4" : ""}`}
               >
-                <div>
+                <div className="min-w-0 basis-full sm:basis-auto">
                   <p className="text-sm font-semibold">Preview & Effects</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
                     {[
@@ -4541,7 +4546,7 @@ export default function AssemblePage({ params }: PageProps) {
                     ].filter(Boolean).join(" · ")}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setExportConfirmOpen(true); }}
