@@ -2811,13 +2811,6 @@ export default function AssemblePage({ params }: PageProps) {
    *  the clips are already being encoded from the settings as they were. */
   const timelineLocked = finalMode || assembling;
 
-  // Width the preview <video> actually renders at: min(panel width,
-  // 70vh × ratio) — the same bound its max-h-[70vh] + max-w-full impose.
-  // The action buttons use this so they line up with the video's width
-  // instead of spilling full-width under a narrow portrait preview.
-  const [arW, arH] = aspectRatio.split(":").map(Number);
-  const previewMaxW = arW && arH ? `min(100%, calc(70vh * ${arW} / ${arH}))` : "100%";
-
   // In-progress preview — the worker uploads mixed.mp4 (full audio +
   // visuals at intermediate resolution, no captions/logo yet) as soon
   // as the mix step lands, BEFORE the multi-minute final-burn pass.
