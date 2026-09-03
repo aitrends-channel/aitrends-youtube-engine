@@ -214,7 +214,7 @@ function AudioPreview({ url }: { url: string }) {
         else { void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); }
       }}
       className="inline-flex h-7 w-11 items-center justify-center rounded-md transition-opacity hover:opacity-80"
-      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--accent-blue-text)" }}
     >
       {playing ? <Square size={11} /> : <Play size={11} />}
     </button>
