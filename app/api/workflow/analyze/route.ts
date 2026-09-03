@@ -7,7 +7,7 @@ export const maxDuration = 800;
 import { channelAnalysisInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { ChannelAnalysisSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
-import { extractToolInputFromText } from "@/lib/claude/textFallback";
+import { extractToolInputFromText, unwrapWrappedToolInput } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -148,7 +148,9 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const parsedAnalysis = ChannelAnalysisSchema.safeParse(analysisInput);
+      const parsedAnalysis = ChannelAnalysisSchema.safeParse(
+        unwrapWrappedToolInput(analysisInput, ["niche", "styleDNA"]),
+      );
       if (parsedAnalysis.success) {
         analysis = parsedAnalysis.data as ChannelAnalysisOutput;
         break;
@@ -245,7 +247,7 @@ export async function POST(req: Request) {
         ideasInput = extractToolInputFromText(raw);
       }
       if (ideasInput) {
-        const parsed = VideoIdeasSchema.parse(ideasInput);
+        const parsed = VideoIdeasSchema.parse(unwrapWrappedToolInput(ideasInput, ["ideas"]));
         videoIdeas = parsed.ideas;
       }
     }

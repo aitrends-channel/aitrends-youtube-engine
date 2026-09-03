@@ -9,7 +9,7 @@ import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { VisualProfileSchema, ThumbnailAnalysisSchema } from "@/lib/claude/schemas";
 import { retryClaudeCall } from "@/lib/claude/retry";
-import { extractToolInputFromText } from "@/lib/claude/textFallback";
+import { extractToolInputFromText, unwrapWrappedToolInput } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
@@ -360,8 +360,12 @@ export async function POST(req: Request) {
       }
     }
 
-    const visualProfile = visualProfileRaw ? VisualProfileSchema.parse(visualProfileRaw) : null;
-    const thumbnailAnalysis = thumbnailRaw ? ThumbnailAnalysisSchema.parse(thumbnailRaw) : null;
+    const visualProfile = visualProfileRaw
+      ? VisualProfileSchema.parse(unwrapWrappedToolInput(visualProfileRaw, ["artStyle", "colorPalette"]))
+      : null;
+    const thumbnailAnalysis = thumbnailRaw
+      ? ThumbnailAnalysisSchema.parse(unwrapWrappedToolInput(thumbnailRaw, ["textStyle", "composition"]))
+      : null;
 
     // Only update DB fields we actually analyzed — don't clobber
     // previously-stored values for the other axis.

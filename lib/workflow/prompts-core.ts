@@ -38,7 +38,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { isPoyoRouting } from "@/lib/claude/routing";
-import { extractToolInputFromText, unwrapNestedToolInput } from "@/lib/claude/textFallback";
+import { extractToolInputFromText, unwrapNestedToolInput, unwrapWrappedToolInput } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
 import type { StepHold } from "@/lib/credits/hold";
@@ -885,7 +885,7 @@ export async function generateImages(
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
-    const parsed = ImagePromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
+    const parsed = ImagePromptsSchema.safeParse(unwrapNestedToolInput(unwrapWrappedToolInput(input, ["beats"]), "beats"));
     if (!parsed.success) {
       const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
       const blankFields = rawBeats.map((b, i) => {
@@ -1369,7 +1369,7 @@ export async function generateBeats(
         assertComplete(res.stop_reason, label);
       }
 
-      const parsed = BeatsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
+      const parsed = BeatsSchema.safeParse(unwrapNestedToolInput(unwrapWrappedToolInput(input, ["beats"]), "beats"));
       if (!parsed.success) {
         // Recorded, not just printed. This failure is only ever seen as a
         // sentence in the UI, and the sentence cannot say which field was
@@ -1827,7 +1827,7 @@ export async function fillPrompts(
         assertComplete(res.stop_reason, label);
       }
 
-      const parsed = FillPromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
+      const parsed = FillPromptsSchema.safeParse(unwrapNestedToolInput(unwrapWrappedToolInput(input, ["beats"]), "beats"));
       if (!parsed.success) {
         const rawBeats = ((input?.beats as Array<Record<string, unknown>>) ?? []);
         const blankFields = rawBeats.map((b, i) => {
@@ -2201,7 +2201,7 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry. Try again — any prompts saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}. Try again — any prompts saved so far are preserved.`);
 
-    const parsed = VideoPromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
+    const parsed = VideoPromptsSchema.safeParse(unwrapNestedToolInput(unwrapWrappedToolInput(input, ["beats"]), "beats"));
     if (!parsed.success) {
       const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
       const blank = rawBeats
@@ -2427,7 +2427,7 @@ export async function generateThumbnails(
 
   if (!tool || tool.type !== "tool_use") throw new Error("No thumbnails returned from Claude after 2 attempts");
 
-  const { thumbnails } = ThumbnailsOutputSchema.parse(tool.input);
+  const { thumbnails } = ThumbnailsOutputSchema.parse(unwrapWrappedToolInput(tool.input, ["thumbnails"]));
   // Defensive double-check on top of the Zod .length(5) and the
   // input_schema's minItems/maxItems — if any of those fail open
   // we still catch it here rather than silently saving a short set.

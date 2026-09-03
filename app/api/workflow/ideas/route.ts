@@ -5,6 +5,7 @@ import { videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
 import { supabase } from "@/lib/supabase/client";
+import { unwrapWrappedToolInput } from "@/lib/claude/textFallback";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") throw new Error("No ideas returned from Claude");
 
-    const parsed = VideoIdeasSchema.parse(toolUse.input);
+    const parsed = VideoIdeasSchema.parse(unwrapWrappedToolInput(toolUse.input, ["ideas"]));
 
     // Persist the new ideas by appending to video_ideas, deduped
     // case-insensitively so a near-duplicate Claude slipped through

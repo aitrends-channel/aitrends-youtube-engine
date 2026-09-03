@@ -95,3 +95,32 @@ export function unwrapNestedToolInput(
   }
   return input;
 }
+
+/**
+ * A third wrapping, and the one that broke channel analysis on the day the
+ * writing steps moved to Anthropic. The tool call is well formed and every
+ * field is present, one level down, under a key the model invented:
+ *
+ *   { "channelAnalysis": { "niche": …, "targetAudience": …, "styleDNA": … } }
+ *
+ * where the schema asks for those fields at the top level. GPT through KIE
+ * returned them flat, so nothing here saw it until the provider changed, and
+ * the customer got ten "Invalid input" lines naming every field at once — the
+ * signature of a payload that is entirely there and entirely one level too
+ * deep.
+ *
+ * Descends exactly one level, and only when the outer object has a single key
+ * whose value is an object carrying a field the caller expects. Anything else
+ * is returned untouched, so a genuinely wrong shape still fails validation
+ * rather than being coerced into a plausible one.
+ */
+export function unwrapWrappedToolInput<T = unknown>(input: T, expected: readonly string[]): T {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const obj = input as Record<string, unknown>;
+  if (expected.some((k) => k in obj)) return input;
+  const keys = Object.keys(obj);
+  if (keys.length !== 1) return input;
+  const inner = obj[keys[0]];
+  if (!inner || typeof inner !== "object" || Array.isArray(inner)) return input;
+  return expected.some((k) => k in (inner as Record<string, unknown>)) ? (inner as T) : input;
+}
