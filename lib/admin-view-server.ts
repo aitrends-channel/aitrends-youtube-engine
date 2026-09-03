@@ -1,4 +1,3 @@
-import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { isAdminUser } from "@/lib/admin";
 import { ADMIN_PLAN_VIEW_COOKIE, type AdminPlanView } from "@/lib/admin-view";
@@ -10,6 +9,13 @@ import { ADMIN_PLAN_VIEW_COOKIE, type AdminPlanView } from "@/lib/admin-view";
 // against the wallet; on "old" they are treated as a BYO account and spend
 // their own keys. That answer has to be the same in the browser and in the
 // route that charges, so the switch writes a cookie as well as localStorage.
+//
+// No "server-only" marker on purpose. lib/funding.ts reaches this through a
+// dynamic import and is itself pulled into client bundles, so the marker failed
+// the build rather than protecting anything. The protection that matters is
+// runtime: next/headers is imported inside a try, so in a browser this resolves
+// to null instead of throwing, and every caller passes the user for the admin
+// check.
 //
 // Honoured for admins only. A non-admin who forges the cookie gets nothing:
 // every caller passes the user, and a non-admin's funding is decided by their
