@@ -236,8 +236,8 @@ function ResultCell({ preview, voiceoverUrl, onOpen }: {
         type="button"
         onClick={() => onOpen(preview)}
         title={preview.text.slice(0, 200)}
-        className="inline-flex h-7 items-center rounded-md px-2.5 text-[11px] font-medium transition-opacity hover:opacity-80"
-        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+        className="inline-flex h-7 items-center rounded-md px-2.5 text-[11px] font-semibold transition-opacity hover:opacity-80"
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--accent-blue-text)" }}
       >
         View
       </button>
