@@ -1810,6 +1810,7 @@ export async function fillPrompts(
         usage: res.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
       alreadyHeld: !!stepHold?.hold,
+        beatsCovered: batch.map((b) => b.beatNumber),
       });
     stepHold?.add(res.usage);
 
@@ -2170,6 +2171,10 @@ export async function generateVideos(projectId: string, userId: string, send: (d
         usage: res.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
       alreadyHeld: !!stepHold?.hold,
+        // Which beats this call wrote for. A prompt-writing charge belongs to
+        // a chunk, not to a beat, and without this the usage log can only
+        // offer every prompt in the project against a row that wrote five.
+        beatsCovered: chunks[i]?.map((b) => b.beatNumber) ?? null,
       });
     stepHold?.add(res.usage);
       if (tool && tool.type === "tool_use") break;

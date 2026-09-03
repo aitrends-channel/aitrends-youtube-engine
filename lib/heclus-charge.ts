@@ -63,7 +63,14 @@ export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult
     }));
     if (credits <= 0) return { ...NOTHING, skipped: "unpriced" };
 
-    const note = `${entry.step} · ${entry.units.toLocaleString()} ${entry.unitKind}`;
+    // "prompts_video · beats 7-11 · 0.05 kie_credits". A separate segment, so
+    // the step is still everything before the first separator, which is how
+    // every reader of this note finds it.
+    const covered = (entry.beatsCovered ?? []).filter((n) => Number.isFinite(n));
+    const span = covered.length
+      ? ` · beats ${Math.min(...covered)}-${Math.max(...covered)}`
+      : "";
+    const note = `${entry.step}${span} · ${entry.units.toLocaleString()} ${entry.unitKind}`;
 
     // Held before the work started: settle that hold rather than taking a
     // second one. Settling is capped at what was held, so an estimate that

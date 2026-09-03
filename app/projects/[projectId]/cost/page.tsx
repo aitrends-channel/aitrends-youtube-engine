@@ -36,6 +36,8 @@ type CreditLogEntry = {
   column: string | null;
   step: string | null;
   beatNumber: number | null;
+  beatsFrom?: number | null;
+  beatsTo?: number | null;
   provider: string | null;
   model: string | null;
   type: "charged" | "refunded";
@@ -134,6 +136,7 @@ function previewFor(
   beat: PreviewBeat | null,
   project: ProjectPreviewFields,
   beats: PreviewBeat[],
+  span: { from: number; to: number } | null,
 ): Preview | null {
   const of = (n: number | undefined) => (typeof n === "number" ? ` · beat ${n}` : "");
   if (!step) return null;
@@ -162,11 +165,19 @@ function previewFor(
   // opens them, every beat that has one, in order.
   if (step === "prompts_image" || step === "prompts_video") {
     const field = step === "prompts_image" ? "imagePrompt" : "videoPrompt";
-    const written = beats.filter((b) => (b[field] ?? "").trim());
+    // The beats this charge covered, where the charge recorded them. Older
+    // rows recorded nothing, so they still open the whole set rather than
+    // claiming a range they never knew.
+    const inSpan = (b: PreviewBeat) =>
+      span === null || (b.beatNumber >= span.from && b.beatNumber <= span.to);
+    const written = beats.filter((b) => (b[field] ?? "").trim() && inSpan(b));
     if (written.length) {
+      const what = step === "prompts_image" ? "Image" : "Video";
       return {
         kind: "text",
-        title: `${step === "prompts_image" ? "Image" : "Video"} prompts · ${written.length} beat${written.length === 1 ? "" : "s"}`,
+        title: span
+          ? `${what} prompts · beats ${span.from}-${span.to}`
+          : `${what} prompts · all ${written.length} beat${written.length === 1 ? "" : "s"}`,
         text: written.map((b) => `Beat ${b.beatNumber}\n${b[field]}`).join("\n\n"),
       };
     }
@@ -679,7 +690,15 @@ export default function ProjectCostPage({ params }: PageProps) {
                           const beat = r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null;
                           return (
                             <ResultCell
-                              preview={previewFor(r.step, beat, (project ?? {}) as ProjectPreviewFields, beatList)}
+                              preview={previewFor(
+                                r.step,
+                                beat,
+                                (project ?? {}) as ProjectPreviewFields,
+                                beatList,
+                                typeof r.beatsFrom === "number" && typeof r.beatsTo === "number"
+                                  ? { from: r.beatsFrom, to: r.beatsTo }
+                                  : null,
+                              )}
                               voiceoverUrl={r.step === "tts" ? beat?.voiceoverUrl : null}
                               onOpen={setPreview}
                             />

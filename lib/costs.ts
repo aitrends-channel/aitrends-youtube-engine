@@ -64,6 +64,12 @@ export interface CostEntry {
   /** Which beat the cost belongs to, when it is per-beat work. Recorded on the
    *  credit ledger row so a charge can be traced to the clip that caused it. */
   beatNumber?: number | null;
+  /** Which beats one call covered, where the work is per-chunk rather than
+   *  per-beat: a prompt-writing call writes five beats and belongs to none of
+   *  them. Recorded in the ledger note as "beats 7-11", which is what lets the
+   *  usage log show the prompts THAT charge produced rather than every prompt
+   *  in the project. */
+  beatsCovered?: number[] | null;
   /** An open reservation taken before the work started. When present the
    *  charge settles it rather than reserving again, which is the difference
    *  between money held in advance and money taken afterwards. */
@@ -600,6 +606,8 @@ export async function logClaudeUsage(args: {
   } | null | undefined;
   /** The caller settled a hold covering this call. */
   alreadyHeld?: boolean;
+  /** The beats this one call wrote for, where it wrote for several. */
+  beatsCovered?: number[] | null;
 }): Promise<void> {
   const u = args.usage;
   if (!u) return;
@@ -610,6 +618,7 @@ export async function logClaudeUsage(args: {
     provider: args.provider ?? ("anthropic" as const),
     model: args.model,
     alreadyHeld: args.alreadyHeld,
+    beatsCovered: args.beatsCovered,
   };
   await Promise.all([
     logProjectCost({ ...base, units: u.input_tokens                ?? 0, unitKind: "claude_tokens_in" }),
@@ -654,6 +663,8 @@ export async function logAnthropicCost(args: {
   kieCreditsConsumed: number | null;
   /** The caller settled a hold covering this call. */
   alreadyHeld?: boolean;
+  /** The beats this one call wrote for, where it wrote for several. */
+  beatsCovered?: number[] | null;
 }): Promise<void> {
   if (isDirectRouting(args.routing)) {
     await logClaudeUsage({
@@ -664,6 +675,7 @@ export async function logAnthropicCost(args: {
       model: args.model,
       usage: args.usage,
       alreadyHeld: args.alreadyHeld,
+      beatsCovered: args.beatsCovered,
     });
     return;
   }
@@ -680,6 +692,7 @@ export async function logAnthropicCost(args: {
       model: args.model,
       units: args.kieCreditsConsumed,
       unitKind: "kie_credits",
+      beatsCovered: args.beatsCovered,
     });
   }
 }

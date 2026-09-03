@@ -40,6 +40,11 @@ export interface CreditLogEntry {
   step: string | null;
   /** Which beat, where the charge belongs to one. */
   beatNumber: number | null;
+  /** The beats one call covered, where the work was per-chunk: prompt writing
+   *  bills per call and a call writes several beats. Written into the note at
+   *  charge time; null on rows charged before that was recorded. */
+  beatsFrom: number | null;
+  beatsTo: number | null;
   provider: string | null;
   /** The model that served this step, where one is known. Rendered for admins
    *  only, but sent to everyone: it is not secret, and gating the payload as
@@ -220,7 +225,10 @@ export async function GET(
   for (const row of (ledger ?? []) as
     { kind: string; credits: number | string; note: string | null; created_at: string;
       beat_number: number | null; provider: string | null }[]) {
-    const step = (row.note ?? "").split(" · ")[0]?.trim();
+    const note = row.note ?? "";
+    const step = note.split(" · ")[0]?.trim();
+    // "prompts_video · beats 7-11 · 0.05 kie_credits"
+    const span = /(?:^|·)\s*beats\s+(\d+)-(\d+)/i.exec(note);
     const col = step ? stepToColumn[step] : undefined;
     const credits = Number(row.credits);
     log.push({
@@ -230,6 +238,8 @@ export async function GET(
       column: col ?? null,
       step: step || null,
       beatNumber: row.beat_number,
+      beatsFrom: span ? Number(span[1]) : null,
+      beatsTo: span ? Number(span[2]) : null,
       provider: row.provider,
       model: step ? modelByStep[step] ?? null : null,
       type: credits < 0 ? "charged" : "refunded",
