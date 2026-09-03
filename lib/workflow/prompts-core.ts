@@ -2337,6 +2337,25 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     throw new Error(`${queue.length} section${queue.length === 1 ? "" : "s"} could not be written after ${MAX_SWEEPS} attempts. Click Generate Remaining to finish them. Prompts saved so far are kept.`);
   }
 
+  // Every section came back. That is not the same as every beat in them having
+  // a prompt: a section of five that returns four counts as processed, and the
+  // run then reported done over the difference — 197 image prompts against 194
+  // video ones, with a green tick on the step. The image pass has re-read its
+  // beats since it had the same problem; this is the same check, worded the
+  // same way, so the gap surfaces as the resumable thing it is rather than as a
+  // number nobody reconciles.
+  const { data: afterRows } = await supabase
+    .from("project_beats")
+    .select("video_prompt")
+    .eq("project_id", projectId);
+  const stillMissing = (afterRows ?? []).filter((r) => !(r.video_prompt as string | null)?.trim()).length;
+  if (stillMissing > 0) {
+    const written = (afterRows ?? []).length - stillMissing;
+    throw new Error(
+      `${stillMissing} beat${stillMissing === 1 ? "" : "s"} still need a motion prompt. Click Generate Remaining to finish them. The ${written} already written are kept.`,
+    );
+  }
+
   await supabase
     .from("projects")
     .update({ prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
