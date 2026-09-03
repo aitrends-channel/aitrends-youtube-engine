@@ -609,7 +609,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
   stats: AdminStats | undefined;
   users: AdminUser[];
   projects: AdminProject[];
-  revenue: { totalCents: number; byPlan: Record<string, { cents: number; count: number }>; mrrCents: number; payingUserCount: number; launchedAt: string | null; daily?: { date: string; amountCents: number; count: number }[] } | undefined;
+  revenue: { totalCents: number; totalNetCents?: number; byPlan: Record<string, { cents: number; count: number }>; mrrCents: number; payingUserCount: number; launchedAt: string | null; daily?: { date: string; amountCents: number; count: number }[] } | undefined;
   activity: ActivityPoint[];
 }) {
   const [salesHover, setSalesHover] = useState<number | null>(null);
@@ -7598,7 +7598,15 @@ export default function AdminPage() {
   // figures (last 30 / 365 days), not amortized recurring math.
   const { data: revenue } = useSWR<{
     totalCents: number;
-    byPlan: Record<string, { cents: number; count: number }>;
+    /** Dodo's cut of everything above, and what is left of it. Their fee is
+     *  taken at payout and appears on no payment, so it is computed rather
+     *  than read. */
+    totalFeeCents: number;
+    totalNetCents: number;
+    mrrNetCents: number;
+    arrNetCents: number;
+    feeRate: { percent: number; fixedCents: number };
+    byPlan: Record<string, { cents: number; netCents: number; count: number }>;
     mrrCents: number;
     arrCents: number;
     payingUserCount: number;
@@ -9780,12 +9788,17 @@ export default function AdminPage() {
                   {
                     label: "Total Revenue",
                     value: `$${totalRevenue.toFixed(2)}`,
-                    sub: (["founder", "starter", "pro"] as const)
-                      .map((p) => `${PLAN_LABEL[p] ?? p}: $${((revenue?.byPlan?.[p]?.cents ?? 0) / 100).toFixed(2)}`)
-                      .join("  ·  "),
+                    // What Dodo leaves us. Their fee is not on the payment and
+                    // was in none of these figures, so every card carries the
+                    // net beneath the gross rather than one of the two being
+                    // quietly assumed.
+                    sub: `net $${((revenue?.totalNetCents ?? 0) / 100).toFixed(2)}  ·  `
+                      + (["founder", "starter", "pro"] as const)
+                        .map((p) => `${PLAN_LABEL[p] ?? p}: $${((revenue?.byPlan?.[p]?.cents ?? 0) / 100).toFixed(2)}`)
+                        .join("  ·  "),
                   },
-                  { label: "Est. MRR",       value: `$${mrr.toFixed(2)}` },
-                  { label: "Est. ARR",       value: `$${arr.toFixed(2)}` },
+                  { label: "Est. MRR", value: `$${mrr.toFixed(2)}`, sub: `net $${((revenue?.mrrNetCents ?? 0) / 100).toFixed(2)}` },
+                  { label: "Est. ARR", value: `$${arr.toFixed(2)}`, sub: `net $${((revenue?.arrNetCents ?? 0) / 100).toFixed(2)}` },
                 ].map(({ label, value, ...card }) => (
                   <div key={label} className="p-4 rounded-xl text-center space-y-1"
                     style={{ background: "oklch(0.55 0.18 65 / 0.06)", border: "1px solid oklch(0.55 0.18 65 / 0.12)" }}>
@@ -9799,6 +9812,15 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+
+              {/* What "net" means, once, rather than in three tooltips. */}
+              <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.50 0 0)" }}>
+                Gross is Dodo&apos;s settlement amount: sales tax and VAT are theirs to remit and are already
+                outside it. Net takes off their fee, {((revenue?.feeRate?.percent ?? 0.04) * 100).toFixed(0)}% plus
+                ${(((revenue?.feeRate?.fixedCents ?? 40)) / 100).toFixed(2)} per payment, which is charged at payout
+                and appears on no payment record — so it was in none of these figures until now. Cross-border and
+                currency-conversion surcharges are not modelled, so the real net is a little lower again.
+              </p>
 
               {/* Monthly revenue chart */}
               <div className="p-4 rounded-2xl space-y-3"

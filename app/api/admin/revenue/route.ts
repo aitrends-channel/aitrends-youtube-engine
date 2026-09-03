@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { isAdminUser } from "@/lib/admin";
+import { dodoFeeCents, DODO_FEE_PERCENT, DODO_FEE_FIXED_CENTS } from "@/lib/dodo/fees";
 import { isProductionEnv } from "@/lib/env";
 
 // Revenue stats sourced from the immutable revenue_events ledger
@@ -107,16 +108,25 @@ export async function GET() {
   });
 
   // Total — full lifetime revenue regardless of cutoff, in USD cents.
+  //
+  // Gross, which is what a settlement amount is. Dodo's fee comes off at payout
+  // and is on none of these rows, so it is computed per payment (the fixed part
+  // is per transaction) and reported beside the total rather than folded into
+  // it: both numbers are worth having, and only one of them is the ledger.
   const totalCents = rows.reduce((sum, r) => sum + usdCents(r), 0);
+  const totalFeeCents = rows.reduce((sum, r) => sum + dodoFeeCents(usdCents(r)), 0);
+  const totalNetCents = totalCents - totalFeeCents;
 
   // Lifetime revenue + payment count per plan, for the Total card's
   // breakdown line and the payments-table filter cards. Events written
   // before the plan was known land under "other".
-  const byPlan: Record<string, { cents: number; count: number }> = {};
+  const byPlan: Record<string, { cents: number; netCents: number; count: number }> = {};
   for (const r of rows) {
     const plan = (r.plan ?? "other").toLowerCase();
-    const entry = (byPlan[plan] ??= { cents: 0, count: 0 });
-    entry.cents += usdCents(r);
+    const entry = (byPlan[plan] ??= { cents: 0, netCents: 0, count: 0 });
+    const cents = usdCents(r);
+    entry.cents += cents;
+    entry.netCents += cents - dodoFeeCents(cents);
     entry.count += 1;
   }
 
@@ -133,12 +143,15 @@ export async function GET() {
   const ONE_YEAR_MS    = 365 * 24 * 60 * 60 * 1000;
   let mrrCents = 0;
   let arrCents = 0;
+  let mrrNetCents = 0;
+  let arrNetCents = 0;
   const payingEmails = new Set<string>();
   for (const r of rows) {
     const occurred = r.occurred_at ? new Date(r.occurred_at).getTime() : 0;
     const cents = usdCents(r);
-    if (now - occurred <= THIRTY_DAYS_MS) mrrCents += cents;
-    if (now - occurred <= ONE_YEAR_MS)    arrCents += cents;
+    const net = cents - dodoFeeCents(cents);
+    if (now - occurred <= THIRTY_DAYS_MS) { mrrCents += cents; mrrNetCents += net; }
+    if (now - occurred <= ONE_YEAR_MS)    { arrCents += cents; arrNetCents += net; }
     if (r.user_email) payingEmails.add(r.user_email.toLowerCase());
   }
   const payingUserCount = payingEmails.size;
@@ -204,6 +217,11 @@ export async function GET() {
 
   return NextResponse.json({
     totalCents,
+    totalFeeCents,
+    totalNetCents,
+    mrrNetCents,
+    arrNetCents,
+    feeRate: { percent: DODO_FEE_PERCENT, fixedCents: DODO_FEE_FIXED_CENTS },
     byPlan,
     unconverted,
     mrrCents,
