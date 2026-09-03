@@ -2023,17 +2023,39 @@ export default function GeneratePage({ params }: PageProps) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ projectId, beatNumber, taskId, modelId: runImageModel }),
             });
-            const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
+            const data = await res.json().catch(() => ({})) as { status?: string; error?: string; url?: string };
             const status = !res.ok ? "error" : (data.status ?? "pending");
-            return { beatNumber, taskId, status, error: data.error };
+            return { beatNumber, taskId, status, error: data.error, url: data.url };
           })
         );
 
         const toRemove: number[] = [];
         for (let i = 0; i < pollResults.length; i++) {
           if (pollResults[i].status === "fulfilled") {
-            const { status, error } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string; error?: string }>).value;
-            if (status === "done") { successCount++; setImagesProgress(successCount); toRemove.push(i); }
+            const { beatNumber, status, error, url } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string; error?: string; url?: string }>).value;
+            if (status === "done") {
+              successCount++; setImagesProgress(successCount); toRemove.push(i);
+              // Draw it now. The run used to hold every finished image until
+              // the last one landed, so a 63-image run showed 62 blank tiles
+              // for as long as the slowest of them took. The poll already
+              // carries the URL, so the tile it belongs to is updated in the
+              // cache with no extra request, and the mutate() after the loop
+              // is left as the reconciliation it always was.
+              if (url) {
+                void mutate(
+                  (current?: { beats?: Beat[] } & Record<string, unknown>) => {
+                    if (!current?.beats) return current;
+                    return {
+                      ...current,
+                      beats: current.beats.map((b) =>
+                        b.beatNumber === beatNumber ? { ...b, imageUrl: url, imageStatus: "done" } : b,
+                      ),
+                    };
+                  },
+                  { revalidate: false },
+                );
+              }
+            }
             else if (status === "failed") {
               // TERMINAL: KIE itself reported the task failed. Surface it
               // and stop polling this beat.
@@ -2808,7 +2830,13 @@ export default function GeneratePage({ params }: PageProps) {
                         </span>
                       </div>
                     )}
-                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && !isOutOfCreditsMessage(imageRunError) && (
+                    {/* isPartial alone hid this whole banner when NOTHING
+                        generated: a run that failed on every beat, which is
+                        exactly the run that most needs explaining, reported
+                        nothing at all. A provider refusal (an unfunded
+                        account, a rejected key) fails every submit, so it was
+                        the invisible case. */}
+                    {(isPartial || !!imageRunError) && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && !isOutOfCreditsMessage(imageRunError) && (
                       <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                         <div className="flex-1 space-y-1">
