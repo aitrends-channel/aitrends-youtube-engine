@@ -118,6 +118,35 @@ export async function getAnthropicRouting(step?: WorkflowStep): Promise<Anthropi
  * heclus_direct, Heclus is deliberately covering it — quietly spending the
  * client's Anthropic key there would override that decision.
  */
+/**
+ * Whether the media operator switch is the thing deciding this user's routing,
+ * and has moved them somewhere GPT cannot follow.
+ *
+ * The switch governs work Heclus pays for, so it only reaches wallet-funded
+ * accounts. That distinction is the whole answer to a question the routing
+ * alone cannot answer: heclus_direct arrives two ways, from this switch and
+ * from the per-step routing card, and only the first means "the admin moved
+ * this surface". Treating both the same took every BYO customer's channel
+ * analysis off GPT-through-KIE, which is where they have always run it and
+ * where their card says it runs.
+ *
+ * PoYo and Anthropic both speak the Anthropic Messages API and neither relays
+ * GPT or Gemini, so a step configured for one of those runs Claude instead —
+ * see getAnthropicClient, which logs when it happens.
+ */
+export async function operatorForcesClaude(userId: string): Promise<boolean> {
+  try {
+    if ((await getFundingModeById(userId)) !== "wallet") return false;
+    const { getMediaOperator } = await import("@/lib/operators/routing");
+    const chatOperator = await getMediaOperator("chat");
+    return chatOperator === "poyo" || chatOperator === "anthropic";
+  } catch {
+    // Unreadable switch or funding mode: the honest answer is no, which leaves
+    // the per-step provider exactly as configured.
+    return false;
+  }
+}
+
 export async function getRoutingForUser(userId: string, step?: WorkflowStep): Promise<AnthropicRouting> {
   const routing = await getAnthropicRouting(step);
 

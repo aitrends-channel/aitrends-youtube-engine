@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
-import { getRoutingForUser, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
+import { getRoutingForUser, getActiveProductKey, operatorForcesClaude, type WorkflowStep, type AnthropicRouting } from "./routing";
 import { getPromptProvider, isKieProvider, kieRoutingFor, supportsProviderChoice, type PromptProvider } from "./providers";
 import { fetchKieBalance } from "@/lib/kie/client";
 import { KieGptClient } from "./kieGptClient";
@@ -319,17 +319,27 @@ export async function getAnthropicClient(
   // for GPT. Config → Anthropic → Per step chooses a model; Config → Media
   // Operator chooses a provider, and the provider is the coarser decision.
   //
+  // The switch governs work Heclus pays for, so this reaches wallet-funded
+  // accounts only. A customer on their own keys keeps the step exactly as it is
+  // configured.
+  //
   // The consequence is deliberate and worth knowing: a step configured for GPT
   // runs Claude while the switch is off KIE, because an Anthropic-format
   // Messages API is the path this client speaks and neither PoYo nor Anthropic
   // serves GPT. Logged rather than silent — "why is my GPT step answering like
   // Claude" is otherwise unanswerable from the outside. Restoring GPT under
   // those operators means another facade beside the KIE one, not removing this.
-  const operatorOverridesProvider =
-    (routing === "heclus_poyo" || routing === "heclus_direct") && isKieProvider(provider);
+  //
+  // Asked of the switch itself rather than read off the routing, because
+  // heclus_direct arrives two ways: from this switch, and from the per-step
+  // routing card. Only the first means an admin moved the surface. Reading the
+  // routing alone took every BYO customer's channel analysis off
+  // GPT-through-KIE, where it has always run and where their step is
+  // configured to run it.
+  const operatorOverridesProvider = isKieProvider(provider) && await operatorForcesClaude(userId);
   if (operatorOverridesProvider) {
     console.log(
-      `[claude] step=${step ?? "-"} configured for ${provider}, but this routing is ${routing} — running Claude instead`,
+      `[claude] step=${step ?? "-"} configured for ${provider}, but the media operator moved this account to ${routing} — running Claude instead`,
     );
   }
 

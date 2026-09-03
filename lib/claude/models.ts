@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
-import { getRoutingForUser, isClientPaid, isWorkflowStep, type WorkflowStep } from "@/lib/claude/routing";
+import { getRoutingForUser, isClientPaid, isWorkflowStep, operatorForcesClaude, type WorkflowStep } from "@/lib/claude/routing";
 import { getModelForProvider, getPromptProvider, isKieProvider } from "@/lib/claude/providers";
 import { meetsTier, tierForPlan, tierRank, planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
@@ -260,12 +260,13 @@ export function invalidateDefaultClaudeModelCache(): void {
  *  Claude and must be handed a Claude model id.
  *
  *  PoYo and Anthropic both speak the Anthropic Messages API and neither relays
- *  GPT, so both override the per-step provider in getAnthropicClient. This is
- *  the same decision, and it has to give the same answer or the client builds
- *  an Anthropic call around a model id like gpt-5-6-sol. */
-async function routingForcesClaude(step: WorkflowStep, userId: string): Promise<boolean> {
-  const routing = await getRoutingForUser(userId, step);
-  return routing === "heclus_poyo" || routing === "heclus_direct";
+ *  GPT, so both override the per-step provider in getAnthropicClient — but only
+ *  when it is the media operator that moved the account there, which is why
+ *  this asks the switch rather than reading the routing. Same decision as the
+ *  client's, and it has to give the same answer or the client builds an
+ *  Anthropic call around a model id like gpt-5-6-sol. */
+async function routingForcesClaude(_step: WorkflowStep, userId: string): Promise<boolean> {
+  return operatorForcesClaude(userId);
 }
 
 export async function resolveDefaultModel(step?: WorkflowStep, userId?: string): Promise<ClaudeModelParams> {
