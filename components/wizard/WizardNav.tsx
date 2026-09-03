@@ -734,7 +734,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               className="flex min-w-0 flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80"
               style={{ color: "var(--c-60)" }}
             >
-              <Menu size={15} className="shrink-0" />
+              <Menu size={19} className="shrink-0" />
               {(() => {
                 const active = PHASES.find((p) => getPhaseStatus(p) === "active");
                 if (!active) return <span className="text-xs">Steps</span>;
