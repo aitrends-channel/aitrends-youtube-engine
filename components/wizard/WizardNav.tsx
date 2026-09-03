@@ -603,37 +603,19 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
       </div>
 
-      {/* ── Mobile top bar (fixed, 56px — pages offset by pt-14) ────── */}
+      {/* ── Mobile top bar + step line (fixed, 92px; pages offset by it) ── */}
       <div
         className="md:hidden fixed top-0 inset-x-0 z-[200] flex flex-col shrink-0"
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
-        {/* Logo row. On a phone this is the whole nav: a row of nine dots
-            under it spent 50px saying what the drawer says properly, and the
-            labels under them were unreadable at that size anyway. The menu
-            opens the same drawer the dots opened, and the title says which
-            step you are on, which is what the dots were really for. */}
+        {/* Logo row */}
         <div className="h-14 flex items-center justify-between px-4 gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {!hideSteps && (
-              <button
-                onClick={() => setDrawerOpen(true)}
-                aria-label="Open the workflow steps"
-                className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
-                style={{ color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-              >
-                <Menu size={16} />
-              </button>
-            )}
-            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
-                <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
-              </div>
-              <span className="text-sm font-bold truncate" style={{ color: "var(--c-90)" }}>
-                {(!hideSteps && PHASES.find((p) => getPhaseStatus(p) === "active")?.label) || "Heclus"}
-              </span>
-            </button>
-          </div>
+          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
+            </div>
+            <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
+          </button>
 
           <div className="flex items-center gap-2 shrink-0">
             {topRightExtra}
@@ -740,6 +722,30 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           </div>
         </div>
 
+        {/* Where you are, and the way to everywhere else, on one line. This
+            row used to be nine 4px dots with a label floating under them: the
+            dots opened the drawer, which is what a menu button does, and they
+            were unreadable at that size. */}
+        {!hideSteps && (
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open the workflow steps"
+            className="h-9 flex items-center gap-2 px-4 w-full text-left transition-opacity hover:opacity-80"
+            style={{ borderTop: "1px solid var(--bd-6)", color: "var(--c-60)" }}
+          >
+            <Menu size={15} className="shrink-0" />
+            {(() => {
+              const active = PHASES.find((p) => getPhaseStatus(p) === "active");
+              if (!active) return <span className="text-xs">Steps</span>;
+              return (
+                <span className="text-xs truncate">
+                  <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{active.label}</span>
+                  <span style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
+                </span>
+              );
+            })()}
+          </button>
+        )}
       </div>
 
       {/* ── Mobile drawer ───────────────────────────────────────────── */}

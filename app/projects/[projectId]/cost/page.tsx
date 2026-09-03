@@ -525,7 +525,7 @@ export default function ProjectCostPage({ params }: PageProps) {
         hideSteps={summaryMode}
       />
 
-      <main className={`flex-1 overflow-y-auto ${summaryMode ? "pt-16 md:pt-20" : "pt-14 md:pt-0"}`}>
+      <main className={`flex-1 overflow-y-auto ${summaryMode ? "pt-16 md:pt-20" : "pt-[92px] md:pt-0"}`}>
         <div className="sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-lg">Cost breakdown</h1>
