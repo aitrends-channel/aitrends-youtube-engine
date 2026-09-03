@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
+import { isTtsConcurrencyError } from "@/lib/kie/tts";
 import { logProjectCost } from "@/lib/costs";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
@@ -313,6 +314,39 @@ export async function POST(req: Request) {
           let failed = 0;
           let stoppedEarly = false;
 
+          // How wide this run may actually go.
+          //
+          // BATCH_SIZE is what we would like; the customer's ElevenLabs plan
+          // decides what they get, and it says so only by refusing — "too many
+          // concurrent requests", on a plan whose cap can be two. Retrying into
+          // that wall is what turned one customer's 197-beat run into 30 failed
+          // beats: the slots were held by our own other workers, so every retry
+          // met the same refusal.
+          //
+          // So the run narrows itself. Each refusal takes a slot off the cap
+          // and pauses everyone briefly; the beat is retried rather than
+          // failed. It never widens again: the cap it settles on is the one the
+          // plan allows, and finishing slowly beats failing wide.
+          let cap = Math.max(1, Math.min(BATCH_SIZE, toGenerate.length));
+          let inFlight = 0;
+          let pauseUntil = 0;
+          let narrowed = false;
+          const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+          const yieldToCap = async () => {
+            while (!stoppedEarly && (inFlight >= cap || Date.now() < pauseUntil)) {
+              await sleep(Math.min(1000, Math.max(150, pauseUntil - Date.now())));
+            }
+          };
+          const narrow = () => {
+            pauseUntil = Date.now() + 5000;
+            if (cap > 1) {
+              cap -= 1;
+              narrowed = true;
+              console.warn(`[tts-beats] ElevenLabs refused on concurrency — narrowing to ${cap} at a time`);
+              send({ type: "status", message: `Your ElevenLabs plan allows fewer at once — continuing ${cap} at a time…` });
+            }
+          };
+
           // Index every beat by number so processBeat can look up the
           // previous beat's script_segment (which may itself have been
           // generated in a much earlier run) for the overlap-dedupe step.
@@ -376,7 +410,24 @@ export async function POST(req: Request) {
 
               let tts: Awaited<ReturnType<typeof generateTTS>>;
               try {
-                tts = await generateTTS(ttsText, voiceId, undefined, undefined, user.id, ttsModel);
+                // A concurrency refusal is a queue, not a failure. The provider
+                // retry inside generateTTS has already waited; this waits for
+                // the run to narrow and tries the beat again, so a plan with a
+                // cap of two finishes rather than reporting a wall of red.
+                const CONCURRENCY_ATTEMPTS = 4;
+                let attempt = 0;
+                for (;;) {
+                  try {
+                    tts = await generateTTS(ttsText, voiceId, undefined, undefined, user.id, ttsModel);
+                    break;
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    if (!isTtsConcurrencyError(msg) || attempt >= CONCURRENCY_ATTEMPTS) throw err;
+                    attempt += 1;
+                    narrow();
+                    await sleep(3000 * attempt);
+                  }
+                }
               } catch (err) {
                 await releaseHold(hold, "voiceover failed");
                 throw err;
@@ -489,9 +540,16 @@ export async function POST(req: Request) {
                   throw e;
                 }
               }
+              await yieldToCap();
+              if (stoppedEarly) return;
               const myIdx = nextIdx++;
               if (myIdx >= toGenerate.length) return;
-              await processBeat(toGenerate[myIdx]);
+              inFlight += 1;
+              try {
+                await processBeat(toGenerate[myIdx]);
+              } finally {
+                inFlight -= 1;
+              }
             }
           };
           await Promise.all(
@@ -505,6 +563,9 @@ export async function POST(req: Request) {
             type: "done",
             generated: succeeded,
             failed,
+            // Said once at the end as well as when it happened: a run that took
+            // twice as long deserves a reason that is still on screen.
+            narrowedTo: narrowed ? cap : undefined,
             total: totalToGenerate,
             remaining: stoppedEarly ? totalToGenerate - completed : 0,
             stopped: stoppedEarly,

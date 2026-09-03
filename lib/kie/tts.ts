@@ -19,6 +19,17 @@ const EL_BASE = "https://api.elevenlabs.io";
 const MAX_CHARS = 5000;
 const CHUNK_RETRY_ATTEMPTS = 3;
 
+/** ElevenLabs refusing because too many of our requests are already open.
+ *
+ *  Every plan carries a concurrency cap — two on the cheapest ones — and a
+ *  voiceover run is the one place we deliberately go wide. Worth telling apart
+ *  from the other transients: it clears by waiting for a slot rather than by
+ *  trying again immediately, and the caller can widen the gap by running fewer
+ *  beats at once, which is the only thing that actually fixes it. */
+export function isTtsConcurrencyError(message: string | null | undefined): boolean {
+  return /too many concurrent|concurrent request|max.*concurrenc/i.test(message ?? "");
+}
+
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
 }
@@ -238,7 +249,12 @@ async function generateChunkWithRetry(
         throw err;
       }
       if (attempt === CHUNK_RETRY_ATTEMPTS - 1) break;
-      const delay = attempt === 0 ? 2000 : attempt === 1 ? 5000 : 10000;
+      // A concurrency refusal needs a slot to free up, not a moment for a blip
+      // to pass, and the slot is held by our own other beats. Waiting longer is
+      // the only thing that helps from in here; the run's own cap does the rest.
+      const delay = isTtsConcurrencyError(msg)
+        ? (attempt === 0 ? 6000 : attempt === 1 ? 15000 : 30000)
+        : (attempt === 0 ? 2000 : attempt === 1 ? 5000 : 10000);
       console.warn(`[TTS] chunk attempt ${attempt + 1}/${CHUNK_RETRY_ATTEMPTS} failed: ${msg}; retrying in ${delay}ms`);
       onStatus?.(`Retrying (${attempt + 2}/${CHUNK_RETRY_ATTEMPTS})…`);
       await sleep(delay);
