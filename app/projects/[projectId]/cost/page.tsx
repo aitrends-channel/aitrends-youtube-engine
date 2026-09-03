@@ -133,6 +133,7 @@ function previewFor(
   step: string | null,
   beat: PreviewBeat | null,
   project: ProjectPreviewFields,
+  beats: PreviewBeat[],
 ): Preview | null {
   const of = (n: number | undefined) => (typeof n === "number" ? ` · beat ${n}` : "");
   if (!step) return null;
@@ -152,6 +153,22 @@ function previewFor(
     }
     if (step === "script" && beat.scriptSegment) {
       return { kind: "text", title: `Script${of(beat.beatNumber)}`, text: beat.scriptSegment };
+    }
+  }
+
+  // Prompt writing is billed per call, not per beat: one charge covers a chunk
+  // of the script and the row carries no beat number, which left every one of
+  // them showing a dash. What that call produced IS the prompts, so the row
+  // opens them, every beat that has one, in order.
+  if (step === "prompts_image" || step === "prompts_video") {
+    const field = step === "prompts_image" ? "imagePrompt" : "videoPrompt";
+    const written = beats.filter((b) => (b[field] ?? "").trim());
+    if (written.length) {
+      return {
+        kind: "text",
+        title: `${step === "prompts_image" ? "Image" : "Video"} prompts · ${written.length} beat${written.length === 1 ? "" : "s"}`,
+        text: written.map((b) => `Beat ${b.beatNumber}\n${b[field]}`).join("\n\n"),
+      };
     }
   }
 
@@ -332,12 +349,15 @@ export default function ProjectCostPage({ params }: PageProps) {
 
   // The beat each charge belongs to, for the Result column. Already in memory:
   // the page loads the project for the wizard nav, and the beats ride with it.
+  const beatList = useMemo(
+    () => ((project as { beats?: PreviewBeat[] } | undefined)?.beats ?? []),
+    [project],
+  );
   const beatsByNumber = useMemo(() => {
-    const rows = ((project as { beats?: PreviewBeat[] } | undefined)?.beats ?? []);
     const map = new Map<number, PreviewBeat>();
-    for (const b of rows) if (typeof b.beatNumber === "number") map.set(b.beatNumber, b);
+    for (const b of beatList) if (typeof b.beatNumber === "number") map.set(b.beatNumber, b);
     return map;
-  }, [project]);
+  }, [beatList]);
 
   // A charge is negative in the ledger and a refund positive; the list carries
   // the direction in `type` and an unsigned amount, so the net is one subtraction
@@ -659,7 +679,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                           const beat = r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null;
                           return (
                             <ResultCell
-                              preview={previewFor(r.step, beat, (project ?? {}) as ProjectPreviewFields)}
+                              preview={previewFor(r.step, beat, (project ?? {}) as ProjectPreviewFields, beatList)}
                               voiceoverUrl={r.step === "tts" ? beat?.voiceoverUrl : null}
                               onOpen={setPreview}
                             />
