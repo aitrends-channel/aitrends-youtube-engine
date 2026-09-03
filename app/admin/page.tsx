@@ -2937,8 +2937,8 @@ function HeclusCreditsPanel() {
           neutral={data?.walletAdminOnly !== false}
           label="Rollout"
           detail={data?.walletAdminOnly === false
-            ? "Live for customers."
-            : "Admins only. Flip WALLET_FUNDING_ADMIN_ONLY in lib/funding.ts to release it."}
+            ? "Live. Every account on a Heclus Credits plan spends credits; everything else keeps its own keys."
+            : "Admins only."}
         />
         <div className="sm:col-span-2 text-sm pt-1" style={{ color: "var(--c-42)" }}>
           {data?.wallet.accounts ?? 0} wallet{(data?.wallet.accounts ?? 0) === 1 ? "" : "s"} holding{" "}

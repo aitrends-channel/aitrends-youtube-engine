@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { getEffectivePaymentMode } from "@/lib/env";
-import { WALLET_FUNDING_ADMIN_ONLY } from "@/lib/funding";
 import { DEFAULT_CREDIT_RATES, USD_PER_CREDIT, invalidateRatesCache, creditsForUnits, type CreditRates, type NumericRateKey } from "@/lib/pricing";
 import type { CostStep, CostUnitKind } from "@/lib/costs";
 
@@ -130,7 +129,7 @@ export async function GET() {
       rates: "credit_rates" in row,
     },
     keys: { kie, elevenlabs },
-    walletAdminOnly: WALLET_FUNDING_ADMIN_ONLY,
+    walletAdminOnly: false,
     wallet,
     breakdown,
   } satisfies HeclusCreditsConfig);

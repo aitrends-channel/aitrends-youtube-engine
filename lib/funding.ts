@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
+import { billingPlanOf } from "@/lib/plans-gating";
+import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 import type { User } from "@supabase/supabase-js";
 
 // Whose provider account pays for a user's generations.
@@ -16,31 +18,29 @@ import type { User } from "@supabase/supabase-js";
 export type FundingMode = "byo" | "wallet";
 
 /**
- * Wallet funding is admin-only while it is brought up.
+ * Who the wallet is for: whoever bought a plan that sells credits.
  *
- * The same shape as VIDEO_CREDITS_ADMIN_ONLY in lib/credits.ts, and for the same
- * reason: routing customer generations onto Heclus's provider keys is a spend
- * decision, and it should be one flag rather than a deploy.
+ * This was a blanket admin-only flag, and the reason it existed is the reason
+ * it could not simply be flipped. account_settings.funding_mode defaults to
+ * 'wallet', so 78 production accounts carried it while having no Heclus plan
+ * behind them and therefore no balance — turning the flag off pointed every one
+ * of them at a wallet holding nothing, and eleven were paying customers on
+ * legacy Starter and Pro. That is what happened on 2026-09-01 and why it went
+ * back on.
  *
- * While true, every non-admin resolves to "byo" whatever their column says, so
- * an accidental early flip of a user's mode cannot start spending Heclus's
- * balance. Flipping this to false is what puts the feature in front of
- * customers.
+ * The plan is the safer question, and the truer one. An account on
+ * heclus_starter, heclus_pro or heclus_max bought credits, so it spends them; a
+ * legacy Starter, a Founder or a signup with no plan keeps its own keys, which
+ * is the arrangement it was sold. New subscriptions land on the new products,
+ * so they get the wallet from their first generation with nothing to switch on.
  *
- * Back ON 2026-09-01. It was off since 2026-08-26 to open the wallet on
- * staging, where every account is ours. Promoting that to production honoured
- * account_settings.funding_mode for real customers for the first time: the
- * column defaults to 'wallet', 78 production accounts carried it, and with no
- * Heclus plan behind them their balance is zero, so every one of them was
- * refused at generation with "empty, cannot generate". Eleven were paying
- * customers on legacy Starter and Pro.
- *
- * True restores exactly what production did before that deploy, which is to
- * ignore the column and run every non-admin on their own keys. It belongs with
- * the flags in lib/rollout.ts: the wallet is part of this release and should
- * have shipped gated with the rest of it.
+ * Admins stay on the wallet whatever they are on: it is how the release gets
+ * exercised with real money.
  */
-export const WALLET_FUNDING_ADMIN_ONLY = true;
+function walletEligible(user: User | null | undefined): boolean {
+  if (isAdminUser(user)) return true;
+  return isHeclusCreditsPlan(billingPlanOf(user));
+}
 
 const cacheMap = new Map<string, { mode: FundingMode; at: number }>();
 const TTL_MS = 60_000;
@@ -57,9 +57,9 @@ export function invalidateFundingCache(userId: string) {
  * Heclus's. Being wrong the other way would generate on credit nobody has.
  */
 export async function getFundingMode(user: User): Promise<FundingMode> {
-  // Short-circuits the admin lookup inside getFundingModeById, since the answer
-  // is already here in the user object.
-  if (WALLET_FUNDING_ADMIN_ONLY && !isAdminUser(user)) return "byo";
+  // Short-circuits the lookup inside getFundingModeById, since the plan and the
+  // admin flag are both already here in the user object.
+  if (!walletEligible(user)) return "byo";
   return getFundingModeById(user.id);
 }
 
@@ -117,7 +117,9 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
     return "byo";
   }
 
-  if (mode === "wallet" && WALLET_FUNDING_ADMIN_ONLY && !(await isAdminById(userId))) {
+  // The column says what the account asked for; the plan says what it bought.
+  // Both have to agree before Heclus's keys pay for anything.
+  if (mode === "wallet" && !(await walletEligibleById(userId))) {
     mode = "byo";
   }
 
@@ -125,13 +127,14 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
   return mode;
 }
 
-/** isAdminUser needs the user object, and the choke points only have an id.
- *  Fail-closed: an unreadable account is not an admin, so the gate holds. */
-async function isAdminById(userId: string): Promise<boolean> {
+/** walletEligible needs the user object, and the choke points only have an id.
+ *  Fail-closed: an unreadable account is not on a credits plan, so the work
+ *  runs on the client's own key rather than on ours. */
+async function walletEligibleById(userId: string): Promise<boolean> {
   try {
     const { data, error } = await supabase.auth.admin.getUserById(userId);
     if (error || !data.user) return false;
-    return isAdminUser(data.user);
+    return walletEligible(data.user);
   } catch {
     return false;
   }

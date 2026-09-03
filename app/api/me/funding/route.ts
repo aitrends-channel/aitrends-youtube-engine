@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import {
-  getFundingMode, invalidateFundingCache, WALLET_FUNDING_ADMIN_ONLY, type FundingMode,
+  getFundingMode, invalidateFundingCache, type FundingMode,
 } from "@/lib/funding";
 import { isAdminUser } from "@/lib/admin";
 import { billingPlanOf, planSlugOf } from "@/lib/plans-gating";
@@ -124,10 +124,10 @@ async function statusFor(user: User): Promise<FundingStatus> {
     r ? `${r.name} ${r.priceDisplay}${r.periodDisplay}` : null;
   const dodo = ((user.app_metadata ?? {}) as { dodo?: Record<string, unknown> }).dodo ?? {};
 
-  // The rollout gate, stated as a reason rather than a missing option. While it
-  // is on, a customer choosing wallet would be told it worked and then resolve
-  // to byo on the next call, which is worse than being told it is unavailable.
-  const walletGated = WALLET_FUNDING_ADMIN_ONLY && !isAdminUser(user);
+  // Stated as a reason rather than a missing option: an account not on a
+  // credits plan that chose wallet would be told it worked and then resolve to
+  // byo on the next call, which is worse than being told what it needs.
+  const walletGated = !isAdminUser(user) && !isHeclusCreditsPlan(billingPlan);
 
   return {
     mode,
@@ -137,7 +137,9 @@ async function statusFor(user: User): Promise<FundingStatus> {
     onHeclusPlan: isHeclusCreditsPlan(billingPlan),
     canUseWallet: !walletGated,
     canUseByo: kieKeySet,
-    walletBlockedReason: walletGated ? "Heclus Credits is not open to all accounts yet." : null,
+    walletBlockedReason: walletGated
+      ? "Heclus Credits comes with the Starter, Pro and Max plans. Move to one of those to spend credits instead of your own keys."
+      : null,
     byoBlockedReason: kieKeySet
       ? null
       : "Add your own KIE key first, or your own account has nothing to generate with.",

@@ -16,6 +16,11 @@ import { isHeclusCreditsPlan } from "@/lib/plan-tier";
  * The heclus_starter / heclus_pro / heclus_max products, and with them every
  * allowance and gate keyed to those plans.
  *
+ * OPEN since 2026-09-03. Anyone can see and buy them, and a subscription taken
+ * out from here on is a credits subscription. Customers on the legacy products
+ * are untouched: they keep their prices, their keys and their entitlements
+ * until they choose to move.
+ *
  * This is the load-bearing flag. Almost everything else in the release hangs
  * off which plan an account is on, so keeping customers off the new products
  * keeps them off the new behaviour:
@@ -27,7 +32,7 @@ import { isHeclusCreditsPlan } from "@/lib/plan-tier";
  *
  * None of those needs its own flag while this one is on.
  */
-export const NEW_PLANS_ADMIN_ONLY = true;
+export const NEW_PLANS_ADMIN_ONLY = false;
 
 /**
  * The Assemble sound effects and elements feature: the Sounds and Elements
