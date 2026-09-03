@@ -4557,6 +4557,22 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     {assembling ? "Rendering…" : showPreview ? "Re-render" : "Render"}
                   </button>
+                  {/* The next step, beside the button that produced the thing
+                      it works on. Shown exactly when that button reads
+                      "Re-render": before a render there is no video to make a
+                      thumbnail for, and during one the video is changing. */}
+                  {showPreview && !assembling && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); router.push(`/projects/${projectId}/thumbnails`); }}
+                      disabled={previewLoadError}
+                      title={previewLoadError ? "Render the video again first — the cached render cannot be loaded." : "Make a thumbnail for this video"}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }}
+                    >
+                      Generate Thumbnail →
+                    </button>
+                  )}
                   {showPreview && previewUrl && !renderStale && (
                     <button
                       type="button"
@@ -7267,20 +7283,6 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-
-              {showPreview && previewUrl && (
-                <div className="mx-auto" style={{ maxWidth: previewMaxW }}>
-                  <button
-                    onClick={() => router.push(`/projects/${projectId}/thumbnails`)}
-                    disabled={previewLoadError}
-                    title={previewLoadError ? "Render the video again before continuing — the cached render can't be loaded." : undefined}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}
-                  >
-                    Generate Thumbnail →
-                  </button>
-                </div>
-              )}
 
               {!showPreview && !assembling && uploadFailedPreview && (
                 <div className="space-y-2">
