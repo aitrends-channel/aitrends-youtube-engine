@@ -1,9 +1,9 @@
 "use client";
 
 import useSWR from "swr";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { compactNumber, unitSuffix } from "@/lib/cost-display";
@@ -70,6 +70,110 @@ const STEP_LABEL: Record<string, string> = {
   assemble:         "Final video assembly",
   thumbnail:        "Thumbnail generation",
 };
+
+/** What the charge produced, as a thing rather than as a process. "Video prompt
+ *  generation" is what happened; "Video prompt" is what came out of it, and it
+ *  is what somebody scanning this column is looking for. */
+const STEP_KIND: Record<string, string> = {
+  channel_analysis: "Channel",
+  topic:            "Topic",
+  script:           "Script",
+  visuals:          "Visuals",
+  prompts_image:    "Image prompt",
+  prompts_video:    "Video prompt",
+  tts:              "Voiceover",
+  image_gen:        "Image",
+  video_gen:        "Video",
+  assemble:         "Video",
+  thumbnail:        "Thumbnail",
+  thumbnail_concept: "Thumbnail",
+  thumbnail_image:  "Thumbnail",
+};
+
+/** One beat, as much of it as this page needs. The project payload is wider
+ *  and untyped; naming the four fields keeps the preview honest about what it
+ *  can show. */
+interface PreviewBeat {
+  beatNumber: number;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  voiceoverUrl?: string | null;
+  imagePrompt?: string | null;
+  videoPrompt?: string | null;
+}
+
+/** Plays one voiceover without a player sitting in every row. */
+function AudioPreview({ url }: { url: string }) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  return (
+    <button
+      type="button"
+      title="Play the narration for this beat"
+      onClick={() => {
+        const el = ref.current ?? new Audio(url);
+        ref.current = el;
+        el.onended = () => setPlaying(false);
+        if (playing) { el.pause(); el.currentTime = 0; setPlaying(false); }
+        else { void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); }
+      }}
+      className="inline-flex h-7 w-11 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+    >
+      {playing ? <Square size={11} /> : <Play size={11} />}
+    </button>
+  );
+}
+
+/**
+ * What the charge bought, where there is something to show.
+ *
+ * A row naming beat 12 and a number is a receipt; the picture it paid for is
+ * the thing that says whether it was worth it. A clip shows the frame it was
+ * made from with a play badge, because a video element per row is a download
+ * per row for something nobody has asked to watch yet.
+ */
+function ResultCell({ step, beat }: { step: string | null; beat: PreviewBeat | null }) {
+  const none = <span style={{ color: "var(--c-30)" }}>—</span>;
+  if (!step || !beat) return none;
+
+  if (step === "image_gen" && beat.imageUrl) {
+    return (
+      <a href={beat.imageUrl} target="_blank" rel="noopener noreferrer" title="Open the full image">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={beat.imageUrl} alt={`Beat ${beat.beatNumber}`}
+          className="h-7 w-11 rounded-md object-cover transition-opacity hover:opacity-80"
+          style={{ border: "1px solid var(--bd-8)" }} loading="lazy" decoding="async" />
+      </a>
+    );
+  }
+  if (step === "video_gen" && beat.videoUrl) {
+    return (
+      <a href={beat.videoUrl} target="_blank" rel="noopener noreferrer" title="Open the clip"
+        className="relative inline-block h-7 w-11 rounded-md overflow-hidden transition-opacity hover:opacity-80"
+        style={{ border: "1px solid var(--bd-8)", background: "var(--bg-progress)" }}>
+        {beat.imageUrl && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={beat.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+        )}
+        <span className="absolute inset-0 flex items-center justify-center" style={{ background: "oklch(0 0 0 / 0.35)", color: "white" }}>
+          <Play size={11} />
+        </span>
+      </a>
+    );
+  }
+  if (step === "tts" && beat.voiceoverUrl) return <AudioPreview url={beat.voiceoverUrl} />;
+
+  const text = step === "prompts_image" ? beat.imagePrompt : step === "prompts_video" ? beat.videoPrompt : null;
+  if (text) {
+    return (
+      <span className="block truncate text-[11px]" title={text} style={{ color: "var(--c-45)" }}>
+        {text}
+      </span>
+    );
+  }
+  return none;
+}
 
 type CostsResponse = {
   projectId: string;
@@ -145,6 +249,15 @@ export default function ProjectCostPage({ params }: PageProps) {
 
   const cells = data?.columns;
   const log = data?.log ?? [];
+
+  // The beat each charge belongs to, for the Result column. Already in memory:
+  // the page loads the project for the wizard nav, and the beats ride with it.
+  const beatsByNumber = useMemo(() => {
+    const rows = ((project as { beats?: PreviewBeat[] } | undefined)?.beats ?? []);
+    const map = new Map<number, PreviewBeat>();
+    for (const b of rows) if (typeof b.beatNumber === "number") map.set(b.beatNumber, b);
+    return map;
+  }, [project]);
 
   // A charge is negative in the ledger and a refund positive; the list carries
   // the direction in `type` and an unsigned amount, so the net is one subtraction
@@ -406,22 +519,27 @@ export default function ProjectCostPage({ params }: PageProps) {
                   Nothing charged on this project yet.
                 </p>
               ) : (
-              <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[720px]" : "min-w-[560px]"}`}>
+              <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[980px]" : "min-w-[800px]"}`}>
                 {/* Fixed columns, so a long process name cannot squeeze the
                     amount, and the three narrow columns line up down the page
                     instead of shifting row to row. */}
                 <colgroup>
                   <col />
-                  {isAdmin && <col style={{ width: "190px" }} />}
+                  <col style={{ width: "120px" }} />
+                  {isAdmin && <col style={{ width: "170px" }} />}
                   <col style={{ width: "110px" }} />
+                  <col style={{ width: "100px" }} />
                   <col style={{ width: "110px" }} />
                   <col style={{ width: "160px" }} />
                 </colgroup>
                 <thead>
                   <tr>
+                    {/* Type is what came out, Action is what the credits did.
+                        The badge column used to be called Type, which left the
+                        table with no word for the thing being paid for. */}
                     {(isAdmin
-                      ? ["Process", "Model", "Type", "Credits", "Date/Time"]
-                      : ["Process", "Type", "Credits", "Date/Time"]
+                      ? ["Process", "Type", "Model", "Result", "Action", "Credits", "Date/Time"]
+                      : ["Process", "Type", "Result", "Action", "Credits", "Date/Time"]
                     ).map((h) => (
                       <th key={h}
                         className={`py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider ${h === "Credits" || h === "Date/Time" ? "text-right" : "text-left"}`}
@@ -444,12 +562,22 @@ export default function ProjectCostPage({ params }: PageProps) {
                           </span>
                         )}
                       </td>
+                      <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
+                        {(r.step && STEP_KIND[r.step]) ?? "—"}
+                      </td>
                       {isAdmin && (
                         /* A refund is not a generation, so it names no model. */
                         <td className="py-2.5 px-3 text-xs font-mono truncate" style={{ color: "var(--c-55)" }}>
                           {r.type === "refunded" ? "—" : r.model ?? "—"}
                         </td>
                       )}
+                      <td className="py-2.5 px-3 text-xs">
+                        {/* Only a charge has something to show: a refund is the
+                            credits coming back, not a second artefact. */}
+                        {r.type === "refunded"
+                          ? <span style={{ color: "var(--c-30)" }}>—</span>
+                          : <ResultCell step={r.step} beat={r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null} />}
+                      </td>
                       <td className="py-2.5 px-3 text-xs">
                         {/* Colour carries the direction, so the two read apart
                             at a glance without the amount needing a sign. */}
@@ -475,7 +603,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                 <tfoot>
                   <tr style={{ borderTop: "1px solid var(--bd-card)" }}>
                     <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
-                      style={{ color: "var(--c-45)" }} colSpan={isAdmin ? 3 : 2}>
+                      style={{ color: "var(--c-45)" }} colSpan={isAdmin ? 5 : 4}>
                       Net charged
                     </td>
                     <td className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums text-right"
