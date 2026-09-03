@@ -329,7 +329,7 @@ export default function ScriptPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={6} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
+      <main className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0 lg:px-[15px]">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 px-5 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>

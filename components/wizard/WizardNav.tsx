@@ -7,7 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film,
-  Check, CheckCircle2, LayoutTemplate, X, Settings, LogOut, DollarSign, KeyRound, Wallet,
+  Check, CheckCircle2, LayoutTemplate, X, Settings, LogOut, DollarSign, KeyRound, Wallet, Menu,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -603,21 +603,39 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
       </div>
 
-      {/* ── Mobile top bar + step dots (fixed) ──────────────────────── */}
+      {/* ── Mobile top bar (fixed, 56px — pages offset by pt-14) ────── */}
       <div
         className="md:hidden fixed top-0 inset-x-0 z-[200] flex flex-col shrink-0"
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
-        {/* Logo row */}
-        <div className="h-14 flex items-center justify-between px-4">
-          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
-            <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
-              <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
-            </div>
-            <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
-          </button>
+        {/* Logo row. On a phone this is the whole nav: a row of nine dots
+            under it spent 50px saying what the drawer says properly, and the
+            labels under them were unreadable at that size anyway. The menu
+            opens the same drawer the dots opened, and the title says which
+            step you are on, which is what the dots were really for. */}
+        <div className="h-14 flex items-center justify-between px-4 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {!hideSteps && (
+              <button
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open the workflow steps"
+                className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center transition-all hover:opacity-80"
+                style={{ color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              >
+                <Menu size={16} />
+              </button>
+            )}
+            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
+                <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
+              </div>
+              <span className="text-sm font-bold truncate" style={{ color: "var(--c-90)" }}>
+                {(!hideSteps && PHASES.find((p) => getPhaseStatus(p) === "active")?.label) || "Heclus"}
+              </span>
+            </button>
+          </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {topRightExtra}
             <button
               onClick={() => router.push("/dashboard")}
@@ -722,68 +740,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           </div>
         </div>
 
-        {/* Step dots + labels row */}
-        {!hideSteps && (
-        <div
-          className="py-[10px]"
-          style={{ borderTop: "1px solid var(--bd-6)" }}
-        >
-          {/* Circles + connecting lines */}
-          <div className="flex items-center px-5 sm:px-8">
-            {PHASES.map((phase, i) => {
-              const status = getPhaseStatus(phase);
-              const isDone = phaseDone(phase);
-              const isActive = status === "active";
-              return (
-                <Fragment key={phase.id}>
-                  <button
-                    onClick={() => { setDrawerHighlightPhase(i); setDrawerOpen(true); }}
-                    className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
-                    style={
-                      isDone
-                        // Green dot when complete; a ring when it's also the
-                        // current page (e.g. Assemble after assembly).
-                        ? { background: "oklch(0.55 0.15 145)", boxShadow: isActive ? "0 0 0 2px oklch(0.55 0.15 145 / 0.35)" : undefined }
-                        : isActive
-                        ? { background: "oklch(0.72 0.25 285)", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
-                        : { background: "transparent", border: "1.5px solid var(--bd-8)" }
-                    }
-                  >
-                    {isDone && <Check size={8} strokeWidth={3} color="white" />}
-                  </button>
-                  {i < PHASES.length - 1 && (
-                    <div
-                      className="flex-1 h-px mx-0.5 transition-all"
-                      style={{ background: isDone ? "oklch(0.55 0.15 145 / 0.4)" : "var(--bd-6)" }}
-                    />
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-
-          {/* Active-step label only. Rendering all 9 labels at 7px under
-              4px dots made them overlap into an unreadable smear on
-              phones; the dots already convey done/active state, so we
-              just name the current step (with its sublabel).
-              Kept as an absolute overlay in a pt-1/pb-2 row — same zero
-              layout height as the old labels row — so the fixed mobile
-              nav keeps its ~105px height that every page's pt-[105px]
-              content offset depends on. */}
-          <div className="relative px-5 sm:px-8 pt-1 pb-2">
-            {(() => {
-              const active = PHASES.find((p) => getPhaseStatus(p) === "active");
-              if (!active) return null;
-              return (
-                <span className="absolute left-1/2 top-0 -translate-x-1/2 text-[10px] leading-none whitespace-nowrap">
-                  <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{active.label}</span>
-                  <span className="font-normal" style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
-                </span>
-              );
-            })()}
-          </div>
-        </div>
-        )}
       </div>
 
       {/* ── Mobile drawer ───────────────────────────────────────────── */}

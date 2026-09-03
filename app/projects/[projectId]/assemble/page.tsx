@@ -3601,7 +3601,7 @@ export default function AssemblePage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} channelUrl={project?.channel_url} progressComplete={!!(project?.assembled_url)} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -6469,7 +6469,11 @@ export default function AssemblePage({ params }: PageProps) {
                   the right. Laid out as a three-column grid rather than
                   justify-between so the transport is centred on the panel and
                   not on whatever is left over after the other two. */}
-              <div className="mb-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-1.5"
+              {/* Three columns from sm up. On a phone the middle column is
+                  wider than the third of a screen the grid gives it, so the
+                  transport sat on top of the title: it wraps to its own line
+                  instead. */}
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 pb-1.5 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-2"
                 style={{ borderBottom: "1px solid var(--bd-6)" }}>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">Timeline</p>
@@ -6480,7 +6484,7 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
 
                 {/* Transport, centred, reading elapsed against total. */}
-                <div className="flex items-center gap-2 justify-self-center">
+                <div className="flex flex-wrap items-center gap-2 justify-self-center">
                   <button
                     type="button"
                     onClick={togglePlay}
