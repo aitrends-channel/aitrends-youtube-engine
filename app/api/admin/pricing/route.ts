@@ -6,6 +6,7 @@ import { packCreditsForTier } from "@/lib/heclus-credits";
 import { tierForPlan } from "@/lib/plans-gating";
 import { QUOTA_DEFAULTS, GENAIPRO_USD_PER_MILLION_CLIPS, AI33_TTS_USD_PER_MILLION_CHARS, FREE_IMAGE_USD_PER_MILLION } from "@/lib/quota-config";
 import { USD_PER_CREDIT } from "@/lib/credit-unit";
+import { DODO_FEE_PERCENT, DODO_FEE_FIXED_CENTS } from "@/lib/dodo/fees";
 import { supabase } from "@/lib/supabase/client";
 
 // What each plan actually earns, line by line.
@@ -23,20 +24,45 @@ import { supabase } from "@/lib/supabase/client";
 /** Cloudflare R2 standard storage. */
 const R2_USD_PER_GB = 0.015;
 
+/** The Government of Ghana levy on bank withdrawals of funds received by wire.
+ *  It lands when money is taken out rather than when a customer pays, so it is
+ *  charged here against what Dodo actually sends us: we cannot withdraw their
+ *  fee. Assuming everything received is eventually withdrawn is the
+ *  conservative reading and the only one that can be modelled per plan. */
+const GOG_RATE = 0.05;
+
 /**
- * Taken off gross revenue rather than off cost: both are a slice of what the
- * customer pays, so they scale with price and not with usage.
+ * What the payment processor and the bank take, as a slice of the price rather
+ * than of usage.
  *
- * Dodo is per transaction. GOG is the Government of Ghana levy on bank
- * withdrawals of funds received by wire, so it lands when money is taken out
- * rather than when a customer pays. Charging it against revenue here assumes
- * everything received is eventually withdrawn, which is the conservative
- * reading and the only one that can be modelled per plan.
+ * Dodo charges per transaction, not per month, and the fixed part is the half
+ * that matters: 4% + $0.40 on a $21 plan is 5.9%, on a $39 plan 5.0%, and on
+ * Founder's one $40 charge a year it is 4.1% — the same 40c spread over twelve
+ * months of allowances rather than charged twelve times. A flat percentage
+ * (this list said 10%) cannot say any of that, and said it wrong in both
+ * directions: too high on every monthly plan, and it hid that the small ones
+ * are the expensive ones to collect.
+ *
+ * Tax is not here on purpose. Dodo is the merchant of record, so VAT and sales
+ * tax are collected on top of the price and remitted by them; they are never
+ * ours and never in the settlement amount.
  */
-const FEES = [
-  { key: "dodo", label: "Dodo", rate: 0.10 },
-  { key: "gog", label: "GOG", rate: 0.05 },
-];
+function feesFor(price: number, annualised: boolean): PricingLine[] {
+  // One charge per billing period, and the period is a year for Founder.
+  const perPeriodPrice = price * (annualised ? 12 : 1);
+  const dodoPerCharge = perPeriodPrice * DODO_FEE_PERCENT + DODO_FEE_FIXED_CENTS / 100;
+  const dodo = dodoPerCharge / (annualised ? 12 : 1);
+  const received = Math.max(0, price - dodo);
+  return [
+    {
+      label: "Dodo",
+      qty: `${(DODO_FEE_PERCENT * 100).toFixed(0)}% + $${(DODO_FEE_FIXED_CENTS / 100).toFixed(2)}`
+        + (annualised ? " a year" : ""),
+      usd: dodo,
+    },
+    { label: "GOG", qty: `${(GOG_RATE * 100).toFixed(0)}% of what lands`, usd: received * GOG_RATE },
+  ];
+}
 
 const cap = (k: keyof typeof QUOTA_DEFAULTS, tier: string) => QUOTA_DEFAULTS[k].byPlan[tier] ?? 0;
 
@@ -95,9 +121,7 @@ export async function GET() {
         usd: AI33_TTS_USD_PER_MILLION_CHARS ? chars * (AI33_TTS_USD_PER_MILLION_CHARS / 1e6) : 0,
       },
     ];
-    const fees: PricingLine[] = FEES.map((f) => ({
-      label: f.label, qty: `${(f.rate * 100).toFixed(0)}%`, usd: price * f.rate,
-    }));
+    const fees = feesFor(price, annualised);
 
     const cogsTotal = cogs.reduce((a, l) => a + l.usd, 0);
     const feesTotal = fees.reduce((a, l) => a + l.usd, 0);
