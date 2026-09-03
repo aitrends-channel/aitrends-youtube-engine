@@ -256,14 +256,24 @@ export function invalidateDefaultClaudeModelCache(): void {
  *  KIE), so without the id this cannot tell whether the override applies and
  *  will hand a GPT model id to a PoYo client that only speaks Anthropic's
  *  Messages API. Omitting it is safe but keeps the step on GPT. */
+/** True when this user's routing cannot serve GPT or Gemini, so the step runs
+ *  Claude and must be handed a Claude model id.
+ *
+ *  PoYo and Anthropic both speak the Anthropic Messages API and neither relays
+ *  GPT, so both override the per-step provider in getAnthropicClient. This is
+ *  the same decision, and it has to give the same answer or the client builds
+ *  an Anthropic call around a model id like gpt-5-6-sol. */
+async function routingForcesClaude(step: WorkflowStep, userId: string): Promise<boolean> {
+  const routing = await getRoutingForUser(userId, step);
+  return routing === "heclus_poyo" || routing === "heclus_direct";
+}
+
 export async function resolveDefaultModel(step?: WorkflowStep, userId?: string): Promise<ClaudeModelParams> {
   if (step) {
     try {
       const provider = await getPromptProvider(step);
       if (isKieProvider(provider)) {
-        const overridden = userId
-          ? (await getRoutingForUser(userId, step)) === "heclus_poyo"
-          : false;
+        const overridden = userId ? await routingForcesClaude(step, userId) : false;
         if (!overridden) return { model: await getModelForProvider(provider, step) };
       }
     } catch {
@@ -326,11 +336,12 @@ export async function resolveModelForUser(
       //   URI '/v1/messages' is not supported by this model.
       //   Supported URIs: ['/codex/v1/responses', '/v1/responses']
       //
-      // Falling through gives the Claude default instead. These two overrides
-      // are one decision expressed in two places; change them together, and
-      // if PoYo's GPT path is ever wired (via /v1/responses, per that error)
-      // both revert together too.
-      if ((await getRoutingForUser(userId, step)) !== "heclus_poyo") {
+      // Falling through gives the Claude default instead. Both sites ask
+      // routingForcesClaude now, so the client and the model can no longer
+      // disagree about which provider is answering: they did, and channel
+      // analysis kept billing kie_credits on gpt-5-6-sol while the writing
+      // steps were switched to Anthropic.
+      if (!(await routingForcesClaude(step, userId))) {
         return { model: await getModelForProvider(provider, step) };
       }
     }

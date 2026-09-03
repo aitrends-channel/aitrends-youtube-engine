@@ -37,8 +37,17 @@ export type FundingMode = "byo" | "wallet";
  * Admins stay on the wallet whatever they are on: it is how the release gets
  * exercised with real money.
  */
-function walletEligible(user: User | null | undefined): boolean {
-  if (isAdminUser(user)) return true;
+async function walletEligible(user: User | null | undefined): Promise<boolean> {
+  if (isAdminUser(user)) {
+    // The New/Old switch decides for an admin, because being able to be billed
+    // as either kind of account is the whole reason it exists. No choice made
+    // is "new": an admin is on the current product by default.
+    //
+    // Imported lazily so this module stays usable outside a request, where
+    // next/headers throws — a worker settling a charge has no switch to read.
+    const { adminPlanViewFor } = await import("@/lib/admin-view-server");
+    return (await adminPlanViewFor(user)) !== "old";
+  }
   return isHeclusCreditsPlan(billingPlanOf(user));
 }
 
@@ -59,7 +68,7 @@ export function invalidateFundingCache(userId: string) {
 export async function getFundingMode(user: User): Promise<FundingMode> {
   // Short-circuits the lookup inside getFundingModeById, since the plan and the
   // admin flag are both already here in the user object.
-  if (!walletEligible(user)) return "byo";
+  if (!(await walletEligible(user))) return "byo";
   return getFundingModeById(user.id);
 }
 
@@ -119,23 +128,29 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
 
   // The column says what the account asked for; the plan says what it bought.
   // Both have to agree before Heclus's keys pay for anything.
-  if (mode === "wallet" && !(await walletEligibleById(userId))) {
-    mode = "byo";
+  let admin = false;
+  if (mode === "wallet") {
+    const check = await walletEligibleById(userId);
+    admin = check.admin;
+    if (!check.eligible) mode = "byo";
   }
 
-  cacheMap.set(userId, { mode, at: Date.now() });
+  // An admin's answer depends on a switch they can flip between two calls, so
+  // caching it would leave them billed the old way for up to a minute after
+  // moving it. Nobody else's changes that fast.
+  if (!admin) cacheMap.set(userId, { mode, at: Date.now() });
   return mode;
 }
 
 /** walletEligible needs the user object, and the choke points only have an id.
  *  Fail-closed: an unreadable account is not on a credits plan, so the work
  *  runs on the client's own key rather than on ours. */
-async function walletEligibleById(userId: string): Promise<boolean> {
+async function walletEligibleById(userId: string): Promise<{ eligible: boolean; admin: boolean }> {
   try {
     const { data, error } = await supabase.auth.admin.getUserById(userId);
-    if (error || !data.user) return false;
-    return walletEligible(data.user);
+    if (error || !data.user) return { eligible: false, admin: false };
+    return { eligible: await walletEligible(data.user), admin: isAdminUser(data.user) };
   } catch {
-    return false;
+    return { eligible: false, admin: false };
   }
 }

@@ -312,21 +312,24 @@ export async function getAnthropicClient(
   // The media operator switch outranks the per-step provider choice.
   //
   // Those GPT and Gemini choices are reachable only through KIE's relays, so
-  // honouring them while the operator is PoYo would leave most of the workflow
-  // on KIE after an admin had explicitly moved it. Config → Anthropic → Per
-  // step chooses a model; Config → Media Operator chooses a provider, and the
-  // provider is the coarser decision.
+  // honouring them while the operator is PoYo or Anthropic would leave most of
+  // the workflow on KIE after an admin had explicitly moved it — which is what
+  // "writing steps: anthropic" looked like in production, with channel analysis
+  // still billing kie_credits on gpt-5-6-sol because that step is configured
+  // for GPT. Config → Anthropic → Per step chooses a model; Config → Media
+  // Operator chooses a provider, and the provider is the coarser decision.
   //
   // The consequence is deliberate and worth knowing: a step configured for GPT
-  // runs Claude while the switch is on PoYo, because PoYo's Anthropic-format
-  // Messages API is the path this client speaks. Logged rather than silent —
-  // "why is my GPT step answering like Claude" is otherwise unanswerable from
-  // the outside. Restoring GPT under PoYo means a PoyoGptClient facade beside
-  // the KIE one, not removing this.
-  const operatorOverridesProvider = routing === "heclus_poyo" && isKieProvider(provider);
+  // runs Claude while the switch is off KIE, because an Anthropic-format
+  // Messages API is the path this client speaks and neither PoYo nor Anthropic
+  // serves GPT. Logged rather than silent — "why is my GPT step answering like
+  // Claude" is otherwise unanswerable from the outside. Restoring GPT under
+  // those operators means another facade beside the KIE one, not removing this.
+  const operatorOverridesProvider =
+    (routing === "heclus_poyo" || routing === "heclus_direct") && isKieProvider(provider);
   if (operatorOverridesProvider) {
     console.log(
-      `[claude] step=${step ?? "-"} configured for ${provider}, but the media operator is poyo — running Claude via PoYo instead`,
+      `[claude] step=${step ?? "-"} configured for ${provider}, but this routing is ${routing} — running Claude instead`,
     );
   }
 

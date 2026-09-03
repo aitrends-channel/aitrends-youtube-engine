@@ -22,6 +22,12 @@ import { isAdminEmail } from "@/lib/admin";
 
 const KEY = "heclus:admin-plan-view";
 const EVENT = "heclus:admin-plan-view-changed";
+/** The same choice, where the server can see it. localStorage cannot cross the
+ *  wire, and the switch is no longer only about what renders: on "new" the
+ *  admin's work is billed to the credit wallet, on "old" to their own keys.
+ *  Honoured for admins only — see lib/admin-view-server.ts — so a forged cookie
+ *  buys a non-admin nothing. */
+export const ADMIN_PLAN_VIEW_COOKIE = "heclus_admin_plan_view";
 
 /** "new" is a Heclus Credits account, "old" is a BYO one. */
 export type AdminPlanView = "new" | "old";
@@ -42,6 +48,14 @@ export function setAdminPlanView(view: AdminPlanView | null): void {
     if (view) window.localStorage.setItem(KEY, view);
     else window.localStorage.removeItem(KEY);
   } catch { /* the switch still works for this render */ }
+  // Written as a cookie too, so the server bills the account the way the switch
+  // says. A year, because the switch is meant to survive a session; clearing it
+  // expires the cookie rather than leaving the last choice behind.
+  try {
+    document.cookie = view
+      ? `${ADMIN_PLAN_VIEW_COOKIE}=${view}; path=/; max-age=31536000; samesite=lax`
+      : `${ADMIN_PLAN_VIEW_COOKIE}=; path=/; max-age=0; samesite=lax`;
+  } catch { /* cookies blocked — the view is still right in this tab */ }
   // `storage` only fires in other tabs, so the components in this one are told
   // directly. Without it the switch moves and nothing else on the page does.
   window.dispatchEvent(new CustomEvent(EVENT));
