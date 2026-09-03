@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { isAdminUser } from "@/lib/admin";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { meetsTier } from "@/lib/plans-gating";
 
 // Staged rollout of the Heclus Credits release.
 //
@@ -35,15 +36,13 @@ import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 export const NEW_PLANS_ADMIN_ONLY = false;
 
 /**
- * The Assemble sound effects and elements feature: the Sounds and Elements
- * tabs, beat sounds, and placed sounds.
- *
- * Separate from the plans flag because built-in sounds were never plan-gated —
- * without this, promoting would put them in front of every customer. They do
- * not currently reach the finished video, which is reason enough on its own to
- * keep them internal until a render is confirmed end to end.
+ * Sounds and elements were here too, as SOUND_EFFECTS_ADMIN_ONLY, kept internal
+ * because they did not reach the finished video: the effects bed was built on an
+ * ffmpeg input the library rejected, so every sound was dropped from the render
+ * without anything failing. With that fixed they are gated by the tier that
+ * sells them — Max — in the assemble page, alongside 4K and the custom asset
+ * uploads, rather than by a flag here.
  */
-export const SOUND_EFFECTS_ADMIN_ONLY = true;
 
 /** True when this account may see and buy the new plans. */
 export function canSeeNewPlans(user: User | null | undefined): boolean {
@@ -71,7 +70,10 @@ export function isGatedPlan(slug: string | null | undefined): boolean {
 /** Kept in step with PRODUCTION_TEST_SLUG in components/SubscriptionModal.tsx. */
 const PRODUCTION_TEST_SLUG = "production-test";
 
-/** True when this account may use Assemble's sound effects and elements. */
+/** True when this account may use Assemble's sound effects and elements: the
+ *  tier the Max card sells them on, with an admin resolving to the top tier
+ *  like everywhere else. Unused by the page, which reads the tier it already
+ *  has, and kept for any server route that needs the same answer from a user. */
 export function canUseSoundEffects(user: User | null | undefined): boolean {
-  return !SOUND_EFFECTS_ADMIN_ONLY || isAdminUser(user);
+  return meetsTier(user, "max");
 }

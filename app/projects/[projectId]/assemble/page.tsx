@@ -19,7 +19,6 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { requiredTierForResolution, resolutionAllowedForPlan, tierForPlan, tierRank, tierLabel } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
-import { SOUND_EFFECTS_ADMIN_ONLY } from "@/lib/rollout";
 
 interface PageProps {
   params: { projectId: string };
@@ -1258,10 +1257,14 @@ export default function AssemblePage({ params }: PageProps) {
     return () => { cancelled = true; };
   }, []);
   const userTier = tierForPlan(userPlan);
-  // Sound effects are internal-only for now (SOUND_EFFECTS_ADMIN_ONLY). The
-  // effect resolves admins to the "admin" plan above, which is the same signal
-  // the 4K gate reads, so this needs no second lookup.
-  const soundsAllowed = !SOUND_EFFECTS_ADMIN_ONLY || userPlan === "admin";
+  // Sounds and elements are what the Max card sells: "text overlays, elements
+  // and sound effects". They were admin-only while they did not survive the
+  // render — the bed was built on an ffmpeg input the library rejected, so
+  // every one of them was silently dropped from the finished video. That is
+  // fixed, so the gate is the tier the customer bought rather than a rollout
+  // flag. tierForPlan resolves an admin to the top tier, so this needs no
+  // second lookup, the same way the 4K gate does not.
+  const soundsAllowed = tierRank(userTier) >= tierRank("max");
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
