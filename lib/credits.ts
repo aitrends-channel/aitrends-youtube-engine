@@ -1,11 +1,10 @@
 import { supabase } from "@/lib/supabase/client";
 import { getQuotaConfig, capFromConfig } from "@/lib/quota-config";
-import { planSlugOf, billingPlanOf } from "@/lib/plans-gating";
+import { planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 import { hasPaidAccess } from "@/lib/subscription";
 import type { User } from "@supabase/supabase-js";
 import { FREE_VIDEO_COMING_SOON } from "@/lib/free-tier-flag";
-import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 
 // The FREE GENAI VIDEO wallet, in TypeScript. genai_credits since migration
 // 129, which handed the general names to Heclus Credits (lib/heclus-credits.ts).
@@ -146,14 +145,15 @@ export async function monthlyGrantFor(user: User): Promise<number> {
   // bought before the lane was closed; hasPaidAccess is staging's guard against
   // an unpaid signup drawing the Starter allowance of clips we pay for. Both
   // sides are load-bearing, so both are kept.
-  // The free clips are part of what a Heclus Credits plan sells — 150 on
-  // Starter, 200 on Pro, 400 on Max, printed on the card the customer bought.
-  // Withholding them from the plans that advertise them would be selling
-  // something we do not hand over. Everyone else is where they were: the
-  // admin-only flag still governs legacy plans, whose cards say nothing about
-  // free clips, plus the one grandfathered account on the allowlist.
-  const sellsFreeClips = isHeclusCreditsPlan(billingPlanOf(user));
-  if (VIDEO_CREDITS_ADMIN_ONLY && !sellsFreeClips && !isAdminUser(user) && !videoCreditsAllowed(user)) return 0;
+  // Admins only, whatever plan an account is on. The clips are $0.02 each of
+  // Heclus's money with no refund path, so who gets them is a spend decision
+  // taken here rather than implied by a card. The allowlist is the one
+  // grandfathered account from before the lane was closed.
+  //
+  // The Heclus Credits cards do advertise 150 / 200 / 400 clips a month. While
+  // this flag is on they are not handed over, and the Free videos tab stays a
+  // coming-soon teaser: worth remembering before the first customer counts.
+  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user) && !videoCreditsAllowed(user)) return 0;
   if (!hasPaidAccess(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));

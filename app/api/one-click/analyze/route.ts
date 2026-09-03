@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
+import { isAdminUser } from "@/lib/admin";
 import { fetchTranscriptsViaSupadata } from "@/lib/youtube/supadata";
 import type { User } from "@supabase/supabase-js";
 
@@ -17,9 +19,24 @@ export const maxDuration = 800;
 //
 // Idempotent: if analysis already landed (channel_analysis set), it no-ops
 // so a duplicate nudge can't double-bill.
+/** 1Click is hidden from customers by ONE_CLICK_HIDDEN, and the flag only ever
+ *  hid the buttons: these routes were reachable by anyone signed in. Nothing
+ *  linked to them, which is not the same as nothing being able to reach them —
+ *  and a run started here spends real provider money on Heclus's account.
+ *  Admins are exempt so the feature stays testable while it is hidden. */
+function oneClickBlocked(user: User): Response | null {
+  if (!ONE_CLICK_HIDDEN || isAdminUser(user)) return null;
+  return new Response(JSON.stringify({ error: "1Click is not available yet." }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const blocked = oneClickBlocked(user);
+  if (blocked) return blocked;
 
   const body = (await req.json().catch(() => ({}))) as { projectId?: string; topicHint?: string };
   const projectId = typeof body.projectId === "string" ? body.projectId : "";

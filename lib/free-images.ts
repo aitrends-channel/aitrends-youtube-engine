@@ -44,6 +44,20 @@ async function boughtImages(userId: string): Promise<number> {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * The free image lane is admins only, and shows as coming soon to everyone
+ * else. Same shape and same reason as VIDEO_CREDITS_ADMIN_ONLY in
+ * lib/credits.ts: these images run on Heclus's own provider account, so
+ * opening them is a spend decision rather than a release date, and it should
+ * be one line rather than a deploy.
+ *
+ * While this is on, freeImageAllowance reports nothing for a customer, which
+ * every surface already reads as "no free lane": the Free tab keeps its
+ * teaser, and z-image appears in the picker under its own name at its own
+ * price instead of as the Heclus Free card.
+ */
+export const FREE_IMAGES_ADMIN_ONLY = true;
+
 export async function freeImageAllowance(user: User): Promise<FreeImageAllowance> {
   // Customers only. An account that has never paid gets nothing: this is real
   // provider spend, and planSlugOf would otherwise resolve a bare signup to
@@ -58,6 +72,7 @@ export async function freeImageAllowance(user: User): Promise<FreeImageAllowance
   // switch this perk on for customers whose plan was priced years before it
   // existed. Admins are exempt so the feature stays testable.
   const admin = isAdminUser(user);
+  if (FREE_IMAGES_ADMIN_ONLY && !admin) return EMPTY;
   if (!admin && !isHeclusCreditsPlan(billingPlanOf(user))) return EMPTY;
   const [monthly, bonus] = await Promise.all([
     resolveQuotaCap("free_image_credits", meta.plan, admin),
