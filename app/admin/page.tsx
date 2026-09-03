@@ -7215,6 +7215,7 @@ function PricingTable({ title, subtitle, plans }: { title: string; subtitle?: st
     // The rate comes from the fee line rather than the header, which is how
     // the header came to say 10% of a fee that is 4% + 40c. "a year" is
     // dropped: it is true of Founder's row, not of the column.
+    { label: `Tax ${(fee(p, "Tax")?.qty ?? "").replace(" measured", "")}`.trim(), value: money(fee(p, "Tax")?.usd ?? 0), strong: true },
     { label: `Dodo ${(fee(p, "Dodo")?.qty ?? "").replace(" a year", "")}`.trim(), value: money(fee(p, "Dodo")?.usd ?? 0), strong: true },
     { label: `GOG ${(fee(p, "GOG")?.qty ?? "").replace(" of what lands", "")}`.trim(), value: money(fee(p, "GOG")?.usd ?? 0), strong: true },
     { label: "Total", value: money(p.total), strong: true },
@@ -7389,6 +7390,7 @@ function PricingPanel() {
           <Term k="Images" v="Free image generations on z-image, the cheapest model we carry. Twenty times cheaper than nano-banana-pro, which is what makes the allowance affordable." />
           <Term k="Voice" v="Free voiceover characters through ai33." />
           <Term k="Storage" v="R2 cap per account, at $0.015 per GB a month. A ceiling rather than usage: the median account holds under a gigabyte." />
+          <Term k="Tax" v="Sales tax and VAT, which Dodo collects and remits as the merchant of record. In most places it is added on top of the price and the settlement arrives whole, which costs us nothing; in some the settlement arrives tax-inclusive and that part of it was never ours. Only the second kind is a cost, so the rate here is measured from the payments themselves rather than assumed — the table used to assume 10%." />
           <Term k="Dodo" v="Payment processing: 4% of the charge plus a fixed 40c, per transaction rather than per month. The fixed part makes the cheap plans the expensive ones to collect, and Founder's single yearly charge carries one 40c spread across twelve months rather than twelve of them. Sales tax and VAT are not here: Dodo is the merchant of record, so they are charged on top of the price and remitted by them." />
           <Term k="GOG" v="Government of Ghana levy on bank withdrawals of funds received by wire transfer. Charged when money is taken out, not when a customer pays, so it is 5% of what Dodo actually sends us — their fee cannot be withdrawn — and assumes everything received is eventually withdrawn." />
           <Term k="Total" v="COGS plus fees. What the month costs us all in." />
