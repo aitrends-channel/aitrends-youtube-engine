@@ -3611,23 +3611,23 @@ export default function AssemblePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="px-0 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
+        <div className="px-0 sm:px-8 lg:px-[60px] py-2 sm:py-8 pb-24">
           {/* space-y-4, not 6: three tall panels stacked with 24px between
               them pushed the timeline below the fold on a laptop, and the
               cards already have borders doing the separating. */}
-          <div className="w-full space-y-4">
+          <div className="w-full space-y-2 sm:space-y-4">
 
             {/* Three collapsed rows, side by side. All are closed most of the
                 time and their summaries are one line each, so stacking them
                 spent most of a screen on three sentences. Output sits with
                 them rather than above: it is a readout too, and the full width
                 bought it nothing. */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start -mt-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4 items-start -mt-5">
               {/* Voiceover, clips, resolution and aspect ratio in one panel.
                   Three of the four are readouts and the fourth is picked once,
                   so the summary line carries them and the controls stay out of
                   the way of the steps that get touched every time. */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
+              <div className="rounded-2xl px-5 sm:px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 <div
                   role="button"
                   tabIndex={0}
@@ -3794,7 +3794,7 @@ export default function AssemblePage({ params }: PageProps) {
                   says, both used on a minority of assemblies, and each was its
                   own full-width card. One section, closed by default, gives the
                   steps that matter the room instead. */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
+              <div className="rounded-2xl px-5 sm:px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 <div
                   role="button"
                   tabIndex={0}
@@ -4218,7 +4218,7 @@ export default function AssemblePage({ params }: PageProps) {
               </div>
 
               {/* Captions */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
+              <div className="rounded-2xl px-5 sm:px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 {/* The whole row opens the section, so the target is the row
                     rather than the words. The switch lives in the dialog's
                     title bar instead: a switch sitting on a clickable row is a
