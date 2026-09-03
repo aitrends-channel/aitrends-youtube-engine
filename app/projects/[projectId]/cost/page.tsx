@@ -550,8 +550,10 @@ export default function ProjectCostPage({ params }: PageProps) {
             <button
               onClick={handleClose}
               aria-label="Close cost view"
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
-              style={{ background: "oklch(0.58 0.22 25)", color: "white", boxShadow: "0 2px 6px oklch(0.58 0.22 25 / 0.3)" }}
+              /* Quiet. Closing a read-only view is not a destructive act, and
+                 a filled red button beside a table of charges reads as one. */
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 cursor-pointer"
+              style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
             >
               <X size={13} />
               Close

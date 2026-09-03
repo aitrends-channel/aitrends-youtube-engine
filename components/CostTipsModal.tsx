@@ -110,7 +110,9 @@ export function CostTipsModal() {
         <Link
           href={`/projects/${projectId}/logs`}
           title="Credit usage log"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer"
+          /* Below md this lives on the nav's step line instead, where a phone
+             has room for it. */
+          className="hidden md:inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer"
           style={{
             border: "1px solid var(--bd-8)",
             background: "transparent",

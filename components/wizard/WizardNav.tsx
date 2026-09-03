@@ -727,24 +727,40 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             dots opened the drawer, which is what a menu button does, and they
             were unreadable at that size. */}
         {!hideSteps && (
-          <button
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open the workflow steps"
-            className="h-9 flex items-center gap-2 px-4 w-full text-left transition-opacity hover:opacity-80"
-            style={{ borderTop: "1px solid var(--bd-6)", color: "var(--c-60)" }}
-          >
-            <Menu size={15} className="shrink-0" />
-            {(() => {
-              const active = PHASES.find((p) => getPhaseStatus(p) === "active");
-              if (!active) return <span className="text-xs">Steps</span>;
-              return (
-                <span className="text-xs truncate">
-                  <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{active.label}</span>
-                  <span style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
-                </span>
-              );
-            })()}
-          </button>
+          <div className="h-9 flex items-center gap-2 px-4" style={{ borderTop: "1px solid var(--bd-6)" }}>
+            <button
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open the workflow steps"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left transition-opacity hover:opacity-80"
+              style={{ color: "var(--c-60)" }}
+            >
+              <Menu size={15} className="shrink-0" />
+              {(() => {
+                const active = PHASES.find((p) => getPhaseStatus(p) === "active");
+                if (!active) return <span className="text-xs">Steps</span>;
+                return (
+                  <span className="text-xs truncate">
+                    <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{active.label}</span>
+                    <span style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
+                  </span>
+                );
+              })()}
+            </button>
+            {/* The usage log, where a phone has room for it. The header's own
+                Logs button is hidden below md, so it is here rather than
+                twice. */}
+            {onCredits && projectId !== "new-fork" && (
+              <Link
+                href={`/projects/${projectId}/logs`}
+                title="Credit usage log"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+                style={{ border: "1px solid var(--bd-8)", color: "var(--c-55)" }}
+              >
+                <ScrollText size={12} />
+                <span>Logs</span>
+              </Link>
+            )}
+          </div>
         )}
       </div>
 

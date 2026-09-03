@@ -3634,7 +3634,7 @@ export default function AssemblePage({ params }: PageProps) {
                   Three of the four are readouts and the fourth is picked once,
                   so the summary line carries them and the controls stay out of
                   the way of the steps that get touched every time. */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 <div
                   role="button"
                   tabIndex={0}
@@ -3801,7 +3801,7 @@ export default function AssemblePage({ params }: PageProps) {
                   says, both used on a minority of assemblies, and each was its
                   own full-width card. One section, closed by default, gives the
                   steps that matter the room instead. */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 <div
                   role="button"
                   tabIndex={0}
@@ -4225,7 +4225,7 @@ export default function AssemblePage({ params }: PageProps) {
               </div>
 
               {/* Captions */}
-              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="rounded-2xl px-3 py-2" style={{ background: "var(--bg-panel)" }}>
                 {/* The whole row opens the section, so the target is the row
                     rather than the words. The switch lives in the dialog's
                     title bar instead: a switch sitting on a clickable row is a
@@ -4514,7 +4514,7 @@ export default function AssemblePage({ params }: PageProps) {
                 already a clip there is nothing for it to change and only the
                 preview is worth showing. */}
             {movableBeats > 0 && (
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)" }}>
               {/* Same row-as-toggle as captions, and the summary carries the
                   current setting so it is readable while closed.
 
@@ -6468,7 +6468,7 @@ export default function AssemblePage({ params }: PageProps) {
                 Selecting a beat and setting its effect is what this does, so
                 that is all it offers. */}
             {beats.length > 0 && (
-            <div className="rounded-2xl px-5 pt-3 pb-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            <div className="rounded-2xl px-5 pt-3 pb-4" style={{ background: "var(--bg-panel)" }}>
               {/* The bar an editor puts above its timeline: what you are
                   looking at on the left, the transport in the middle, zoom on
                   the right. Laid out as a three-column grid rather than
@@ -7252,7 +7252,7 @@ export default function AssemblePage({ params }: PageProps) {
             )}
 
             {/* Assembly controls */}
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)" }}>
               {showPreview && previewLoadError && (
                 <div
                   className="w-full rounded-xl p-5 text-center space-y-1"
