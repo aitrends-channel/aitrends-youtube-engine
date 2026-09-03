@@ -7212,8 +7212,11 @@ function PricingTable({ title, subtitle, plans }: { title: string; subtitle?: st
     { label: "Images", value: cell(line(p, "Free images")) },
     { label: "Voice", value: cell(line(p, "Free voiceover")) },
     { label: "COGS", value: money(p.cogsTotal), strong: true },
-    { label: "Dodo 10%", value: money(fee(p, "Dodo")?.usd ?? 0), strong: true },
-    { label: "GOG 5%", value: money(fee(p, "GOG")?.usd ?? 0), strong: true },
+    // The rate comes from the fee line rather than the header, which is how
+    // the header came to say 10% of a fee that is 4% + 40c. "a year" is
+    // dropped: it is true of Founder's row, not of the column.
+    { label: `Dodo ${(fee(p, "Dodo")?.qty ?? "").replace(" a year", "")}`.trim(), value: money(fee(p, "Dodo")?.usd ?? 0), strong: true },
+    { label: `GOG ${(fee(p, "GOG")?.qty ?? "").replace(" of what lands", "")}`.trim(), value: money(fee(p, "GOG")?.usd ?? 0), strong: true },
     { label: "Total", value: money(p.total), strong: true },
     { label: "Margin", value: `${p.marginPct.toFixed(0)}%`, strong: true, colour: marginColour(p.marginPct) },
     { label: "Net/user", value: money(p.net), strong: true, colour: p.net < 0 ? "oklch(0.6 0.22 25)" : undefined },
@@ -7386,8 +7389,8 @@ function PricingPanel() {
           <Term k="Images" v="Free image generations on z-image, the cheapest model we carry. Twenty times cheaper than nano-banana-pro, which is what makes the allowance affordable." />
           <Term k="Voice" v="Free voiceover characters through ai33." />
           <Term k="Storage" v="R2 cap per account, at $0.015 per GB a month. A ceiling rather than usage: the median account holds under a gigabyte." />
-          <Term k="Dodo 10%" v="Payment processing, taken off gross revenue. It scales with price, not with usage, so it costs more on Max than any single allowance." />
-          <Term k="GOG 5%" v="Government of Ghana levy on bank withdrawals of funds received by wire transfer. Charged when money is taken out, not when a customer pays, so counting it as 5% of revenue assumes everything received is eventually withdrawn." />
+          <Term k="Dodo" v="Payment processing: 4% of the charge plus a fixed 40c, per transaction rather than per month. The fixed part makes the cheap plans the expensive ones to collect, and Founder's single yearly charge carries one 40c spread across twelve months rather than twelve of them. Sales tax and VAT are not here: Dodo is the merchant of record, so they are charged on top of the price and remitted by them." />
+          <Term k="GOG" v="Government of Ghana levy on bank withdrawals of funds received by wire transfer. Charged when money is taken out, not when a customer pays, so it is 5% of what Dodo actually sends us — their fee cannot be withdrawn — and assumes everything received is eventually withdrawn." />
           <Term k="Total" v="COGS plus fees. What the month costs us all in." />
           <Term k="Margin" v="Price minus total, over price. Gross margin, before salaries, infrastructure and acquisition." />
           <Term k="Net/user" v="Price minus total, in dollars. What one customer contributes each month." />
