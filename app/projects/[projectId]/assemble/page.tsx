@@ -3611,7 +3611,7 @@ export default function AssemblePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
+        <div className="px-0 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
           {/* space-y-4, not 6: three tall panels stacked with 24px between
               them pushed the timeline below the fold on a laptop, and the
               cards already have borders doing the separating. */}
@@ -4567,8 +4567,7 @@ export default function AssemblePage({ params }: PageProps) {
                       className="shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }}
                     >
-                      <span className="sm:hidden">Thumbnail</span>
-                      <span className="hidden sm:inline">Generate Thumbnail →</span>
+                      Generate Thumbnail
                     </button>
                   )}
                   {showPreview && previewUrl && !renderStale && (
