@@ -96,3 +96,27 @@ export function heclusPlanFor(plan: string | null | undefined): string | null {
   }
   return null;
 }
+
+/**
+ * What a customer should see where a plan is named.
+ *
+ * The slug is a billing identifier, not a name: four surfaces rendered it raw
+ * behind a `capitalize` class, so a Pro customer's own dashboard called their
+ * plan "Heclus_pro". The products are Starter, Pro and Max whichever generation
+ * of them somebody bought, which is the point of BILLING_TO_TIER — a legacy
+ * Starter and heclus_starter are the same product to everyone but the ledger.
+ *
+ * Unknown slugs are tidied rather than hidden: an underscore becomes a space
+ * and the words are capitalised, so a product added tomorrow reads as a name
+ * instead of disappearing.
+ */
+export function planLabel(plan: string | null | undefined): string {
+  const raw = (plan ?? "").trim().toLowerCase();
+  if (!raw) return "Free";
+  if (raw === ADMIN_PLAN) return "Admin";
+  const tier = BILLING_TO_TIER[raw];
+  if (tier) return tier.charAt(0).toUpperCase() + tier.slice(1);
+  return raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}

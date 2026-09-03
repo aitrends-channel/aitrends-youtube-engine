@@ -25,6 +25,7 @@ import { OneClickControls } from "@/components/one-click/OneClickControls";
 import { UsageStats } from "@/components/UsageStats";
 import { forkAndStartOneClick } from "@/lib/one-click/kickoff";
 import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
+import { planLabel } from "@/lib/plan-tier";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
@@ -1279,7 +1280,7 @@ export default function HomePage() {
                           onClick={() => setShowProfileMenu(false)}
                           className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
                           style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                          {isPaid || isLapsed ? userPlan : "Free"} plan →
+                          {planLabel(isPaid || isLapsed ? userPlan : null)} plan →
                         </Link>
                       )}
                     </div>
@@ -1542,11 +1543,7 @@ export default function HomePage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {/* Niches Used (lifetime — deletions don't decrement) — first */}
                     {(() => {
-                      const planLabel = isAdmin
-                        ? "Admin"
-                        : usage?.plan
-                          ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
-                          : "Free";
+                      const planName = isAdmin ? "Admin" : planLabel(usage?.plan);
                       // Two lines and one badge, so the card matches the
                       // height of its three neighbours. It used to carry two
                       // stacked pills beside the numbers, which wrapped below
@@ -1564,7 +1561,7 @@ export default function HomePage() {
                               )}
                             </p>
                             <p className="text-xs mt-2" style={{ color: "var(--c-42)" }}>
-                              {unlimited ? `${planLabel} · Unlimited` : `of ${ratioDenominator} lifetime · ${planLabel}`}
+                              {unlimited ? `${planName} · Unlimited` : `of ${ratioDenominator} lifetime · ${planName}`}
                             </p>
                             {showOverrideBadge && (
                               <p className="text-[10px] mt-1 font-semibold" style={{ color: "oklch(0.6 0.18 75)" }}>
@@ -1582,7 +1579,7 @@ export default function HomePage() {
                                   border: "1px solid oklch(0.55 0.15 145 / 0.3)",
                                 }}
                               >
-                                {planLabel}
+                                {planName}
                               </span>
                             ) : (
                               <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}

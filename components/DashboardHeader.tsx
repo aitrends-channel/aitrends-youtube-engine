@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { planLabel } from "@/lib/plan-tier";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -132,7 +133,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
                       onClick={() => setShowProfileMenu(false)}
                       className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
                       style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                      {isPaid ? userPlan : "Free"} plan →
+                      {planLabel(isPaid ? userPlan : null)} plan →
                     </Link>
                   )}
                 </div>

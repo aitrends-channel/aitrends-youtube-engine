@@ -13,7 +13,7 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
-import { isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { isHeclusCreditsPlan, planLabel } from "@/lib/plan-tier";
 import { setAdminPlanView, useAdminPlanView, useOnCreditsPlan } from "@/lib/admin-view";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -556,7 +556,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                         onClick={() => setShowProfileMenu(false)}
                         className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
                         style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                        {isPaid ? userPlan : "Free"} plan →
+                        {planLabel(isPaid ? userPlan : null)} plan →
                       </Link>
                     )
                   )}
@@ -674,7 +674,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                             onClick={() => setShowProfileMenu(false)}
                             className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
                             style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                            {isPaid ? userPlan : "Free"} plan →
+                            {planLabel(isPaid ? userPlan : null)} plan →
                           </Link>
                         )
                       )}
