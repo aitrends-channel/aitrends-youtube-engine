@@ -1878,32 +1878,13 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
-      // Flip the ENTIRE target set to "queued" before submission starts —
-      // optimistically in the SWR cache (instant), and in the DB (so the
-      // ~1.5s poll doesn't revert beats whose submit hasn't landed yet).
-      // Beats are submitted in small batches below; without this, only
-      // the current batch showed any in-flight indicator while the rest
-      // of the run's beats sat looking idle. Each submit upgrades its
-      // beat to "generating"; whatever is still "queued" when the run
-      // ends is reset by the finally-block cleanup.
-      const targetNumbers = new Set(targetBeats.map((b) => b.beatNumber));
-      void mutate(
-        (current?: { beats?: Beat[] } & Record<string, unknown>) => {
-          if (!current?.beats) return current;
-          return {
-            ...current,
-            beats: current.beats.map((b) =>
-              targetNumbers.has(b.beatNumber) ? { ...b, imageStatus: "queued" } : b,
-            ),
-          };
-        },
-        { revalidate: false },
-      );
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ queue_images: [...targetNumbers] }),
-      }).catch(() => { /* indicator-only — submission proceeds regardless */ });
+      // Queued means queued. This used to flip the ENTIRE target set the
+      // moment the run began, so 63 beats read "queued" while three were in
+      // flight and the other 60 had not been asked for yet: a claim the batch
+      // size the admin configured says is untrue, and one that survives a
+      // stopped run as 60 rows to clean up. Each batch is marked as it goes
+      // out instead, just below, which is also when a submit can actually
+      // upgrade it to "generating".
 
       // Submit beats in batches. KIE's "call frequency too high" 429
       // can fire on sustained submission even at moderate rates, so we
@@ -1914,6 +1895,10 @@ export default function GeneratePage({ params }: PageProps) {
       const SUBMIT_BATCH = Math.max(1, pacing?.image_generation_batch ?? 3);
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
+      // A provider account with nothing in it refuses every beat identically,
+      // so walking the remaining nineteen batches to be told so nineteen more
+      // times wastes a minute and marks rows queued that will never go out.
+      let providerHalted = false;
 
       async function submitOne(beat: Beat): Promise<{ beatNumber: number; taskId: string }> {
         const MAX_RETRIES = 4;
@@ -1939,9 +1924,10 @@ export default function GeneratePage({ params }: PageProps) {
             await new Promise((r) => setTimeout(r, waitMs));
             continue;
           }
-          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
+          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string; providerUnfunded?: boolean };
           if (!res.ok || !data.taskId) {
             const errMsg = data.error ?? `HTTP ${res.status}`;
+            if (data.providerUnfunded) providerHalted = true;
             // Surface KIE credit exhaustion as sticky UI state, not just
             // a transient toast. We also kick the balance fetch so the
             // displayed balance updates without waiting for the 30s
@@ -1964,6 +1950,28 @@ export default function GeneratePage({ params }: PageProps) {
         // possible "leak" given the in-flight nature.
         if (abortSignal.aborted) break;
         const batch = targetBeats.slice(i, i + SUBMIT_BATCH);
+        // The in-flight indicator for exactly the beats now going out.
+        // Optimistically in the cache so it is instant, and in the DB so the
+        // ~1.5s project poll does not revert a beat whose submit is still in
+        // the air.
+        const batchNumbers = batch.map((b) => b.beatNumber);
+        void mutate(
+          (current?: { beats?: Beat[] } & Record<string, unknown>) => {
+            if (!current?.beats) return current;
+            return {
+              ...current,
+              beats: current.beats.map((b) =>
+                batchNumbers.includes(b.beatNumber) ? { ...b, imageStatus: "queued" } : b,
+              ),
+            };
+          },
+          { revalidate: false },
+        );
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ queue_images: batchNumbers }),
+        }).catch(() => { /* indicator-only — submission proceeds regardless */ });
         const batchResults = await Promise.allSettled(batch.map(submitOne));
         for (const r of batchResults) {
           if (r.status === "fulfilled") pending.push(r.value);
@@ -1983,6 +1991,7 @@ export default function GeneratePage({ params }: PageProps) {
             setImageRunError(viewerError(reason, selectedImageOperator));
           }
         }
+        if (providerHalted) break;
         if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
       }
 
