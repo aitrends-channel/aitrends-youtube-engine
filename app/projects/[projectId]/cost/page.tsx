@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { X, ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { compactNumber, unitSuffix } from "@/lib/cost-display";
@@ -100,6 +101,84 @@ interface PreviewBeat {
   voiceoverUrl?: string | null;
   imagePrompt?: string | null;
   videoPrompt?: string | null;
+  scriptSegment?: string | null;
+}
+
+/** The project-wide results, for the steps that produce one thing rather than
+ *  one thing per beat. */
+interface ProjectPreviewFields {
+  assembled_url?: string | null;
+  script?: string | null;
+  selected_topic?: string | null;
+  visual_profile?: unknown;
+  channel_analysis?: unknown;
+}
+
+/** What a row's result opens as. The cell renders from this and the modal
+ *  renders from this, so a row can only ever show what it can open. */
+type Preview =
+  | { kind: "image"; title: string; src: string }
+  | { kind: "video"; title: string; src: string; poster?: string | null }
+  | { kind: "text";  title: string; text: string };
+
+/**
+ * What the charge bought, where there is something to show.
+ *
+ * A row naming beat 12 and a number is a receipt; the thing it paid for is
+ * what says whether it was worth it. Pictures and clips are the thumbnail
+ * itself, text is a View button, because a prompt squeezed into a 90px column
+ * is neither readable nor a preview of anything.
+ */
+function previewFor(
+  step: string | null,
+  beat: PreviewBeat | null,
+  project: ProjectPreviewFields,
+): Preview | null {
+  const of = (n: number | undefined) => (typeof n === "number" ? ` · beat ${n}` : "");
+  if (!step) return null;
+
+  if (beat) {
+    if (step === "image_gen" && beat.imageUrl) {
+      return { kind: "image", title: `Image${of(beat.beatNumber)}`, src: beat.imageUrl };
+    }
+    if (step === "video_gen" && beat.videoUrl) {
+      return { kind: "video", title: `Clip${of(beat.beatNumber)}`, src: beat.videoUrl, poster: beat.imageUrl };
+    }
+    if (step === "prompts_image" && beat.imagePrompt) {
+      return { kind: "text", title: `Image prompt${of(beat.beatNumber)}`, text: beat.imagePrompt };
+    }
+    if (step === "prompts_video" && beat.videoPrompt) {
+      return { kind: "text", title: `Video prompt${of(beat.beatNumber)}`, text: beat.videoPrompt };
+    }
+    if (step === "script" && beat.scriptSegment) {
+      return { kind: "text", title: `Script${of(beat.beatNumber)}`, text: beat.scriptSegment };
+    }
+  }
+
+  // Steps that produce one thing for the whole project rather than per beat.
+  if (step === "assemble" && project.assembled_url) {
+    return { kind: "video", title: "Final video", src: project.assembled_url };
+  }
+  if (step === "script" && project.script) {
+    return { kind: "text", title: "Script", text: project.script };
+  }
+  if (step === "topic" && project.selected_topic) {
+    return { kind: "text", title: "Video idea", text: project.selected_topic };
+  }
+  if (step === "visuals" && project.visual_profile) {
+    return { kind: "text", title: "Visual style", text: asText(project.visual_profile) };
+  }
+  if (step === "channel_analysis" && project.channel_analysis) {
+    return { kind: "text", title: "Channel analysis", text: asText(project.channel_analysis) };
+  }
+  return null;
+}
+
+/** Structured columns are objects. Rendered as their own JSON rather than as
+ *  "[object Object]", which is what a stringify-free version showed. */
+function asText(value: unknown): string {
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
 /** Plays one voiceover without a player sitting in every row. */
@@ -125,54 +204,52 @@ function AudioPreview({ url }: { url: string }) {
   );
 }
 
-/**
- * What the charge bought, where there is something to show.
- *
- * A row naming beat 12 and a number is a receipt; the picture it paid for is
- * the thing that says whether it was worth it. A clip shows the frame it was
- * made from with a play badge, because a video element per row is a download
- * per row for something nobody has asked to watch yet.
- */
-function ResultCell({ step, beat }: { step: string | null; beat: PreviewBeat | null }) {
-  const none = <span style={{ color: "var(--c-30)" }}>—</span>;
-  if (!step || !beat) return none;
+function ResultCell({ preview, voiceoverUrl, onOpen }: {
+  preview: Preview | null;
+  /** The one result that plays where it sits: a play button IS the preview. */
+  voiceoverUrl?: string | null;
+  onOpen: (p: Preview) => void;
+}) {
+  if (voiceoverUrl) return <AudioPreview url={voiceoverUrl} />;
+  if (!preview) return <span style={{ color: "var(--c-30)" }}>—</span>;
 
-  if (step === "image_gen" && beat.imageUrl) {
+  if (preview.kind === "text") {
     return (
-      <a href={beat.imageUrl} target="_blank" rel="noopener noreferrer" title="Open the full image">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={beat.imageUrl} alt={`Beat ${beat.beatNumber}`}
-          className="h-7 w-11 rounded-md object-cover transition-opacity hover:opacity-80"
-          style={{ border: "1px solid var(--bd-8)" }} loading="lazy" decoding="async" />
-      </a>
+      <button
+        type="button"
+        onClick={() => onOpen(preview)}
+        title={preview.text.slice(0, 200)}
+        className="inline-flex h-7 items-center rounded-md px-2.5 text-[11px] font-medium transition-opacity hover:opacity-80"
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+      >
+        View
+      </button>
     );
   }
-  if (step === "video_gen" && beat.videoUrl) {
-    return (
-      <a href={beat.videoUrl} target="_blank" rel="noopener noreferrer" title="Open the clip"
-        className="relative inline-block h-7 w-11 rounded-md overflow-hidden transition-opacity hover:opacity-80"
-        style={{ border: "1px solid var(--bd-8)", background: "var(--bg-progress)" }}>
-        {beat.imageUrl && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={beat.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
-        )}
-        <span className="absolute inset-0 flex items-center justify-center" style={{ background: "oklch(0 0 0 / 0.35)", color: "white" }}>
+
+  // A clip shows the frame it was made from with a play badge: a video element
+  // per row is a download per row for something nobody has asked to watch.
+  const thumb = preview.kind === "image" ? preview.src : preview.poster;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(preview)}
+      title={preview.kind === "image" ? "View the image" : "Play the clip"}
+      className="relative inline-block h-7 w-11 overflow-hidden rounded-md transition-opacity hover:opacity-80"
+      style={{ border: "1px solid var(--bd-8)", background: "var(--bg-progress)" }}
+    >
+      {thumb && (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+      )}
+      {preview.kind === "video" && (
+        <span className="absolute inset-0 flex items-center justify-center"
+          style={{ background: "oklch(0 0 0 / 0.35)", color: "white" }}>
           <Play size={11} />
         </span>
-      </a>
-    );
-  }
-  if (step === "tts" && beat.voiceoverUrl) return <AudioPreview url={beat.voiceoverUrl} />;
-
-  const text = step === "prompts_image" ? beat.imagePrompt : step === "prompts_video" ? beat.videoPrompt : null;
-  if (text) {
-    return (
-      <span className="block truncate text-[11px]" title={text} style={{ color: "var(--c-45)" }}>
-        {text}
-      </span>
-    );
-  }
-  return none;
+      )}
+    </button>
+  );
 }
 
 type CostsResponse = {
@@ -249,6 +326,9 @@ export default function ProjectCostPage({ params }: PageProps) {
 
   const cells = data?.columns;
   const log = data?.log ?? [];
+
+  // What the Result column has opened, if anything.
+  const [preview, setPreview] = useState<Preview | null>(null);
 
   // The beat each charge belongs to, for the Result column. Already in memory:
   // the page loads the project for the wizard nav, and the beats ride with it.
@@ -574,9 +654,17 @@ export default function ProjectCostPage({ params }: PageProps) {
                       <td className="py-2.5 px-3 text-xs">
                         {/* Only a charge has something to show: a refund is the
                             credits coming back, not a second artefact. */}
-                        {r.type === "refunded"
-                          ? <span style={{ color: "var(--c-30)" }}>—</span>
-                          : <ResultCell step={r.step} beat={r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null} />}
+                        {(() => {
+                          if (r.type === "refunded") return <span style={{ color: "var(--c-30)" }}>—</span>;
+                          const beat = r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null;
+                          return (
+                            <ResultCell
+                              preview={previewFor(r.step, beat, (project ?? {}) as ProjectPreviewFields)}
+                              voiceoverUrl={r.step === "tts" ? beat?.voiceoverUrl : null}
+                              onOpen={setPreview}
+                            />
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-3 text-xs">
                         {/* Colour carries the direction, so the two read apart
@@ -678,6 +766,31 @@ export default function ProjectCostPage({ params }: PageProps) {
           )}
         </div>
       </main>
+
+      {/* What the Result column opens. One dialog for every row rather than a
+          new tab per click: the log is a list you read down, and losing the
+          page to open one image is how you lose your place in it. */}
+      <Dialog open={!!preview} onOpenChange={(next) => { if (!next) setPreview(null); }}>
+        <DialogContent className="sm:max-w-3xl p-0 gap-0 max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="px-5 py-3.5 pr-12 border-b" style={{ borderColor: "var(--bd-6)" }}>
+            <DialogTitle className="text-sm font-semibold">{preview?.title ?? "Result"}</DialogTitle>
+            <DialogDescription className="sr-only">What this charge produced.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[calc(90dvh-56px)] overflow-y-auto">
+            {preview?.kind === "image" && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={preview.src} alt={preview.title} className="w-full max-h-[75vh] object-contain" style={{ background: "oklch(0 0 0 / 0.35)" }} />
+            )}
+            {preview?.kind === "video" && (
+              <video src={preview.src} poster={preview.poster ?? undefined} controls autoPlay
+                className="w-full max-h-[75vh]" style={{ background: "oklch(0 0 0 / 0.35)" }} />
+            )}
+            {preview?.kind === "text" && (
+              <p className="whitespace-pre-wrap px-5 py-4 text-[13px] leading-relaxed">{preview.text}</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

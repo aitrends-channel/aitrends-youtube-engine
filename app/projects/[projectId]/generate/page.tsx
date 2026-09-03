@@ -166,6 +166,9 @@ function useGridVirtualizer(count: number, externalRef: { current: HTMLDivElemen
   return { setRef, ...range };
 }
 
+/** Provider ids as people write them. */
+const PROVIDER_NAME: Record<string, string> = { poyo: "PoYo", kie: "KIE", genaipro: "GenAIPro" };
+
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
   // Keep the matcher tight — "quota exceeded" was catching KIE's
@@ -446,7 +449,11 @@ export default function GeneratePage({ params }: PageProps) {
   // failure here may bill the customer for a vendor balance or send them to
   // its top-up page. Held in a ref as well, because the value arrives after
   // the auth read and callbacks memoised before that would keep the old one.
-  const { onCredits } = useViewerPlan();
+  const { onCredits, isAdmin } = useViewerPlan();
+  // An empty PROVIDER account is ours to fix, not the customer's, so it is
+  // raised to an admin as a prompt rather than left in the run's error banner
+  // where it reads as one more failed generation.
+  const [providerHalt, setProviderHalt] = useState<{ provider: string; balance: number | null } | null>(null);
   const onCreditsRef = useRef(onCredits);
   onCreditsRef.current = onCredits;
   const viewerError = (raw: string | undefined | null, operator?: string | null) =>
@@ -1924,10 +1931,16 @@ export default function GeneratePage({ params }: PageProps) {
             await new Promise((r) => setTimeout(r, waitMs));
             continue;
           }
-          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string; providerUnfunded?: boolean };
+          const data = await res.json().catch(() => ({})) as {
+            taskId?: string; error?: string; providerUnfunded?: boolean;
+            provider?: string; providerBalance?: number | null;
+          };
           if (!res.ok || !data.taskId) {
             const errMsg = data.error ?? `HTTP ${res.status}`;
-            if (data.providerUnfunded) providerHalted = true;
+            if (data.providerUnfunded) {
+              providerHalted = true;
+              if (isAdmin) setProviderHalt({ provider: data.provider ?? "The provider", balance: data.providerBalance ?? null });
+            }
             // Surface KIE credit exhaustion as sticky UI state, not just
             // a transient toast. We also kick the balance fetch so the
             // displayed balance updates without waiting for the 30s
@@ -4234,6 +4247,43 @@ export default function GeneratePage({ params }: PageProps) {
                   Deleting…
                 </span>
               ) : "Delete voiceover"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admins only, and short. An empty provider account is an operations
+          fact, not a generation that failed: it names the account, how much is
+          left, and the two ways out. Customers keep the run banner, which is
+          worded for someone who cannot act on either. */}
+      <Dialog open={!!providerHalt} onOpenChange={(next) => { if (!next) setProviderHalt(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {PROVIDER_NAME[providerHalt?.provider ?? ""] ?? providerHalt?.provider} is out of credit
+            </DialogTitle>
+            <DialogDescription>
+              {typeof providerHalt?.balance === "number"
+                ? `${providerHalt.balance.toFixed(2)} left. Top it up, or switch this surface to another provider.`
+                : "Top it up, or switch this surface to another provider."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setProviderHalt(null)}
+              className="h-9 px-4 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
+              style={{ border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/admin")}
+              className="h-9 px-4 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)" }}
+            >
+              Open Admin
             </button>
           </DialogFooter>
         </DialogContent>

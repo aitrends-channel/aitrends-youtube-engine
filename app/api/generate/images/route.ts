@@ -61,7 +61,13 @@ export async function POST(req: Request) {
     // above zero rather than at it.
     const funded = await assertProviderFunded(op.id);
     if (!funded.ok) {
-      return NextResponse.json({ error: funded.error, providerUnfunded: true }, { status: 503 });
+      // provider and balance travel with it: an admin reading this needs to
+      // know which account and how empty, and parsing that back out of the
+      // sentence is how the two come to disagree.
+      return NextResponse.json(
+        { error: funded.error, providerUnfunded: true, provider: op.id, providerBalance: funded.balance ?? null },
+        { status: 503 },
+      );
     }
 
     // Admin-tunable: product_config.batched_processes.image_generation_batch.
