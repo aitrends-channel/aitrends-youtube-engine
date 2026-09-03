@@ -1,7 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { isAdminUser } from "@/lib/admin";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
-import { meetsTier } from "@/lib/plans-gating";
 
 // Staged rollout of the Heclus Credits release.
 //
@@ -70,10 +69,9 @@ export function isGatedPlan(slug: string | null | undefined): boolean {
 /** Kept in step with PRODUCTION_TEST_SLUG in components/SubscriptionModal.tsx. */
 const PRODUCTION_TEST_SLUG = "production-test";
 
-/** True when this account may use Assemble's sound effects and elements: the
- *  tier the Max card sells them on, with an admin resolving to the top tier
- *  like everywhere else. Unused by the page, which reads the tier it already
- *  has, and kept for any server route that needs the same answer from a user. */
-export function canUseSoundEffects(user: User | null | undefined): boolean {
-  return meetsTier(user, "max");
+/** Whether Assemble offers sound effects at all. Off: the tab is withdrawn
+ *  from everyone, admins included, while elements stay open to every account.
+ *  A project that already carries beat or placed sounds still renders them. */
+export function canUseSoundEffects(_user: User | null | undefined): boolean {
+  return false;
 }

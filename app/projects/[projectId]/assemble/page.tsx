@@ -17,7 +17,7 @@ import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPrevie
 import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
-import { requiredTierForResolution, resolutionAllowedForPlan, tierForPlan, tierRank, tierLabel } from "@/lib/plans-gating";
+import { requiredTierForResolution, resolutionAllowedForPlan, tierLabel } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 
 interface PageProps {
@@ -1256,15 +1256,15 @@ export default function AssemblePage({ params }: PageProps) {
     }).catch(() => { /* leave default */ });
     return () => { cancelled = true; };
   }, []);
-  const userTier = tierForPlan(userPlan);
-  // Sounds and elements are what the Max card sells: "text overlays, elements
-  // and sound effects". They were admin-only while they did not survive the
-  // render — the bed was built on an ffmpeg input the library rejected, so
-  // every one of them was silently dropped from the finished video. That is
-  // fixed, so the gate is the tier the customer bought rather than a rollout
-  // flag. tierForPlan resolves an admin to the top tier, so this needs no
-  // second lookup, the same way the 4K gate does not.
-  const soundsAllowed = tierRank(userTier) >= tierRank("max");
+  // Elements are open to every account, including the customers on the old
+  // plans: they are drawn by our own worker from assets that ship with it, so
+  // they cost nothing per use and there is nothing to meter.
+  //
+  // Sound is off for everyone, including admins. The tab is withdrawn rather
+  // than gated: a project that already carries beat sounds or placed ones
+  // still renders them, so nothing recorded is lost, but no new ones can be
+  // added from here.
+  const soundsTabEnabled = false;
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
@@ -1414,13 +1414,10 @@ export default function AssemblePage({ params }: PageProps) {
   const [sfxVolume, setSfxVolume] = useState(0.6);
   const [effectsTab, setEffectsTab] = useState<"effects" | "transitions" | "filters" | "sound" | "elements" | "text">("effects");
   useEffect(() => {
-    // Runs when the plan resolves, not on mount, so a restored "sound" tab
-    // survives for an admin and is dropped for everyone else. Without it a
-    // customer could sit on a tab whose strip button no longer exists.
-    if (!soundsAllowed && (effectsTab === "sound" || effectsTab === "elements")) {
-      setEffectsTab("effects");
-    }
-  }, [soundsAllowed, effectsTab]);
+    // A tab restored from a previous session whose button no longer exists
+    // would leave the panel showing nothing.
+    if (!soundsTabEnabled && effectsTab === "sound") setEffectsTab("effects");
+  }, [effectsTab]);
 
   // The All / Custom switch inside the Sound and Elements tabs, and the
   // account's own uploads. One state for both libraries: they are the same
@@ -5083,7 +5080,7 @@ export default function AssemblePage({ params }: PageProps) {
                 <div className={`flex gap-1 p-1 rounded-xl mb-3 ${finalMode ? "pointer-events-auto" : ""}`}
                   style={{ background: "var(--bg-input)" }}>
                   {([["effects", "Effects"], ["transitions", "Transitions"], ["filters", "Filters"], ["sound", "Sound"], ["elements", "Elements"], ["text", "Text"]] as const)
-                    .filter(([id]) => soundsAllowed || (id !== "sound" && id !== "elements"))
+                    .filter(([id]) => soundsTabEnabled || id !== "sound")
                     .map(([id, label]) => (
                     <button
                       key={id}
