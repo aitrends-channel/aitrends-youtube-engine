@@ -72,7 +72,16 @@ const STEP_LABEL: Record<string, string> = {
   video_gen:        "Video clip generation",
   assemble:         "Final video assembly",
   thumbnail:        "Thumbnail generation",
+  thumbnail_concept: "Thumbnail concepts",
+  thumbnail_image:  "Thumbnail generation",
 };
+
+/** A step's display name, falling back to the raw step tidied up rather than to
+ *  a dash: a step this page has no name for is still real work. */
+function stepLabel(step: string | null): string {
+  if (!step) return "—";
+  return STEP_LABEL[step] ?? step.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
 
 /** What the charge produced, as a thing rather than as a process. "Video prompt
  *  generation" is what happened; "Video prompt" is what came out of it, and it
@@ -287,6 +296,20 @@ type CostsResponse = {
   inCredits?: boolean;
   columns: Record<CostColumn, ColumnSummary>;
   log?: CreditLogEntry[];
+  events?: CostEventEntry[];
+};
+
+/** One metered event, for an account with no ledger to read. Same list the
+ *  credit log shows, in provider units and without a beat: project_costs does
+ *  not record one. */
+type CostEventEntry = {
+  column: string | null;
+  step: string | null;
+  provider: string | null;
+  model: string | null;
+  unitKind: string;
+  units: number;
+  at: string;
 };
 
 const COLS: { key: CostColumn; label: string }[] = [
@@ -354,6 +377,7 @@ export default function ProjectCostPage({ params }: PageProps) {
 
   const cells = data?.columns;
   const log = data?.log ?? [];
+  const events = data?.events ?? [];
 
   // What the Result column has opened, if anything.
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -487,6 +511,16 @@ export default function ProjectCostPage({ params }: PageProps) {
   const firstOnPage = log.length === 0 ? 0 : page * PAGE_SIZE + 1;
   const lastOnPage = Math.min(log.length, (page + 1) * PAGE_SIZE);
 
+  // The same paging over the other list. Its own counter, because the two
+  // tables are never on screen together and a shared one would carry a page
+  // number from a list of a different length.
+  const [eventPage, setEventPage] = useState(0);
+  const eventPageCount = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
+  useEffect(() => { setEventPage((p) => Math.min(p, eventPageCount - 1)); }, [eventPageCount]);
+  const eventRows = events.slice(eventPage * PAGE_SIZE, eventPage * PAGE_SIZE + PAGE_SIZE);
+  const firstEventOnPage = events.length === 0 ? 0 : eventPage * PAGE_SIZE + 1;
+  const lastEventOnPage = Math.min(events.length, (eventPage + 1) * PAGE_SIZE);
+
   // Net is over everything, not the page. A total that changed as you paged
   // would be a different number wearing the same label.
   const netCharged = log.reduce(
@@ -501,9 +535,7 @@ export default function ProjectCostPage({ params }: PageProps) {
     // would put two rows called "Image" next to each other, one taking credits
     // and one giving them back.
     if (r.type === "refunded") return "Credit refunded";
-    if (!r.step) return "—";
-    return STEP_LABEL[r.step]
-      ?? r.step.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+    return stepLabel(r.step);
   };
 
   /** Local time, to the minute. Seconds add width and answer nothing. */
@@ -573,9 +605,11 @@ export default function ProjectCostPage({ params }: PageProps) {
             </div>
           ) : (
             !showCredits ? (
-            /* Old plans keep the provider-unit matrix. They are billed in
-               provider units and never take a hold, so there are no ledger
-               rows for a credit log to show and the list would be empty. */
+            /* Old plans keep the provider-unit matrix, unchanged, and now get
+               the same work as a list underneath it. They are billed in
+               provider units and take no holds, so credit_ledger has nothing
+               for them: the log is built from the meter instead. */
+            <>
             <div className="overflow-x-auto rounded-xl"
               style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
               <table className="w-full border-collapse min-w-[640px]">
@@ -620,6 +654,123 @@ export default function ProjectCostPage({ params }: PageProps) {
                 </tfoot>
               </table>
             </div>
+
+            {events.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-sm font-semibold mb-2 px-1" style={{ color: "var(--c-80)" }}>
+                  Usage log
+                </h2>
+                <p className="text-xs mb-3 px-1" style={{ color: "var(--c-45)" }}>
+                  Every generation on this project, newest first, in the units your providers bill you in.
+                </p>
+                <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
+                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[860px]" : "min-w-[700px]"}`}>
+                    <colgroup>
+                      <col />
+                      <col style={{ width: "120px" }} />
+                      {isAdmin && <col style={{ width: "170px" }} />}
+                      <col style={{ width: "110px" }} />
+                      <col style={{ width: "110px" }} />
+                      <col style={{ width: "160px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        {(isAdmin
+                          ? ["Process", "Type", "Model", "Result", "Used", "Date/Time"]
+                          : ["Process", "Type", "Result", "Used", "Date/Time"]
+                        ).map((h) => (
+                          <th key={h}
+                            className={`py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider ${h === "Used" || h === "Date/Time" ? "text-right" : "text-left"}`}
+                            style={{ color: "var(--c-45)" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {eventRows.map((r, i) => (
+                        <tr key={`${r.at}-${i}`} style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                          <td className="py-2.5 px-3 text-xs font-bold truncate" style={{ color: "var(--c-80)" }}>
+                            {stepLabel(r.step)}
+                          </td>
+                          <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {(r.step && STEP_KIND[r.step]) ?? "—"}
+                          </td>
+                          {isAdmin && (
+                            <td className="py-2.5 px-3 text-xs font-mono truncate" style={{ color: "var(--c-55)" }}>
+                              {r.model ?? "—"}
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3 text-xs">
+                            {/* Only the steps that produce one thing for the
+                                whole project can be shown here. The meter
+                                records no beat number, so an image row cannot
+                                say which image it paid for, and guessing one
+                                would put the wrong picture next to a charge. */}
+                            <ResultCell
+                              preview={previewFor(
+                                r.step,
+                                null,
+                                (project ?? {}) as ProjectPreviewFields,
+                                beatList,
+                                null,
+                              )}
+                              voiceoverUrl={null}
+                              onOpen={setPreview}
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-right whitespace-nowrap"
+                            style={{ color: "var(--c-70)" }}
+                            title={`${r.units.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unitSuffix(r.unitKind)}`}>
+                            {compactNumber(r.units)}
+                            <span style={{ marginLeft: "3px", opacity: 0.6 }}>{unitSuffix(r.unitKind)}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-xs tabular-nums text-right whitespace-nowrap"
+                            style={{ color: "var(--c-45)" }}>
+                            {formatWhen(r.at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {eventPageCount > 1 && (
+                    <div className="flex items-center justify-between gap-3 px-3 py-2.5"
+                      style={{ borderTop: "1px solid var(--bd-6)" }}>
+                      <span className="text-[11px] tabular-nums" style={{ color: "var(--c-45)" }}>
+                        {firstEventOnPage}-{lastEventOnPage} of {events.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEventPage((p) => Math.max(0, p - 1))}
+                          disabled={eventPage === 0}
+                          aria-label="Previous page"
+                          className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-80"
+                          style={{ background: "var(--bg-track)", color: "var(--c-65)" }}
+                        >
+                          <ChevronLeft size={14} />
+                        </button>
+                        <span className="text-[11px] tabular-nums px-1" style={{ color: "var(--c-55)" }}>
+                          {eventPage + 1} / {eventPageCount}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEventPage((p) => Math.min(eventPageCount - 1, p + 1))}
+                          disabled={eventPage >= eventPageCount - 1}
+                          aria-label="Next page"
+                          className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-80"
+                          style={{ background: "var(--bg-track)", color: "var(--c-65)" }}
+                        >
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            </>
             ) : (
             <div
               /* Breathing room round the table once there is width for it.

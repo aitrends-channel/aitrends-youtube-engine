@@ -37,6 +37,9 @@ export function unitSuffix(unitKind: string): string {
     case "claude_tokens_cache_creation":
       return "tok";
     case "kie_credits":          return "cr";
+    // PoYo bills in its own credit. Same word to a reader, and without this the
+    // raw unit kind was printed where a suffix belongs.
+    case "poyo_credits":         return "cr";
     case "elevenlabs_chars":     return "chr";
     case "supadata_transcripts": return "tx";
     default:                     return unitKind;

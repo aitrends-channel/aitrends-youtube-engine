@@ -56,6 +56,28 @@ export interface CreditLogEntry {
   at: string;
 }
 
+/**
+ * One metered event, for the accounts that have no ledger.
+ *
+ * An old-plan account spends on its own keys, so credit_ledger has nothing for
+ * it and the usage log a credit account reads was simply not available. The
+ * meter records the same work either way, so this is that: one row per thing
+ * the project actually did.
+ *
+ * No beat number, because project_costs does not carry one. The log names what
+ * ran and what it used; a per-beat result can only be shown for the steps that
+ * produce one thing for the whole project.
+ */
+export interface CostEventEntry {
+  column: string | null;
+  step: string | null;
+  provider: string | null;
+  model: string | null;
+  unitKind: string;
+  units: number;
+  at: string;
+}
+
 interface CostBreakdownEntry {
   provider: string;
   model: string | null;
@@ -134,11 +156,13 @@ export async function GET(
     model: string | null;
     units: number;
     unit_kind: string;
+    created_at: string;
+    event_key: string | null;
   }> = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data: page, error } = await supabase
       .from("project_costs")
-      .select("step, provider, model, units, unit_kind")
+      .select("step, provider, model, units, unit_kind, created_at, event_key")
       .eq("project_id", projectId)
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) {
@@ -252,8 +276,63 @@ export async function GET(
     columns[col].heclusCreditsCharged -= Number(row.credits);
   }
 
+  // The meter as a list, newest first.
+  //
+  // Sent to everyone rather than only to the accounts that render it: an admin
+  // switching to the old-plan view is reading their own project, and a payload
+  // that depended on their funding mode would show them an empty log for a
+  // project full of work. Capped, because the page reads a few screens of it
+  // and a long project has hundreds of rows.
+  const EVENT_LIMIT = 500;
+
+  // One Claude call meters up to four rows: input, output, cache read and cache
+  // write. Listed raw they are four lines for one thing, with four numbers that
+  // mean nothing apart, so they are summed back into the call.
+  //
+  // Grouped by step and model inside a short window rather than by the event
+  // key, because these rows carry no shared key: each is written with an id of
+  // its own. The window is what a single call looks like in the table, the four
+  // rows landing within a few tens of milliseconds of each other. A step that
+  // fans out over parallel chunks reads as one entry per burst, which is closer
+  // to what happened than four rows per chunk.
+  const TOKEN_WINDOW_MS = 2_000;
+  const openCall = new Map<string, CostEventEntry>();
+  const ordered: CostEventEntry[] = [];
+  const byTimeAsc = [...(data ?? [])].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
+  for (const row of byTimeAsc) {
+    if (row.provider === "supadata") continue;
+    const entry: CostEventEntry = {
+      column: stepToColumn[row.step] ?? null,
+      step: row.step || null,
+      provider: row.provider,
+      model: row.model,
+      unitKind: row.unit_kind,
+      units: Number(row.units),
+      at: row.created_at,
+    };
+    if (!row.unit_kind.startsWith("claude_tokens")) {
+      ordered.push(entry);
+      continue;
+    }
+    entry.unitKind = "claude_tokens";
+    const key = `${row.step}|${row.model ?? ""}`;
+    const open = openCall.get(key);
+    const gap = open ? Date.parse(entry.at) - Date.parse(open.at) : Infinity;
+    if (open && gap >= 0 && gap <= TOKEN_WINDOW_MS) {
+      open.units += entry.units;
+      open.at = entry.at;
+      open.model ??= entry.model;
+      continue;
+    }
+    openCall.set(key, entry);
+    ordered.push(entry);
+  }
+  const events: CostEventEntry[] = ordered
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    .slice(0, EVENT_LIMIT);
+
   const inCredits =
     isHeclusCreditsPlan(billingPlanOf(user)) || (await getFundingMode(user)) === "wallet";
 
-  return NextResponse.json({ projectId, columns, inCredits, log });
+  return NextResponse.json({ projectId, columns, inCredits, log, events });
 }
