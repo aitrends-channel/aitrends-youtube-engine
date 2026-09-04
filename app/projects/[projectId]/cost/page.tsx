@@ -43,6 +43,11 @@ type CreditLogEntry = {
   type: "charged" | "refunded";
   credits: number;
   at: string;
+  /** "running" is work that has started and has not been metered yet: no
+   *  amount, no time, and an orange badge saying so. */
+  status?: "done" | "running";
+  /** How many beats a running row stands for. */
+  beats?: number;
 };
 
 /** What each step is called in the log. Named per step rather than per column:
@@ -310,6 +315,8 @@ type CostEventEntry = {
   unitKind: string;
   units: number;
   at: string;
+  status?: "done" | "running";
+  beats?: number;
 };
 
 const COLS: { key: CostColumn; label: string }[] = [
@@ -349,6 +356,26 @@ const STEP_ACTIVITY: Record<string, string> = {
   thumbnail_concept: "Thumbnail concepts written",
   thumbnail_image:   "Thumbnail generated",
 };
+
+/** Orange, because it is the one row on the page that is still changing. */
+const RUNNING_ORANGE = "oklch(0.70 0.18 45)";
+
+function StatusCell({ running }: { running: boolean }) {
+  return (
+    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
+      style={running
+        ? { background: "oklch(0.70 0.18 45 / 0.14)", color: RUNNING_ORANGE }
+        : { background: "var(--bg-progress)", color: "var(--c-50)" }}>
+      {running ? "In progress" : "Done"}
+    </span>
+  );
+}
+
+/** What a running row stands for: the step, and how many beats are in it. */
+function runningLabel(step: string | null, beats: number | undefined): string {
+  const name = stepLabel(step);
+  return beats && beats > 1 ? `${name} · ${beats} beats` : name;
+}
 
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic:  "Anthropic",
@@ -394,14 +421,22 @@ export default function ProjectCostPage({ params }: PageProps) {
     if (summaryMode) router.push("/dashboard");
     else router.back();
   };
+  // Polled only while something is running. A log of finished work has no
+  // reason to refetch, and an in-progress row that only appears on reload is
+  // not telling anybody anything.
+  const [running, setRunning] = useState(false);
   const { data, error, isLoading } = useSWR<CostsResponse>(
     projectId ? `/api/projects/${projectId}/costs` : null,
     fetcher,
+    { refreshInterval: running ? 8_000 : 0 },
   );
 
   const cells = data?.columns;
   const log = data?.log ?? [];
   const events = data?.events ?? [];
+  const hasRunning =
+    events.some((e) => e.status === "running") || log.some((e) => e.status === "running");
+  useEffect(() => { setRunning(hasRunning); }, [hasRunning]);
 
   // What the Result column has opened, if anything.
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -700,7 +735,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                 )}
                 <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
-                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1140px]" : "min-w-[960px]"}`}>
+                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1260px]" : "min-w-[1080px]"}`}>
                     <colgroup>
                       <col />
                       <col style={{ width: "110px" }} />
@@ -709,13 +744,14 @@ export default function ProjectCostPage({ params }: PageProps) {
                       <col style={{ width: "110px" }} />
                       <col style={{ width: "180px" }} />
                       <col style={{ width: "110px" }} />
+                      <col style={{ width: "110px" }} />
                       <col style={{ width: "160px" }} />
                     </colgroup>
                     <thead>
                       <tr>
                         {(isAdmin
-                          ? ["Process", "Step", "Provider", "Model", "Result", "Activity", "Used", "Date/Time"]
-                          : ["Process", "Step", "Provider", "Result", "Activity", "Used", "Date/Time"]
+                          ? ["Process", "Step", "Provider", "Model", "Result", "Activity", "Status", "Used", "Date/Time"]
+                          : ["Process", "Step", "Provider", "Result", "Activity", "Status", "Used", "Date/Time"]
                         ).map((h) => (
                           <th key={h}
                             className={`py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider ${h === "Used" || h === "Date/Time" ? "text-right" : "text-left"}`}
@@ -726,10 +762,12 @@ export default function ProjectCostPage({ params }: PageProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {eventRows.map((r, i) => (
+                      {eventRows.map((r, i) => {
+                      const isRunning = r.status === "running";
+                      return (
                         <tr key={`${r.at}-${i}`} style={{ borderBottom: "1px solid var(--bd-6)" }}>
                           <td className="py-2.5 px-3 text-xs font-bold truncate" style={{ color: "var(--c-80)" }}>
-                            {stepLabel(r.step)}
+                            {isRunning ? runningLabel(r.step, r.beats) : stepLabel(r.step)}
                           </td>
                           <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
                             {(r.step && STEP_KIND[r.step]) ?? "—"}
@@ -751,33 +789,47 @@ export default function ProjectCostPage({ params }: PageProps) {
                                 records no beat number, so an image row cannot
                                 say which image it paid for, and guessing one
                                 would put the wrong picture next to a charge. */}
-                            <ResultCell
-                              preview={previewFor(
-                                r.step,
-                                null,
-                                (project ?? {}) as ProjectPreviewFields,
-                                beatList,
-                                null,
-                              )}
-                              voiceoverUrl={null}
-                              onOpen={setPreview}
-                            />
+                            {/* Nothing to open on work that has not finished. */}
+                            {isRunning ? <span style={{ color: "var(--c-30)" }}>—</span> : (
+                              <ResultCell
+                                preview={previewFor(
+                                  r.step,
+                                  null,
+                                  (project ?? {}) as ProjectPreviewFields,
+                                  beatList,
+                                  null,
+                                )}
+                                voiceoverUrl={null}
+                                onOpen={setPreview}
+                              />
+                            )}
                           </td>
                           <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-70)" }}>
                             {(r.step && STEP_ACTIVITY[r.step]) ?? "Metered"}
                           </td>
+                          <td className="py-2.5 px-3 text-xs">
+                            <StatusCell running={isRunning} />
+                          </td>
+                          {/* No amount until the provider reports one. A number
+                              here would be an estimate wearing a meter's
+                              clothes. */}
                           <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-right whitespace-nowrap"
-                            style={{ color: "var(--c-70)" }}
-                            title={`${r.units.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unitSuffix(r.unitKind)}`}>
-                            {compactNumber(r.units)}
-                            <span style={{ marginLeft: "3px", opacity: 0.6 }}>{unitSuffix(r.unitKind)}</span>
+                            style={{ color: isRunning ? "var(--c-30)" : "var(--c-70)" }}
+                            title={isRunning ? "Still running — nothing metered yet" : `${r.units.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unitSuffix(r.unitKind)}`}>
+                            {isRunning ? "—" : (
+                              <>
+                                {compactNumber(r.units)}
+                                <span style={{ marginLeft: "3px", opacity: 0.6 }}>{unitSuffix(r.unitKind)}</span>
+                              </>
+                            )}
                           </td>
                           <td className="py-2.5 px-3 text-xs tabular-nums text-right whitespace-nowrap"
                             style={{ color: "var(--c-45)" }}>
-                            {formatWhen(r.at)}
+                            {isRunning ? "—" : formatWhen(r.at)}
                           </td>
                         </tr>
-                      ))}
+                      );
+                      })}
                     </tbody>
                   </table>
                   {eventRows.length === 0 && (
@@ -879,7 +931,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                   Nothing charged on this project yet.
                 </p>
               ) : (
-              <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[980px]" : "min-w-[800px]"}`}>
+              <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1100px]" : "min-w-[920px]"}`}>
                 {/* Fixed columns, so a long process name cannot squeeze the
                     amount, and the three narrow columns line up down the page
                     instead of shifting row to row. */}
@@ -890,6 +942,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                   <col style={{ width: "110px" }} />
                   <col style={{ width: "100px" }} />
                   <col style={{ width: "110px" }} />
+                  <col style={{ width: "110px" }} />
                   <col style={{ width: "160px" }} />
                 </colgroup>
                 <thead>
@@ -898,8 +951,8 @@ export default function ProjectCostPage({ params }: PageProps) {
                         The badge column used to be called Type, which left the
                         table with no word for the thing being paid for. */}
                     {(isAdmin
-                      ? ["Process", "Type", "Model", "Result", "Action", "Credits", "Date/Time"]
-                      : ["Process", "Type", "Result", "Action", "Credits", "Date/Time"]
+                      ? ["Process", "Type", "Model", "Result", "Action", "Status", "Credits", "Date/Time"]
+                      : ["Process", "Type", "Result", "Action", "Status", "Credits", "Date/Time"]
                     ).map((h) => (
                       <th key={h}
                         className={`py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider ${h === "Credits" || h === "Date/Time" ? "text-right" : "text-left"}`}
@@ -910,10 +963,12 @@ export default function ProjectCostPage({ params }: PageProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((r, i) => (
+                  {pageRows.map((r, i) => {
+                  const isRunning = r.status === "running";
+                  return (
                     <tr key={`${r.at}-${i}`} style={{ borderBottom: "1px solid var(--bd-6)" }}>
                       <td className="py-2.5 px-3 text-xs font-bold truncate" style={{ color: "var(--c-80)" }}>
-                        {processLabel(r)}
+                        {isRunning ? runningLabel(r.step, r.beats) : processLabel(r)}
                         {/* Which beat, where there is one. A hundred image
                             rows that all say "Image" name nothing. */}
                         {r.beatNumber !== null && (
@@ -935,7 +990,9 @@ export default function ProjectCostPage({ params }: PageProps) {
                         {/* Only a charge has something to show: a refund is the
                             credits coming back, not a second artefact. */}
                         {(() => {
-                          if (r.type === "refunded") return <span style={{ color: "var(--c-30)" }}>—</span>;
+                          // Nothing to open on a refund, and nothing to open
+                          // on work still running.
+                          if (isRunning || r.type === "refunded") return <span style={{ color: "var(--c-30)" }}>—</span>;
                           const beat = r.beatNumber === null ? null : beatsByNumber.get(r.beatNumber) ?? null;
                           return (
                             <ResultCell
@@ -957,29 +1014,43 @@ export default function ProjectCostPage({ params }: PageProps) {
                       <td className="py-2.5 px-3 text-xs">
                         {/* Colour carries the direction, so the two read apart
                             at a glance without the amount needing a sign. */}
-                        <span className="px-1.5 py-0.5 rounded text-[11px] font-medium"
-                          style={r.type === "refunded"
-                            ? { background: "oklch(0.7 0.19 25 / 0.15)", color: REFUND_RED }
-                            : { background: "oklch(0.7 0.16 145 / 0.13)", color: CHARGE_GREEN }}>
-                          {r.type === "refunded" ? "Refund" : "Charged"}
-                        </span>
+                        {isRunning ? (
+                          <span style={{ color: "var(--c-30)" }}>—</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[11px] font-medium"
+                            style={r.type === "refunded"
+                              ? { background: "oklch(0.7 0.19 25 / 0.15)", color: REFUND_RED }
+                              : { background: "oklch(0.7 0.16 145 / 0.13)", color: CHARGE_GREEN }}>
+                            {r.type === "refunded" ? "Refund" : "Charged"}
+                          </span>
+                        )}
                       </td>
+                      <td className="py-2.5 px-3 text-xs">
+                        <StatusCell running={isRunning} />
+                      </td>
+                      {/* Held is not charged. A running row shows no amount
+                          because none has been taken yet. */}
                       <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-right"
-                        style={{ color: r.type === "refunded" ? REFUND_RED : CHARGE_GREEN }}>
-                        {r.type === "refunded" ? "+" : "−"}
-                        {r.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        style={{ color: isRunning ? "var(--c-30)" : r.type === "refunded" ? REFUND_RED : CHARGE_GREEN }}>
+                        {isRunning ? "—" : (
+                          <>
+                            {r.type === "refunded" ? "+" : "−"}
+                            {r.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-xs tabular-nums text-right whitespace-nowrap"
                         style={{ color: "var(--c-45)" }}>
-                        {formatWhen(r.at)}
+                        {isRunning ? "—" : formatWhen(r.at)}
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: "1px solid var(--bd-card)" }}>
                     <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
-                      style={{ color: "var(--c-45)" }} colSpan={isAdmin ? 5 : 4}>
+                      style={{ color: "var(--c-45)" }} colSpan={isAdmin ? 6 : 5}>
                       Net charged
                     </td>
                     <td className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums text-right"

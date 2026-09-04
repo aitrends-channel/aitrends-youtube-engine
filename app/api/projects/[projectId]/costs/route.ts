@@ -54,6 +54,12 @@ export interface CreditLogEntry {
   /** Always positive. The direction is in `type`, not the sign. */
   credits: number;
   at: string;
+  /** "running" is work that has started and not yet been metered. Those rows
+   *  are built from the beats, not from the ledger: nothing has been charged
+   *  for them yet, which is exactly what the row is there to say. */
+  status?: "done" | "running";
+  /** How many beats one running row stands for. */
+  beats?: number;
 }
 
 /**
@@ -76,6 +82,8 @@ export interface CostEventEntry {
   unitKind: string;
   units: number;
   at: string;
+  status?: "done" | "running";
+  beats?: number;
 }
 
 interface CostBreakdownEntry {
@@ -330,6 +338,78 @@ export async function GET(
   const events: CostEventEntry[] = ordered
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
     .slice(0, EVENT_LIMIT);
+
+  // Work that has started and has not been metered yet.
+  //
+  // A generation is recorded when it finishes, so a run in progress left both
+  // logs looking as though nothing was happening: the row appeared minutes
+  // later, all at once, at the moment it stopped being interesting. The beats
+  // know what is in flight, so that is where these come from.
+  //
+  // Grouped by step and provider rather than one row per beat: a forty beat
+  // run would otherwise bury everything already done behind forty identical
+  // pending lines. No amount and no time, because neither is known yet, and a
+  // guess at either would be the one thing a log must not do.
+  const IMAGE_RUNNING = new Set(["generating", "queued"]);
+  const VIDEO_RUNNING = new Set(["queued", "submitting", "rendering"]);
+  const VOICE_RUNNING = new Set(["generating", "queued"]);
+  const { data: beatRows } = await supabase
+    .from("project_beats")
+    .select("image_status, image_operator, image_model_id, video_status, video_operator, video_model_id, voiceover_status")
+    .eq("project_id", projectId);
+
+  const runningKey = (step: string, provider: string) => `${step}|${provider}`;
+  const running = new Map<string, { step: string; provider: string; model: string | null; beats: number }>();
+  const noteRunning = (step: string, provider: string, model: string | null) => {
+    const key = runningKey(step, provider);
+    const seen = running.get(key);
+    if (seen) { seen.beats += 1; seen.model ??= model; return; }
+    running.set(key, { step, provider, model, beats: 1 });
+  };
+  for (const b of ((beatRows ?? []) as Array<{
+    image_status: string | null; image_operator: string | null; image_model_id: string | null;
+    video_status: string | null; video_operator: string | null; video_model_id: string | null;
+    voiceover_status: string | null;
+  }>)) {
+    if (b.image_status && IMAGE_RUNNING.has(b.image_status)) {
+      noteRunning("image_gen", b.image_operator ?? "kie", b.image_model_id);
+    }
+    if (b.video_status && VIDEO_RUNNING.has(b.video_status)) {
+      noteRunning("video_gen", b.video_operator ?? "kie", b.video_model_id);
+    }
+    if (b.voiceover_status && VOICE_RUNNING.has(b.voiceover_status)) {
+      noteRunning("tts", "elevenlabs", null);
+    }
+  }
+
+  // At the front of both lists. They are the only rows describing now.
+  for (const r of [...running.values()].reverse()) {
+    events.unshift({
+      column: stepToColumn[r.step] ?? null,
+      step: r.step,
+      provider: r.provider,
+      model: r.model,
+      unitKind: r.step === "tts" ? "elevenlabs_chars" : "kie_credits",
+      units: 0,
+      at: new Date().toISOString(),
+      status: "running",
+      beats: r.beats,
+    });
+    log.unshift({
+      column: stepToColumn[r.step] ?? null,
+      step: r.step,
+      beatNumber: null,
+      beatsFrom: null,
+      beatsTo: null,
+      provider: r.provider,
+      model: r.model,
+      type: "charged",
+      credits: 0,
+      at: new Date().toISOString(),
+      status: "running",
+      beats: r.beats,
+    });
+  }
 
   const inCredits =
     isHeclusCreditsPlan(billingPlanOf(user)) || (await getFundingMode(user)) === "wallet";
