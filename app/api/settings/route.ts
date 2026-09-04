@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getSettings, invalidateSettingsCache } from "@/lib/settings";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { checkElevenLabs, checkKie, keyRejectionMessage } from "@/lib/key-check";
+import { checkAnthropic, checkElevenLabs, checkKie, keyRejectionMessage } from "@/lib/key-check";
 import { prefixTooLongMessage } from "@/lib/prefix-limit";
 import type { User } from "@supabase/supabase-js";
 
@@ -123,6 +123,12 @@ export async function POST(req: Request) {
         : null,
       typeof update.elevenlabs_api_key === "string"
         ? checkElevenLabs(update.elevenlabs_api_key).then((c) => keyRejectionMessage("elevenlabs", c))
+        : null,
+      // Checked like the other two now. It was the one field that took
+      // anything: two production accounts hold a value here that Anthropic
+      // has never seen, one of them their own KIE key.
+      typeof update.anthropic_api_key === "string"
+        ? checkAnthropic(update.anthropic_api_key).then((c) => keyRejectionMessage("anthropic", c))
         : null,
     ])).filter((m): m is string => !!m);
     if (rejections.length > 0) {

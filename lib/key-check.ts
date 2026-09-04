@@ -99,8 +99,8 @@ async function readSubscription(key: string): Promise<ElevenLabsCheck> {
       //     → key works fine for TTS but lacks user_read scope to view
       //       balance. Treat as configured/valid with no balance number.
       try {
-        const body = await res.json() as { detail?: { status?: string } };
-        if (body?.detail?.status === "missing_permissions") {
+        const body = await res.json() as { detail?: { status?: string; code?: string } };
+        if ((body?.detail?.code ?? body?.detail?.status) === "missing_permissions") {
           return { configured: true, valid: true, balanceIssue: "scope" };
         }
       } catch { /* non-JSON body — fall through to invalid */ }
@@ -114,8 +114,8 @@ async function readSubscription(key: string): Promise<ElevenLabsCheck> {
       // Active badge for a credential that cannot generate a single word of
       // voiceover, and blamed the missing balance on a scope.
       try {
-        const body = await res.json() as { detail?: { status?: string } };
-        if (body?.detail?.status === "api_key_id_used_as_api_key") {
+        const body = await res.json() as { detail?: { status?: string; code?: string; message?: string } };
+        if (isElevenLabsKeyIdError(body?.detail?.code ?? body?.detail?.status, body?.detail?.message)) {
           return { configured: true, valid: false, balanceIssue: "key_id" };
         }
       } catch { /* non-JSON body — fall through */ }
@@ -129,6 +129,55 @@ async function readSubscription(key: string): Promise<ElevenLabsCheck> {
     if (typeof used === "number" && typeof limit === "number") {
       return { configured: true, valid: true, remaining: Math.max(0, limit - used), limit };
     }
+    return { configured: true, valid: true };
+  } catch {
+    return { configured: true, valid: true };
+  }
+}
+
+/**
+ * Whether ElevenLabs is saying "that is the ID, not the key".
+ *
+ * Matched on the body it actually sends, which is
+ * `{ detail: { code: "invalid_api_key", message: "API key ID used as api key…" } }`.
+ * The old check read `detail.status` for a code ElevenLabs has never used, so
+ * it matched nothing: six production accounts saved an ID through a save path
+ * built to refuse it, and their voiceovers failed with the vendor's own
+ * wording months later.
+ */
+export function isElevenLabsKeyIdError(code: string | undefined, message: string | undefined): boolean {
+  if (code === "api_key_id_used_as_api_key") return true;
+  return /api key id used as (an )?api key/i.test(message ?? "");
+}
+
+/** The one sentence that explains the mistake, wherever it is noticed. Saving
+ *  the key says it, and so does the voiceover that fails on one saved before
+ *  the save path checked. */
+export const ELEVENLABS_KEY_ID_MESSAGE =
+  "That is the ElevenLabs key ID, not the key. The key starts with sk_ and is shown once, " +
+  "in the dialog right after you create or rotate it on the API Keys page. Paste that into Settings.";
+
+/**
+ * Anthropic, for a client who bills their own Claude usage.
+ *
+ * The only key field with no check at all until now, which is how one account
+ * came to hold its KIE key here and another twelve characters of something
+ * else. Both fail every Claude call they are used for, hours after a save that
+ * said it worked.
+ */
+export async function checkAnthropic(key: string): Promise<KeyCheck> {
+  if (!key) return { configured: false, valid: null };
+  // Anthropic keys are sk-ant-…; the console also shows an ID for each one,
+  // which is the value people copy because it is the one always on screen.
+  if (!key.startsWith("sk-ant-")) {
+    return { configured: true, valid: false, balanceIssue: "key_id" };
+  }
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+    });
+    if (res.status === 401 || res.status === 403) return { configured: true, valid: false };
+    // Same rule as the others: only a definitive rejection blocks a save.
     return { configured: true, valid: true };
   } catch {
     return { configured: true, valid: true };
@@ -174,15 +223,22 @@ export async function checkKie(key: string): Promise<KieCheck> {
  * Returns null when the check found nothing wrong, so callers can use it as
  * the gate itself.
  */
-export function keyRejectionMessage(provider: "kie" | "elevenlabs", check: KeyCheck): string | null {
+export function keyRejectionMessage(
+  provider: "kie" | "elevenlabs" | "anthropic", check: KeyCheck,
+): string | null {
   if (check.valid !== false) return null;
+  if (provider === "anthropic") {
+    return check.balanceIssue === "key_id"
+      ? "That does not look like an Anthropic key. They start with sk-ant- and are shown once, when you create them at console.anthropic.com/settings/keys."
+      : "Anthropic rejected that key. Check the whole value was copied, or create a new one.";
+  }
   if (provider === "elevenlabs") {
     // The key ID really is the common mistake, not an expired key: of the 16
     // prod accounts holding one, the 12 that ever had working voiceover each
     // stopped on a different date, which is what individual mis-pastes look
     // like. An expiry would have stopped them all on the same day.
     return check.balanceIssue === "key_id"
-      ? "That is the key ID, not the key. The key starts with sk_ and is shown once, in the dialog right after you create or rotate it on the API Keys page."
+      ? ELEVENLABS_KEY_ID_MESSAGE
       : "ElevenLabs rejected that key. Check the whole value was copied, or create a new key.";
   }
   return "KIE rejected that key. Check the whole value was copied, or create a new key.";

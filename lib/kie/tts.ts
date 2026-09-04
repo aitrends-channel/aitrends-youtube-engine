@@ -5,6 +5,7 @@ import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
 import { isAi33Voice, generateAi33TTS } from "@/lib/ai33/tts";
 import type { KieModel } from "@/lib/types";
 import { TTS_MODEL } from "@/lib/tts-models";
+import { ELEVENLABS_KEY_ID_MESSAGE, isElevenLabsKeyIdError } from "@/lib/key-check";
 export { TTS_MODEL, TTS_MODELS, isSelectableTtsModel, ttsModelOr } from "@/lib/tts-models";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
@@ -161,10 +162,15 @@ function extractElError(body: string, status: number): { message: string; status
   let message = `ElevenLabs error ${status}`;
   let code: string | undefined;
   try {
-    const parsed = JSON.parse(body) as { detail?: { message?: string; status?: string } | string; message?: string };
+    const parsed = JSON.parse(body) as {
+      detail?: { message?: string; status?: string; code?: string } | string; message?: string;
+    };
     if (typeof parsed.detail === "object" && parsed.detail) {
       if (typeof parsed.detail.message === "string") message = parsed.detail.message;
-      if (typeof parsed.detail.status === "string") code = parsed.detail.status;
+      // `code` on the newer errors, `status` on the older ones. Reading only
+      // one of them is how an authentication error arrived here uncategorised.
+      const inner = parsed.detail.code ?? parsed.detail.status;
+      if (typeof inner === "string") code = inner;
     } else if (typeof parsed.detail === "string") {
       message = parsed.detail;
     } else if (typeof parsed.message === "string") {
@@ -214,6 +220,13 @@ async function generateChunk(
         `Voice ${voiceId} is not in your ElevenLabs library. Add it from ` +
         `https://elevenlabs.io/app/voice-library and try again.`,
       );
+    }
+    // The key ID, pasted where the key goes. ElevenLabs answers 400 with its
+    // own wording, which tells somebody staring at a failed voiceover neither
+    // which key nor where to find the right one. Same sentence the save path
+    // uses, so the two surfaces cannot drift.
+    if (isElevenLabsKeyIdError(err.code, err.message)) {
+      throw new Error(ELEVENLABS_KEY_ID_MESSAGE);
     }
     if (res.status === 401 || res.status === 403) {
       throw new Error(`ElevenLabs auth failed (${res.status}). Check your API key in Settings.`);
