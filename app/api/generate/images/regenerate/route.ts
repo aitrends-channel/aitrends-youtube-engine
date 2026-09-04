@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { withRateLimitRetry } from "@/lib/operators/upstream";
+import { effectiveImageResolution } from "@/lib/models/effective-resolution";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForRun, releaseHold } from "@/lib/credits/hold";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
   if (broke) return broke;
 
   try {
-    const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution, operator: requestedOperator } = await req.json() as {
+    const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution: requestedResolution, operator: requestedOperator } = await req.json() as {
       projectId: string; beatNumber: number; imagePrompt: string; modelId: string;
       aspectRatio?: string; resolution?: string; operator?: string;
     };
@@ -109,6 +110,9 @@ export async function POST(req: Request) {
     // generated on PoYo would be regenerated against KIE with a model id KIE
     // has never heard of.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+    // The run's real resolution, not whatever the client managed to send. An
+    // absent one used to price the run off a blend and hold a quarter extra.
+    const resolution = effectiveImageResolution(modelId, op.id, requestedResolution);
 
     // One image, priced on the model actually chosen. The gate at the door
     // only asks for a credit, which on an 18-credit model is not a check.

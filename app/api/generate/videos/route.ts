@@ -5,6 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { effectiveVideoResolution } from "@/lib/models/effective-resolution";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForRun } from "@/lib/credits/hold";
 import { GENAIPRO_QUEUED_STATUS, GENAIPRO_MODEL_PREFIX } from "@/lib/genaipro/client";
@@ -56,7 +57,14 @@ export async function POST(req: Request) {
         modelId,
         count: beats.length,
         durationSec: Number(duration) || null,
-        resolution,
+        // Priced at the resolution the clips will really run at. A client that
+        // sends none still gets the provider's default, which is the lowest the
+        // model offers, and pricing that against the blend of every resolution
+        // is how a known price turns into a padded guess. Only the estimate
+        // reads this: what the worker forwards is still exactly what was asked
+        // for, since an unasked-for resolution is an extra input some models
+        // reject.
+        resolution: effectiveVideoResolution(modelId, null, resolution),
       }));
       if (short) return short;
     }

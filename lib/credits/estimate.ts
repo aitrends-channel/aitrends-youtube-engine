@@ -145,7 +145,25 @@ function pickUnits(
   return null;
 }
 
+/**
+ * The rate for one generation, and whether that rate is a price or a guess.
+ *
+ * A model with no resolution control has exactly one price, so the figure
+ * recorded against it with no resolution is that price rather than a blend of
+ * several. Marking it exact here, once, saves every branch below having to
+ * know: z-image and gpt-image-1.5 were being padded a quarter for a resolution
+ * ladder they do not have.
+ */
 async function perUnitCredits(
+  input: RunEstimateInput,
+): Promise<{ perUnit: number | null; source: RunEstimate["source"]; exact?: boolean }> {
+  const priced = await perUnitCreditsInner(input);
+  if (priced.exact || priced.perUnit === null) return priced;
+  const ladder = offeredResolutions(input);
+  return ladder?.length ? priced : { ...priced, exact: true };
+}
+
+async function perUnitCreditsInner(
   input: RunEstimateInput,
 ): Promise<{ perUnit: number | null; source: RunEstimate["source"]; exact?: boolean }> {
   const rates = await getCreditRates();
@@ -193,37 +211,40 @@ async function perUnitCredits(
   }
 
   if (input.operator === OPERATOR_POYO) {
-    // Measured first, catalog second. The catalog is a copy of a price list and
-    // goes stale silently: it has been wrong on four models so far. PoYo now has
-    // its own rows in the snapshot, so a model it has actually served is priced
-    // from what it charged.
+    // Exactness first, then measurement.
+    //
+    // A measurement of this exact model and resolution is the best figure there
+    // is: it is what PoYo charged. But a measurement that is only a blend
+    // across resolutions is a guess, and it used to win anyway, over a price
+    // the catalog lists against the very resolution being run. gpt-image-2 at
+    // 1K is listed at 2 credits and settles at 2, and it was being held at 2.50
+    // because the blend it beat was treated as the better number.
+    //
+    // Order: an exact measurement, then the listed price for this resolution,
+    // then an exact seed, then the scaled guesses. Only the last two are padded
+    // by the hold, which is what padding is for.
+    const model = getPoyoImageModel(input.modelId);
     const measured = observedFor(
       await getMinKieCreditsByModel("image_gen", "poyo"), input.modelId, input.resolution,
     );
-    if (measured) {
-      const units = measured.exact ? measured.value : measured.value * scaleFor(input);
-      return {
-        perUnit: creditsForUnits("poyo_credits", units, rates, { model: input.modelId, provider: "poyo" }),
-        source: "poyo-observed",
-        exact: measured.exact,
-      };
-    }
-    const model = getPoyoImageModel(input.modelId);
-    if (!model) return { perUnit: null, source: "unknown" };
-    // A price listed against this exact resolution is already the price. Only
-    // the flat figure is a cheapest-resolution one that has to be scaled up,
-    // and scaling a listed figure would charge twice for the same step.
-    const listed = poyoResolutionCredits(model, input.resolution);
-    const seeded = pickUnits(null, seedPrice("poyo", "image", input.modelId, input.resolution), scaleFor(input));
-    const units = listed ?? seeded?.units ?? model.credits * scaleFor(input);
-    const unitsExact = listed !== null || !!seeded?.exact;
+    const listed = model ? poyoResolutionCredits(model, input.resolution) : null;
+    const seeded = seedPrice("poyo", "image", input.modelId, input.resolution);
+    const priced = (() => {
+      if (measured?.exact) return { units: measured.value, exact: true, source: "poyo-observed" as const };
+      if (listed !== null) return { units: listed, exact: true, source: "poyo-catalog" as const };
+      if (seeded?.exact) return { units: seeded.value, exact: true, source: "poyo-catalog" as const };
+      if (measured) return { units: measured.value * scaleFor(input), exact: false, source: "poyo-observed" as const };
+      if (seeded) return { units: seeded.value * scaleFor(input), exact: false, source: "poyo-catalog" as const };
+      // The catalog's flat figure is the cheapest resolution the model offers,
+      // so it is the one number here that genuinely has to be scaled up.
+      if (model) return { units: model.credits * scaleFor(input), exact: false, source: "poyo-catalog" as const };
+      return null;
+    })();
+    if (!priced) return { perUnit: null, source: "unknown" };
     return {
-      perUnit: creditsForUnits(
-        "poyo_credits", units, rates,
-        { model: input.modelId, provider: "poyo" },
-      ),
-      source: "poyo-catalog",
-      exact: unitsExact,
+      perUnit: creditsForUnits("poyo_credits", priced.units, rates, { model: input.modelId, provider: "poyo" }),
+      source: priced.source,
+      exact: priced.exact,
     };
   }
 

@@ -15,6 +15,7 @@ import { getAppUrl } from "@/lib/utils";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { effectiveImageResolution } from "@/lib/models/effective-resolution";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForRun, releaseHold } from "@/lib/credits/hold";
 import { OPERATOR_POYO, type Operator } from "@/lib/operators";
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     };
     projectId = body.projectId;
     beatNumber = body.beatNumber;
-    const { imagePrompt, modelId, aspectRatio = "16:9", resolution } = body;
+    const { imagePrompt, modelId, aspectRatio = "16:9", resolution: requestedResolution } = body;
 
     // The admin switch decides who runs this, not the client and not the model
     // id: two providers now carry a model called z-image. getMediaOperatorForUser
@@ -67,6 +68,9 @@ export async function POST(req: Request) {
       );
     }
     operator = op.id;
+    // Settled here rather than left to the provider's default, so the estimate,
+    // the hold and the cost row all describe the same run.
+    const resolution = effectiveImageResolution(modelId, op.id, requestedResolution);
 
     // Not redundant with the catalog, which now only offers the active
     // operator's models. resolveImageOperator still falls back to whoever

@@ -14,6 +14,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { effectiveImageResolution } from "@/lib/models/effective-resolution";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForOne, releaseHold, findOpenHold } from "@/lib/credits/hold";
 import { resolveImageOperator } from "@/lib/operators/image";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   if (broke) return broke;
 
   try {
-    const { projectId, beats, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
+    const { projectId, beats, modelId, aspectRatio = "16:9", resolution: requestedResolution, clearFirst = false } = await req.json() as {
       projectId: string; beats: Beat[]; modelId: string;
       aspectRatio?: string; resolution?: string; clearFirst?: boolean;
     };
@@ -69,6 +70,10 @@ export async function POST(req: Request) {
         { status: 503 },
       );
     }
+
+    // The resolution the batch will really run at, so the estimate, every hold
+    // and every cost row agree with the images that come back.
+    const resolution = effectiveImageResolution(modelId, op.id, requestedResolution);
 
     // Admin-tunable: product_config.batched_processes.image_generation_batch.
     const batchSize = (await getConcurrencyConfig()).image_generation_batch;
