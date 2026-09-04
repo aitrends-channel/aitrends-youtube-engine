@@ -1220,10 +1220,15 @@ export default function HomePage() {
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
           </div>
         </Link>
+        {/* On lg the brand sits in the sidebar, which left this side of the
+            header empty. The section you are in goes here instead, the same
+            label the menu row shows on smaller screens. */}
+        {!showDemo && (
+          <h1 className="hidden lg:block text-sm font-semibold truncate" style={{ color: "var(--c-88)" }}>
+            {DASH_NAV.find((t) => t.id === dashTab)?.label ?? ""}
+          </h1>
+        )}
         </div>
-        {/* Keeps the header controls right-aligned once the brand moves into
-            the sidebar. */}
-        {!showDemo && <div className="hidden lg:block" />}
         <div className="flex items-center gap-3">
           {isAdmin && (
             <Link
