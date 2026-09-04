@@ -331,6 +331,25 @@ const COLS: { key: CostColumn; label: string }[] = [
 // it via its own constant.
 const PROVIDER_ORDER = ["anthropic", "kie", "elevenlabs"];
 const HIDDEN_PROVIDERS = new Set(["supadata"]);
+/** What the row did, rather than what it is called. "Image generation" names
+ *  the step; "Image generated" is the thing that happened, which is what a log
+ *  is a list of. */
+const STEP_ACTIVITY: Record<string, string> = {
+  channel_analysis:  "Channel analysed",
+  topic:             "Ideas generated",
+  script:            "Script written",
+  visuals:           "Style extracted",
+  prompts_image:     "Image prompts written",
+  prompts_video:     "Video prompts written",
+  tts:               "Narration generated",
+  image_gen:         "Image generated",
+  video_gen:         "Clip generated",
+  assemble:          "Video assembled",
+  thumbnail:         "Thumbnail generated",
+  thumbnail_concept: "Thumbnail concepts written",
+  thumbnail_image:   "Thumbnail generated",
+};
+
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic:  "Anthropic",
   kie:        "KIE",
@@ -520,11 +539,37 @@ export default function ProjectCostPage({ params }: PageProps) {
   // tables are never on screen together and a shared one would carry a page
   // number from a list of a different length.
   const [eventPage, setEventPage] = useState(0);
-  const eventPageCount = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
+
+  // One provider at a time, from the providers this project actually used.
+  // Built from the whole list rather than the filtered one, so choosing a
+  // provider does not remove the way back to the others.
+  const [providerFilter, setProviderFilter] = useState<string | null>(null);
+  const providerOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of events) {
+      if (!e.provider) continue;
+      counts.set(e.provider, (counts.get(e.provider) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [events]);
+  // A provider that stops appearing (a filtered project, a slower load) must
+  // not leave the list showing nothing with no way to tell why.
+  useEffect(() => {
+    if (providerFilter && !providerOptions.some(([id]) => id === providerFilter)) {
+      setProviderFilter(null);
+    }
+  }, [providerFilter, providerOptions]);
+  const visibleEvents = useMemo(
+    () => (providerFilter ? events.filter((e) => e.provider === providerFilter) : events),
+    [events, providerFilter],
+  );
+  useEffect(() => { setEventPage(0); }, [providerFilter]);
+
+  const eventPageCount = Math.max(1, Math.ceil(visibleEvents.length / PAGE_SIZE));
   useEffect(() => { setEventPage((p) => Math.min(p, eventPageCount - 1)); }, [eventPageCount]);
-  const eventRows = events.slice(eventPage * PAGE_SIZE, eventPage * PAGE_SIZE + PAGE_SIZE);
-  const firstEventOnPage = events.length === 0 ? 0 : eventPage * PAGE_SIZE + 1;
-  const lastEventOnPage = Math.min(events.length, (eventPage + 1) * PAGE_SIZE);
+  const eventRows = visibleEvents.slice(eventPage * PAGE_SIZE, eventPage * PAGE_SIZE + PAGE_SIZE);
+  const firstEventOnPage = visibleEvents.length === 0 ? 0 : eventPage * PAGE_SIZE + 1;
+  const lastEventOnPage = Math.min(visibleEvents.length, (eventPage + 1) * PAGE_SIZE);
 
   // Net is over everything, not the page. A total that changed as you paged
   // would be a different number wearing the same label.
@@ -628,22 +673,49 @@ export default function ProjectCostPage({ params }: PageProps) {
                 </div>
               ) : (
               <div>
+                {/* Only when there is a choice to make. One provider and the
+                    row is a label pretending to be a control. */}
+                {providerOptions.length > 1 && (
+                  <div className="flex items-center gap-1.5 flex-wrap mb-3 px-1">
+                    {([["", "All", events.length]] as [string, string, number][])
+                      .concat(providerOptions.map(([id, n]) => [id, PROVIDER_LABEL[id] ?? id, n] as [string, string, number]))
+                      .map(([id, label, n]) => {
+                        const on = id === "" ? providerFilter === null : providerFilter === id;
+                        return (
+                          <button
+                            key={id || "all"}
+                            type="button"
+                            onClick={() => setProviderFilter(id || null)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all hover:opacity-80 cursor-pointer"
+                            style={on
+                              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }
+                              : { background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+                          >
+                            {label}
+                            <span className="tabular-nums" style={{ opacity: 0.6 }}>{n}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
                 <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
-                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[860px]" : "min-w-[700px]"}`}>
+                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1140px]" : "min-w-[960px]"}`}>
                     <colgroup>
                       <col />
-                      <col style={{ width: "120px" }} />
+                      <col style={{ width: "110px" }} />
+                      <col style={{ width: "110px" }} />
                       {isAdmin && <col style={{ width: "170px" }} />}
                       <col style={{ width: "110px" }} />
+                      <col style={{ width: "180px" }} />
                       <col style={{ width: "110px" }} />
                       <col style={{ width: "160px" }} />
                     </colgroup>
                     <thead>
                       <tr>
                         {(isAdmin
-                          ? ["Process", "Type", "Model", "Result", "Used", "Date/Time"]
-                          : ["Process", "Type", "Result", "Used", "Date/Time"]
+                          ? ["Process", "Step", "Provider", "Model", "Result", "Activity", "Used", "Date/Time"]
+                          : ["Process", "Step", "Provider", "Result", "Activity", "Used", "Date/Time"]
                         ).map((h) => (
                           <th key={h}
                             className={`py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider ${h === "Used" || h === "Date/Time" ? "text-right" : "text-left"}`}
@@ -661,6 +733,12 @@ export default function ProjectCostPage({ params }: PageProps) {
                           </td>
                           <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
                             {(r.step && STEP_KIND[r.step]) ?? "—"}
+                          </td>
+                          {/* Whose meter this row came off. The matrix above has
+                              a column per provider; a list needs it on the row
+                              or the units have no owner. */}
+                          <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
+                            {r.provider ? PROVIDER_LABEL[r.provider] ?? r.provider : "—"}
                           </td>
                           {isAdmin && (
                             <td className="py-2.5 px-3 text-xs font-mono truncate" style={{ color: "var(--c-55)" }}>
@@ -685,6 +763,9 @@ export default function ProjectCostPage({ params }: PageProps) {
                               onOpen={setPreview}
                             />
                           </td>
+                          <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-70)" }}>
+                            {(r.step && STEP_ACTIVITY[r.step]) ?? "Metered"}
+                          </td>
                           <td className="py-2.5 px-3 text-xs font-mono tabular-nums text-right whitespace-nowrap"
                             style={{ color: "var(--c-70)" }}
                             title={`${r.units.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${unitSuffix(r.unitKind)}`}>
@@ -699,11 +780,16 @@ export default function ProjectCostPage({ params }: PageProps) {
                       ))}
                     </tbody>
                   </table>
+                  {eventRows.length === 0 && (
+                    <p className="py-8 text-center text-sm" style={{ color: "var(--c-45)" }}>
+                      Nothing on this project ran on {PROVIDER_LABEL[providerFilter ?? ""] ?? providerFilter}.
+                    </p>
+                  )}
                   {eventPageCount > 1 && (
                     <div className="flex items-center justify-between gap-3 px-3 py-2.5"
                       style={{ borderTop: "1px solid var(--bd-6)" }}>
                       <span className="text-[11px] tabular-nums" style={{ color: "var(--c-45)" }}>
-                        {firstEventOnPage}-{lastEventOnPage} of {events.length}
+                        {firstEventOnPage}-{lastEventOnPage} of {visibleEvents.length}
                       </span>
                       <div className="flex items-center gap-1">
                         <button
