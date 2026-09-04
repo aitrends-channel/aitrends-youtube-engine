@@ -170,6 +170,13 @@ export function StepBalanceCard() {
 
   if (wallet) {
     const credits = wallet.credits;
+    // What a running generation is holding. Invisible until now, which is how a
+    // 2 credit charge could look like a 4.50 one: the balance is what is left
+    // after the hold, so it dips by the estimate while the work runs and comes
+    // back when the hold settles for less or is released. Shown only while
+    // something is actually held, so the chip stays a single number the rest of
+    // the time. /billing says the same thing in the same words.
+    const reserved = wallet.reserved > 0 ? wallet.reserved : 0;
     const low = credits <= 0;
     const checkoutUrl = data.walletCheckoutUrl ?? null;
     // The same quantities the /billing picker offers, derived from the same
@@ -190,7 +197,11 @@ export function StepBalanceCard() {
       <div className="inline-flex items-center gap-1.5 max-w-full">
       <a
         href="/billing"
-        title={low ? "Out of Heclus Credits — top up to keep generating" : "Heclus Credits available. Click to top up."}
+        title={
+          reserved > 0
+            ? `Heclus Credits available. ${reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} more is held by work in progress and returns if it is not spent. Click to top up.`
+            : low ? "Out of Heclus Credits — top up to keep generating" : "Heclus Credits available. Click to top up."
+        }
         className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full transition-opacity hover:opacity-90"
         style={{ border: `1px solid ${wBorder}` }}
       >
@@ -200,6 +211,11 @@ export function StepBalanceCard() {
         </span>
         <span className="tabular-nums px-2.5 py-1" style={{ background: wBodyBg, color: wBodyColor }}>
           {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
+          {reserved > 0 && (
+            <span className="opacity-70">
+              {" · "}{reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} in use
+            </span>
+          )}
         </span>
       </a>
       {refundFlash}
