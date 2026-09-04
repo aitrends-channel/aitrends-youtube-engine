@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
 import { isHeclusCreditsPlan, planLabel } from "@/lib/plan-tier";
+import { compactNumber, unitSuffix } from "@/lib/cost-display";
 import { setAdminPlanView, useAdminPlanView, useOnCreditsPlan } from "@/lib/admin-view";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -51,8 +52,40 @@ const PHASE_COST_COLUMN: Record<PhaseKey, string> = {
 };
 
 interface StepCosts {
-  columns: Record<string, { heclusCreditsCharged?: number }>;
+  columns: Record<string, {
+    heclusCreditsCharged?: number;
+    /** Raw provider units for the step, keyed by unit kind. What an account on
+     *  an old plan actually spends, since it holds no Heclus credits. */
+    totals?: Record<string, number>;
+  }>;
   inCredits?: boolean;
+}
+
+// The unit to show beside a step for an account funded by its own keys.
+//
+// One per row, not a breakdown: the row already carries a label and a
+// sublabel, and most steps spend on a single provider anyway. Whatever else
+// the step spent is on the hover.
+//
+// Ordered by what the money is: KIE credits and ElevenLabs characters are
+// billed to the customer directly, Claude tokens reach them through the KIE
+// relay, and Supadata is ours and is hidden from everyone but an admin.
+const UNIT_PRIORITY = ["kie_credits", "elevenlabs_chars", "claude_tokens", "supadata_transcripts"];
+
+/** Provider units for one step, with the four Claude token kinds collapsed the
+ *  way every other cost surface collapses them. */
+function unitsForColumn(
+  totals: Record<string, number> | undefined,
+  isAdmin: boolean,
+): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const [kind, units] of Object.entries(totals ?? {})) {
+    if (typeof units !== "number" || !(units > 0)) continue;
+    if (kind === "supadata_transcripts" && !isAdmin) continue;
+    const key = kind.startsWith("claude_tokens") ? "claude_tokens" : kind;
+    merged[key] = (merged[key] ?? 0) + units;
+  }
+  return merged;
 }
 
 const costsFetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<StepCosts>);
@@ -143,8 +176,19 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   // the switch a partial answer to "what does that user see".
   const showStepCredits = onCredits && (isAdmin || !!stepCosts?.inCredits);
 
+  // The same figures for the other half of the customer base.
+  //
+  // An old-plan account was the only one with nothing here: the credit number
+  // is meaningless to it, so the slot was simply empty, and "what has this
+  // video cost me so far" meant opening the Cost view. It spends real units on
+  // its own keys, so those go in the same place.
+  const showStepUnits = !onCredits;
+
   const creditsForPhase = (id: PhaseKey): number =>
     Number(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.heclusCreditsCharged ?? 0);
+
+  const unitsForPhase = (id: PhaseKey): Record<string, number> =>
+    unitsForColumn(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.totals, isAdmin);
 
   // Hand abandoned holds back while somebody is actually here.
   //
@@ -324,6 +368,9 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         const isPending = pendingHref === href;
         const Icon = PHASE_ICONS[phase.id];
         const stepCredits = creditsForPhase(phase.id);
+        const stepUnits = showStepUnits ? unitsForPhase(phase.id) : {};
+        const primaryUnit = UNIT_PRIORITY.find((k) => (stepUnits[k] ?? 0) > 0)
+          ?? Object.keys(stepUnits)[0];
 
         return (
           <div key={phase.id}>
@@ -406,6 +453,18 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 >
                   {stepCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   <span style={{ marginLeft: "3px", opacity: 0.6 }}>cr</span>
+                </span>
+              )}
+              {showStepUnits && primaryUnit && (
+                <span
+                  className="ml-auto shrink-0 tabular-nums text-[11px] font-medium"
+                  style={{ color: isActive ? "oklch(0.72 0.15 145)" : "oklch(0.62 0.12 145 / 0.75)" }}
+                  title={`${phase.label} on this video: ${Object.entries(stepUnits)
+                    .map(([kind, units]) => `${units.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unitSuffix(kind)}`)
+                    .join(", ")}`}
+                >
+                  {compactNumber(stepUnits[primaryUnit])}
+                  <span style={{ marginLeft: "3px", opacity: 0.6 }}>{unitSuffix(primaryUnit)}</span>
                 </span>
               )}
             </button>
