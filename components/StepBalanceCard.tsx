@@ -132,9 +132,14 @@ export function StepBalanceCard() {
 
   // In Old mode the wallet chip gives way to the provider balances below,
   // which is the pair an account on an old plan actually spends against.
-  const { onCredits } = useViewerPlan();
+  const { onCredits, ready } = useViewerPlan();
   const wallet = onCredits && data?.fundingMode === "wallet" ? data?.wallet : undefined;
-  if (!data) {
+  // Not until the plan read lands. onCredits is false while it is in flight,
+  // which is indistinguishable from an old-plan account, so rendering here put
+  // the KIE and ElevenLabs numbers on screen for a moment before the credit
+  // balance replaced them. The skeleton was already the answer for "no data
+  // yet"; not knowing whose balance this is, is the same state.
+  if (!data || !ready) {
     return (
       <span className="inline-block h-[26px] w-40 rounded-md animate-pulse align-middle"
         style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.08)" }} />

@@ -98,22 +98,34 @@ export function useOnCreditsPlan(plan: string | null | undefined, isAdmin: boole
  * question, and each was one edit away from disagreeing with the others about
  * what an admin is. getUser resolves from the cached session, so this costs a
  * render rather than a request.
+ *
+ * `ready` says the read has finished. Before it has, plan is null and onCredits
+ * is therefore false, which does not mean "not on credits", it means "not known
+ * yet". A caller that renders through that shows a credits account the
+ * provider-funded version of the screen for a frame, then swaps it. Wait for
+ * ready before drawing anything that differs between the two.
  */
-export function useViewerPlan(): { plan: string | null; isAdmin: boolean; onCredits: boolean } {
+export function useViewerPlan(): { plan: string | null; isAdmin: boolean; onCredits: boolean; ready: boolean } {
   const [plan, setPlan] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let live = true;
-    void import("@/lib/supabase/browser").then(({ createSupabaseBrowserClient }) =>
-      createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
-        if (!live) return;
-        const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
-        if (typeof meta.plan === "string") setPlan(meta.plan);
-        if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
-      }),
-    );
+    void import("@/lib/supabase/browser")
+      .then(({ createSupabaseBrowserClient }) =>
+        createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+          if (!live) return;
+          const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
+          if (typeof meta.plan === "string") setPlan(meta.plan);
+          if (meta.is_admin === true || isAdminEmail(data.user?.email)) setIsAdmin(true);
+        }),
+      )
+      // Ready either way. A read that failed is still an answer, and holding a
+      // skeleton on screen for ever is worse than falling back to what we have.
+      .catch(() => { /* fall through */ })
+      .finally(() => { if (live) setReady(true); });
     return () => { live = false; };
   }, []);
   const onCredits = useOnCreditsPlan(plan, isAdmin);
-  return { plan, isAdmin, onCredits };
+  return { plan, isAdmin, onCredits, ready };
 }

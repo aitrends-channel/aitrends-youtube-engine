@@ -109,12 +109,14 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
   // account on an old plan is actually billed in and what it saw before.
   // Above the loading return below, because a hook that only runs once data
   // has arrived changes the hook count between renders.
-  const { onCredits } = useViewerPlan();
+  const { onCredits, ready } = useViewerPlan();
 
   const byProvider = rollUp(allColumns);
   const thisStep = data?.columns?.[column];
 
-  if (isRealProject && !data) {
+  // ready as well as data: until the plan read lands this chip counts in
+  // provider units, so a credits account watched it change denomination.
+  if (isRealProject && (!data || !ready)) {
     return (
       <span className="inline-block h-[26px] w-32 rounded-md animate-pulse align-middle"
         style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.08)" }} />
