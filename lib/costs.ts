@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { isDirectRouting, isPoyoRouting, type AnthropicRouting } from "@/lib/claude/routing";
 import { chargeForCostEntry } from "@/lib/heclus-charge";
+import { releaseHeclusCredits } from "@/lib/heclus-credits";
 
 /**
  * Workflow step that the cost belongs to. Mapped to display columns
@@ -163,6 +164,14 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
       // provider work, which is the loop this key exists to stop, so the charge
       // below is skipped rather than merely logged.
       console.warn(`[costs] already metered, not charging again: step=${entry.step} key=${entry.eventKey}`);
+      // Whoever metered this first also charged for it, so this caller's hold
+      // has nothing left to pay for and must not be left open. Releasing a
+      // reservation that the first caller already settled is a no-op, so this
+      // is safe whichever path arrives second, and it is the difference between
+      // credits coming back now and coming back when the sweeper next runs.
+      if (entry.reservationId) {
+        await releaseHeclusCredits(entry.reservationId, "already metered by another finisher");
+      }
       return;
     }
   } catch (e) {

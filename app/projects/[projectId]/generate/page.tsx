@@ -2204,6 +2204,12 @@ export default function GeneratePage({ params }: PageProps) {
       toast.error(viewerError(err instanceof Error ? err.message : null));
     } finally {
       setRegenBeats((prev) => { const next = new Set(prev); next.delete(beat.beatNumber); return next; });
+      // One regeneration does not change the image count, so the effect that
+      // watches those counts never fires for it and the chip kept showing the
+      // balance from before the run. Called on failure too: a failed attempt
+      // either settles for what the provider billed or gives the hold back, and
+      // both move the number.
+      refreshBalance();
     }
   }
 

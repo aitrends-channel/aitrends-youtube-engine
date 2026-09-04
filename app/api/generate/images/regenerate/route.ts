@@ -194,11 +194,19 @@ export async function POST(req: Request) {
           .eq("beat_number", beatNumber);
         const failedUnits = result.units ?? op.estimate(modelId) ?? 0;
         if (failedUnits > 0) {
-          void logProjectCost({
+          // Awaited, and carrying the reservation. The provider billed for the
+          // attempt, so the hold settles on that figure here rather than being
+          // left for the sweeper to find hours later.
+          await logProjectCost({
             projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
             model: modelId, units: failedUnits, unitKind: op.unitKind, resolution,
             eventKey: taskId, elapsedMs: Date.now() - submitT0,
+            reservationId: hold?.id ?? null,
           });
+        } else {
+          // Nothing produced and nothing billed, so the whole hold goes back
+          // before the response is written.
+          await releaseHold(hold, "image regenerate failed");
         }
         return NextResponse.json({ error: result.error ?? "Image generation failed" }, { status: 502 });
       }
@@ -210,10 +218,16 @@ export async function POST(req: Request) {
     }
 
     if (creditsConsumed) {
-      void logProjectCost({
+      // Awaited and carrying the reservation, so the hold becomes a debit for
+      // what the image really cost before this request answers. Fired and
+      // forgotten, it left the hold open and the charge path took a second
+      // reservation of its own: the balance then read low by the padding until
+      // something else swept it.
+      await logProjectCost({
         projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
         model: modelId, units: creditsConsumed, unitKind: op.unitKind, resolution,
         eventKey: taskId, elapsedMs: Date.now() - submitT0,
+        reservationId: hold?.id ?? null,
       });
     }
 
