@@ -402,14 +402,22 @@ function ProviderFilter({ options, total, value, onChange }: {
 const RUNNING_ORANGE = "oklch(0.70 0.18 45)";
 
 function StatusCell({ running }: { running: boolean }) {
-  const color = running ? RUNNING_ORANGE : CHARGE_GREEN;
+  // While it runs, the dot alone. A pulsing orange point in a column of green
+  // pills says "this one is still moving" without a word, and the row it sits
+  // on already names the step and the beats.
+  if (running) {
+    return (
+      <span className="inline-flex items-center" title="In progress" aria-label="In progress">
+        <span className="inline-block w-2 h-2 rounded-full animate-pulse"
+          style={{ background: RUNNING_ORANGE }} />
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2 py-0.5 text-[11px] font-medium whitespace-nowrap"
-      style={{ background: "var(--bg-progress)", color, border: "1px solid var(--bd-8)" }}>
-      {/* The dot carries the state and the word names it, so the pill reads at
-          a glance in a column of forty rows. */}
-      <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-      {running ? "in progress" : "success"}
+      style={{ background: "var(--bg-progress)", color: CHARGE_GREEN, border: "1px solid var(--bd-8)" }}>
+      <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: CHARGE_GREEN }} />
+      success
     </span>
   );
 }
