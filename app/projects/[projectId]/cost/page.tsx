@@ -357,16 +357,59 @@ const STEP_ACTIVITY: Record<string, string> = {
   thumbnail_image:   "Thumbnail generated",
 };
 
+/**
+ * One provider at a time, or all of them.
+ *
+ * Shown whenever the list has a provider on it, not only when there are two to
+ * choose between: a filter nobody can find is a filter nobody has.
+ */
+function ProviderFilter({ options, total, value, onChange }: {
+  options: [string, number][];
+  total: number;
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  if (options.length === 0) return null;
+  const pills: [string, string, number][] = [["", "All", total]];
+  for (const [id, n] of options) pills.push([id, PROVIDER_LABEL[id] ?? id, n]);
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mb-3 px-1">
+      <span className="text-[11px] uppercase tracking-wider mr-0.5" style={{ color: "var(--c-45)" }}>
+        Provider
+      </span>
+      {pills.map(([id, label, n]) => {
+        const on = id === "" ? value === null : value === id;
+        return (
+          <button
+            key={id || "all"}
+            type="button"
+            onClick={() => onChange(id || null)}
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all hover:opacity-80 cursor-pointer"
+            style={on
+              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }
+              : { background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            {label}
+            <span className="tabular-nums" style={{ opacity: 0.6 }}>{n}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Orange, because it is the one row on the page that is still changing. */
 const RUNNING_ORANGE = "oklch(0.70 0.18 45)";
 
 function StatusCell({ running }: { running: boolean }) {
+  const color = running ? RUNNING_ORANGE : CHARGE_GREEN;
   return (
-    <span className="px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
-      style={running
-        ? { background: "oklch(0.70 0.18 45 / 0.14)", color: RUNNING_ORANGE }
-        : { background: "var(--bg-progress)", color: "var(--c-50)" }}>
-      {running ? "In progress" : "Done"}
+    <span className="inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2 py-0.5 text-[11px] font-medium whitespace-nowrap"
+      style={{ background: "var(--bg-progress)", color, border: "1px solid var(--bd-8)" }}>
+      {/* The dot carries the state and the word names it, so the pill reads at
+          a glance in a column of forty rows. */}
+      <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
+      {running ? "in progress" : "success"}
     </span>
   );
 }
@@ -558,35 +601,18 @@ export default function ProjectCostPage({ params }: PageProps) {
   }, []);
   const showCredits = isAdmin && planView ? planView === "new" : !!data?.inCredits;
 
-  // Paged in the browser, not the query: the endpoint already returns every
-  // row because the totals are summed from the same list, so asking the server
-  // again for a slice it has already sent would be a request for nothing.
-  const [page, setPage] = useState(0);
-  const pageCount = Math.max(1, Math.ceil(log.length / PAGE_SIZE));
-  // A project that loses rows under a filter, or simply loads slower than the
-  // first render, must not leave the reader on a page that no longer exists.
-  useEffect(() => { setPage((p) => Math.min(p, pageCount - 1)); }, [pageCount]);
-  const pageRows = log.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-  const firstOnPage = log.length === 0 ? 0 : page * PAGE_SIZE + 1;
-  const lastOnPage = Math.min(log.length, (page + 1) * PAGE_SIZE);
-
-  // The same paging over the other list. Its own counter, because the two
-  // tables are never on screen together and a shared one would carry a page
-  // number from a list of a different length.
-  const [eventPage, setEventPage] = useState(0);
-
   // One provider at a time, from the providers this project actually used.
   // Built from the whole list rather than the filtered one, so choosing a
   // provider does not remove the way back to the others.
   const [providerFilter, setProviderFilter] = useState<string | null>(null);
   const providerOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const e of events) {
+    for (const e of (showCredits ? log : events)) {
       if (!e.provider) continue;
       counts.set(e.provider, (counts.get(e.provider) ?? 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  }, [events]);
+  }, [showCredits, log, events]);
   // A provider that stops appearing (a filtered project, a slower load) must
   // not leave the list showing nothing with no way to tell why.
   useEffect(() => {
@@ -598,7 +624,29 @@ export default function ProjectCostPage({ params }: PageProps) {
     () => (providerFilter ? events.filter((e) => e.provider === providerFilter) : events),
     [events, providerFilter],
   );
-  useEffect(() => { setEventPage(0); }, [providerFilter]);
+  const visibleLog = useMemo(
+    () => (providerFilter ? log.filter((e) => e.provider === providerFilter) : log),
+    [log, providerFilter],
+  );
+  useEffect(() => { setEventPage(0); setPage(0); }, [providerFilter]);
+
+  // Paged in the browser, not the query: the endpoint already returns every
+  // row because the totals are summed from the same list, so asking the server
+  // again for a slice it has already sent would be a request for nothing.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(visibleLog.length / PAGE_SIZE));
+  // A project that loses rows under a filter, or simply loads slower than the
+  // first render, must not leave the reader on a page that no longer exists.
+  useEffect(() => { setPage((p) => Math.min(p, pageCount - 1)); }, [pageCount]);
+  const pageRows = visibleLog.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const firstOnPage = visibleLog.length === 0 ? 0 : page * PAGE_SIZE + 1;
+  const lastOnPage = Math.min(visibleLog.length, (page + 1) * PAGE_SIZE);
+
+  // The same paging over the other list. Its own counter, because the two
+  // tables are never on screen together and a shared one would carry a page
+  // number from a list of a different length.
+  const [eventPage, setEventPage] = useState(0);
+
 
   const eventPageCount = Math.max(1, Math.ceil(visibleEvents.length / PAGE_SIZE));
   useEffect(() => { setEventPage((p) => Math.min(p, eventPageCount - 1)); }, [eventPageCount]);
@@ -608,7 +656,7 @@ export default function ProjectCostPage({ params }: PageProps) {
 
   // Net is over everything, not the page. A total that changed as you paged
   // would be a different number wearing the same label.
-  const netCharged = log.reduce(
+  const netCharged = visibleLog.reduce(
     (sum, r) => sum + (r.type === "refunded" ? -r.credits : r.credits), 0,
   );
 
@@ -708,31 +756,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                 </div>
               ) : (
               <div>
-                {/* Only when there is a choice to make. One provider and the
-                    row is a label pretending to be a control. */}
-                {providerOptions.length > 1 && (
-                  <div className="flex items-center gap-1.5 flex-wrap mb-3 px-1">
-                    {([["", "All", events.length]] as [string, string, number][])
-                      .concat(providerOptions.map(([id, n]) => [id, PROVIDER_LABEL[id] ?? id, n] as [string, string, number]))
-                      .map(([id, label, n]) => {
-                        const on = id === "" ? providerFilter === null : providerFilter === id;
-                        return (
-                          <button
-                            key={id || "all"}
-                            type="button"
-                            onClick={() => setProviderFilter(id || null)}
-                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all hover:opacity-80 cursor-pointer"
-                            style={on
-                              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }
-                              : { background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-                          >
-                            {label}
-                            <span className="tabular-nums" style={{ opacity: 0.6 }}>{n}</span>
-                          </button>
-                        );
-                      })}
-                  </div>
-                )}
+                <ProviderFilter options={providerOptions} total={events.length} value={providerFilter} onChange={setProviderFilter} />
                 <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
                   <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1260px]" : "min-w-[1080px]"}`}>
@@ -920,13 +944,15 @@ export default function ProjectCostPage({ params }: PageProps) {
             </div>
             )
             ) : (
+            <div>
+            <ProviderFilter options={providerOptions} total={log.length} value={providerFilter} onChange={setProviderFilter} />
             <div
               /* Breathing room round the table once there is width for it.
                  Kept off small screens, where 20px a side is width the
                  columns need more than the margin does. */
               className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
               style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
-              {log.length === 0 ? (
+              {visibleLog.length === 0 ? (
                 <p className="py-8 text-center text-sm" style={{ color: "var(--c-45)" }}>
                   Nothing charged on this project yet.
                 </p>
@@ -1068,7 +1094,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                 <div className="flex items-center justify-between gap-3 px-3 py-2.5"
                   style={{ borderTop: "1px solid var(--bd-6)" }}>
                   <span className="text-[11px] tabular-nums" style={{ color: "var(--c-45)" }}>
-                    {firstOnPage}-{lastOnPage} of {log.length}
+                    {firstOnPage}-{lastOnPage} of {visibleLog.length}
                   </span>
                   <div className="flex items-center gap-1">
                     <button
@@ -1097,6 +1123,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                   </div>
                 </div>
               )}
+            </div>
             </div>
             )
           )}
