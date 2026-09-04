@@ -808,10 +808,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             {/* The usage log, where a phone has room for it. The header's own
                 Logs button is hidden below md, so it is here rather than
                 twice. */}
-            {onCredits && projectId !== "new-fork" && (
+            {projectId !== "new-fork" && (
               <Link
                 href={`/projects/${projectId}/logs`}
-                title="Credit usage log"
+                title={onCredits ? "Credit usage log" : "Usage log"}
                 className="shrink-0 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
                 style={{ border: "1px solid var(--bd-8)", color: "var(--c-55)" }}
               >

@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { X, ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { WizardNav } from "@/components/wizard/WizardNav";
@@ -355,6 +355,11 @@ export default function ProjectCostPage({ params }: PageProps) {
   // noise. Read once from the URL — no need for state since changing
   // the param implies a fresh navigation.
   const summaryMode = searchParams.get("summary") === "1";
+  // Which of the two this is. /logs and /cost render the same component, and
+  // for a credit account they are the same view either way; for an account on
+  // its own keys they are the list and the matrix.
+  const pathname = usePathname();
+  const isLogView = !!pathname?.endsWith("/logs");
 
   // "Closes" the cost view by sending the user back to wherever they
   // came from in the workflow. router.back() respects browser history
@@ -560,9 +565,15 @@ export default function ProjectCostPage({ params }: PageProps) {
       <main className={`flex-1 overflow-y-auto ${summaryMode ? "pt-16 md:pt-20" : "pt-[92px] md:pt-0"}`}>
         <div className="sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-lg">Cost breakdown</h1>
+          <h1 className="font-bold text-lg">
+            {showCredits || isLogView ? "Usage log" : "Cost breakdown"}
+          </h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            Credits charged and refunded on this project, newest first.
+            {showCredits
+              ? "Credits charged and refunded on this project, newest first."
+              : isLogView
+                ? "Every generation on this project, newest first, in the units your providers bill you in."
+                : "Provider units used on this project, by step."}
           </p>
         </div>
 
@@ -605,64 +616,18 @@ export default function ProjectCostPage({ params }: PageProps) {
             </div>
           ) : (
             !showCredits ? (
-            /* Old plans keep the provider-unit matrix, unchanged, and now get
-               the same work as a list underneath it. They are billed in
-               provider units and take no holds, so credit_ledger has nothing
-               for them: the log is built from the meter instead. */
-            <>
-            <div className="overflow-x-auto rounded-xl"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
-              <table className="w-full border-collapse min-w-[640px]">
-                <thead>
-                  <tr>
-                    <th className="text-left py-2.5 px-3" />
-                    {providers.map((prov) => (
-                      <th key={prov} className="text-left py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider"
-                        style={{ color: "var(--c-45)" }}>
-                        {PROVIDER_LABEL[prov] ?? prov}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {COLS.map((c) => (
-                    <tr key={c.key} style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                      <td className="py-2.5 px-3 text-xs font-bold" style={{ color: "var(--c-80)" }}>
-                        {c.label}
-                      </td>
-                      {providers.map((prov) => (
-                        <td key={prov} className="py-2.5 px-3 text-xs font-mono tabular-nums" style={{ color: "var(--c-70)" }}>
-                          {renderBucket(matrix[c.key][prov], prov)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: "1px solid var(--bd-card)" }}>
-                    <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
-                      style={{ color: "var(--c-45)" }}>
-                      Total
-                    </td>
-                    {providers.map((prov) => (
-                      <td key={prov} className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums"
-                        style={{ color: "var(--c-80)" }}>
-                        {renderBucket(providerTotals[prov], prov)}
-                      </td>
-                    ))}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {events.length > 0 && (
-              <div className="mt-6">
-                <h2 className="text-sm font-semibold mb-2 px-1" style={{ color: "var(--c-80)" }}>
-                  Usage log
-                </h2>
-                <p className="text-xs mb-3 px-1" style={{ color: "var(--c-45)" }}>
-                  Every generation on this project, newest first, in the units your providers bill you in.
-                </p>
+            /* Two views, two routes. /cost keeps the provider x step matrix it
+               has always been. /logs is the list, the same view a credit
+               account reads, built from the meter because an account spending
+               its own keys writes no ledger rows. */
+            isLogView ? (
+              events.length === 0 ? (
+                <div className="rounded-xl py-8 text-center text-sm"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)", color: "var(--c-45)" }}>
+                  Nothing generated on this project yet.
+                </div>
+              ) : (
+              <div>
                 <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
                   <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[860px]" : "min-w-[700px]"}`}>
@@ -769,8 +734,53 @@ export default function ProjectCostPage({ params }: PageProps) {
                   )}
                 </div>
               </div>
-            )}
-            </>
+              )
+            ) : (
+            <div className="overflow-x-auto rounded-xl"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
+              <table className="w-full border-collapse min-w-[640px]">
+                <thead>
+                  <tr>
+                    <th className="text-left py-2.5 px-3" />
+                    {providers.map((prov) => (
+                      <th key={prov} className="text-left py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider"
+                        style={{ color: "var(--c-45)" }}>
+                        {PROVIDER_LABEL[prov] ?? prov}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {COLS.map((c) => (
+                    <tr key={c.key} style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                      <td className="py-2.5 px-3 text-xs font-bold" style={{ color: "var(--c-80)" }}>
+                        {c.label}
+                      </td>
+                      {providers.map((prov) => (
+                        <td key={prov} className="py-2.5 px-3 text-xs font-mono tabular-nums" style={{ color: "var(--c-70)" }}>
+                          {renderBucket(matrix[c.key][prov], prov)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: "1px solid var(--bd-card)" }}>
+                    <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
+                      style={{ color: "var(--c-45)" }}>
+                      Total
+                    </td>
+                    {providers.map((prov) => (
+                      <td key={prov} className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums"
+                        style={{ color: "var(--c-80)" }}>
+                        {renderBucket(providerTotals[prov], prov)}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            )
             ) : (
             <div
               /* Breathing room round the table once there is width for it.

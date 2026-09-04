@@ -66,11 +66,11 @@ const SPEND_SPLIT = [
 
 export function CostTipsModal() {
   const [open, setOpen] = useState(false);
-  // Credit-funded accounts get a way into the usage log from wherever they are.
-  // Read off the auth metadata rather than fetched: it is already in the
-  // session, and this component renders on nine pages.
-  // Follows the admin switch in the wizard header, so flipping to Old hides
-  // this the way it is hidden for an account that really is on an old plan.
+  // Every account gets a way into the usage log from wherever it is. It was
+  // credit accounts only, which left the other half of the customer base with
+  // no answer to "what has this project done" short of the cost matrix. Both
+  // have a log now: credits from the ledger, old plans from the meter, and the
+  // same route renders whichever the account has.
   const { onCredits } = useViewerPlan();
   // The log lives under the project, so the wizard nav has something to render
   // beside it. Without a project in the URL there is nothing to link to.
@@ -106,10 +106,10 @@ export function CostTipsModal() {
 
       {/* Beside the tips, because the two answer the same question from
           opposite ends: how to spend less, and what has been spent. */}
-      {onCredits && projectId && (
+      {projectId && projectId !== "new-fork" && (
         <Link
           href={`/projects/${projectId}/logs`}
-          title="Credit usage log"
+          title={onCredits ? "Credit usage log" : "Usage log"}
           /* Below md this lives on the nav's step line instead, where a phone
              has room for it. */
           className="hidden md:inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer"
