@@ -3,7 +3,10 @@ import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { isAdminUser } from "@/lib/admin";
 import { getActiveProductKey } from "@/lib/claude/routing";
-import { checkKie, checkElevenLabs } from "@/lib/key-check";
+import { checkKie, checkElevenLabs, checkAnthropic } from "@/lib/key-check";
+import { creditsForUnits, getCreditRates } from "@/lib/pricing";
+import { USD_PER_CREDIT } from "@/lib/credit-unit";
+import type { CostUnitKind } from "@/lib/costs";
 import { fetchPoyoBalance } from "@/lib/poyo/client";
 
 export const dynamic = "force-dynamic";
@@ -54,11 +57,17 @@ export interface ProviderBalance {
   limit: number | null;
   /** Why there is no number, when we know it. */
   issue: "scope" | "key_id" | null;
+  /** What this provider has cost in the last 30 days, in USD.
+   *
+   *  For Anthropic it is the only figure there is: a plain API key cannot read
+   *  an organisation's balance, so the honest answer to "how much is left" is
+   *  what we are spending, from our own meter. */
+  spend30dUsd?: number | null;
 }
 
 export interface BalancesResponse {
   /** What Heclus holds at the providers wallet work spends. */
-  providers: { kie: ProviderBalance; poyo: ProviderBalance; elevenlabs: ProviderBalance };
+  providers: { kie: ProviderBalance; poyo: ProviderBalance; elevenlabs: ProviderBalance; anthropic: ProviderBalance };
   rows: BalanceRow[];
   totals: {
     accounts: number;
@@ -193,11 +202,34 @@ export async function GET() {
  * An unreachable provider reports null rather than zero. The distinction is the
  * whole point: zero means stop generating, null means we could not ask.
  */
+/** What Claude has cost us over the last 30 days, from the cost ledger.
+ *  Anthropic publishes no balance to an API key, so spend is the only number
+ *  that answers the question this tile is asked. */
+async function anthropicSpend30dUsd(): Promise<number | null> {
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from("project_costs")
+    .select("unit_kind, units, model, provider")
+    .like("unit_kind", "claude_tokens%")
+    .gte("created_at", since)
+    .limit(20_000);
+  if (error || !data) return null;
+  const rates = await getCreditRates();
+  let credits = 0;
+  for (const row of data as Array<{ unit_kind: string; units: number | null; model: string | null; provider: string | null }>) {
+    credits += creditsForUnits(row.unit_kind as CostUnitKind, Number(row.units ?? 0), rates, {
+      model: row.model, provider: row.provider,
+    });
+  }
+  return credits * USD_PER_CREDIT;
+}
+
 async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> {
-  const [kieRow, poyoRow, elRow] = await Promise.all([
+  const [kieRow, poyoRow, elRow, anthropicRow] = await Promise.all([
     getActiveProductKey("heclus_kie_api_key"),
     getActiveProductKey("heclus_poyo_api_key"),
     getActiveProductKey("heclus_elevenlabs_api_key"),
+    getActiveProductKey("anthropic_api_key"),
   ]);
   // Same order the resolvers use, so this tile reports the key that would
   // actually be spent rather than only what is in the database.
@@ -205,10 +237,14 @@ async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> 
   const poyoKey = poyoRow ?? process.env.HECLUS_POYO_API_KEY?.trim() ?? null;
   const elKey = elRow ?? process.env.HECLUS_ELEVENLABS_API_KEY?.trim() ?? null;
 
-  const [kie, poyo, elevenlabs] = await Promise.all([
+  const anthropicKey = anthropicRow ?? process.env.ANTHROPIC_API_KEY?.trim() ?? null;
+
+  const [kie, poyo, elevenlabs, anthropic, anthropicSpend] = await Promise.all([
     kieKey ? checkKie(kieKey) : null,
     poyoKey ? fetchPoyoBalance() : null,
     elKey ? checkElevenLabs(elKey) : null,
+    anthropicKey ? checkAnthropic(anthropicKey) : null,
+    anthropicSpend30dUsd(),
   ]);
 
   return {
@@ -235,6 +271,17 @@ async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> 
       balance: elevenlabs?.remaining ?? null,
       limit: elevenlabs?.limit ?? null,
       issue: elevenlabs?.balanceIssue ?? null,
+    },
+    // Balance stays null on purpose. Anthropic bills an account rather than
+    // holding a credit balance a key can read, and inventing a number here
+    // would be worse than saying so.
+    anthropic: {
+      configured: !!anthropicKey,
+      valid: anthropic?.valid ?? null,
+      balance: null,
+      limit: null,
+      issue: anthropic?.balanceIssue ?? null,
+      spend30dUsd: anthropicSpend,
     },
   };
 }

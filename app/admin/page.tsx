@@ -2305,6 +2305,121 @@ function AllocateCreditsModal({ row, onClose, onDone }: {
   );
 }
 
+/**
+ * The four provider balances, on their own tab.
+ *
+ * The same tiles the Balance view opens with, reachable without scrolling past
+ * a table of customer wallets. These are the numbers that decide whether
+ * anything generates: when KIE or PoYo runs dry every wallet-funded run stops,
+ * whatever the customer's own balance says.
+ *
+ * Anthropic is here for completeness and shows spend rather than a balance. A
+ * plain API key cannot read an organisation's credit, so the honest figure is
+ * what our own meter says we have spent.
+ */
+function ProvidersPanel({ visible }: { visible: boolean }) {
+  const { data, isLoading, mutate } = useSWR<BalancesResponse>(
+    visible ? "/api/admin/balances" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm" style={{ color: "var(--c-55)" }}>
+          {isLoading ? "Reading the providers…" : "Live from each provider, not from our records."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void mutate()}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 cursor-pointer"
+          style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-70)", border: "1px solid var(--input)" }}
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <ProviderTile
+          label="KIE credits"
+          note="Images, clips and the Claude relay"
+          p={data?.providers.kie}
+          format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          low={100}
+          href="https://kie.ai/billing"
+          claim={data?.totals.credits}
+        />
+        <ProviderTile
+          label="PoYo credits"
+          note="Whatever the operator switch has moved to PoYo"
+          p={data?.providers.poyo}
+          format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          low={100}
+          href="https://poyo.ai/"
+          claim={data?.totals.credits}
+        />
+        <ProviderTile
+          label="ElevenLabs characters"
+          note="Voiceovers and caption alignment"
+          p={data?.providers.elevenlabs}
+          format={(v) => v.toLocaleString()}
+          low={10_000}
+          href="https://elevenlabs.io/app/subscription"
+        />
+        <AnthropicTile p={data?.providers.anthropic} />
+      </div>
+
+      {typeof data?.totals.credits === "number" && (
+        <p className="text-xs" style={{ color: "var(--c-45)" }}>
+          Customers hold {data.totals.credits.toLocaleString(undefined, { maximumFractionDigits: 0 })} Heclus
+          Credits against these balances. One credit buys one KIE or PoYo credit, so the two are directly
+          comparable.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Anthropic, which has no balance to read.
+ *
+ * Its own tile rather than a ProviderTile with a permanent "Unavailable": that
+ * would read as a fault, and there is nothing wrong. What it shows instead is
+ * the last thirty days of Claude spend from our own cost ledger.
+ */
+function AnthropicTile({ p }: { p: ProviderBalance | undefined }) {
+  const state = !p ? "loading"
+    : !p.configured ? "nokey"
+    : p.valid === false ? "invalid"
+    : "ok";
+  const spend = p?.spend30dUsd;
+  const value = state === "loading" ? "…"
+    : state === "nokey" ? "No key"
+    : state === "invalid" ? "Key rejected"
+    : typeof spend === "number" ? `$${spend.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+    : "—";
+  const detail = state === "nokey" ? "Add one on Config, API Keys."
+    : state === "invalid" ? "Anthropic rejected this key."
+    : "Spent in the last 30 days. Anthropic publishes no balance to a key.";
+  const colour = state === "nokey" || state === "invalid" ? "oklch(0.55 0.19 25)" : "var(--c-90)";
+
+  return (
+    <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Anthropic</p>
+        <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer"
+          className="text-[11px] shrink-0 hover:opacity-80 transition-opacity"
+          style={{ color: "oklch(0.62 0.15 220)" }}>
+          Console
+        </a>
+      </div>
+      <p className="text-2xl font-bold mt-1 tabular-nums" style={{ color: colour }}>{value}</p>
+      <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>{detail}</p>
+    </div>
+  );
+}
+
 function ProviderTile({ label, note, p, format, low, href, claim }: {
   label: string;
   note: string;
@@ -6799,6 +6914,7 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
  *  what it contains — the view itself shows that. */
 const TAB_BLURB: Record<string, string> = {
   stats:     "Signups, revenue and production at a glance",
+  providers: "What Heclus holds at each provider, and what it is spending",
   balances:  "What we hold at the providers, and what customers hold against it",
   activity:  "What has been created over time, and by whom",
   users:     "Every account, its plan and its keys",
@@ -7551,6 +7667,11 @@ function VisitorPlansPanel() {
 
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
+  // What we hold at each provider, on its own. Balance below answers a
+  // different question, what customers hold against that float, and the four
+  // numbers that decide whether anything generates at all were a scroll into
+  // the middle of it.
+  { id: "providers", label: "Providers", icon: Server },
   { id: "balances", label: "Balance",  icon: Wallet },
   // Activity carries both panels: the niches/videos/users series and the
   // videos-created chart that used to be its own Usage tab. Two tabs of the
@@ -7728,11 +7849,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "jobs" | "freeusage" | "revenue" | "plans" | "pricing" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "providers" | "balances" | "activity" | "usage" | "users" | "projects" | "jobs" | "freeusage" | "revenue" | "plans" | "pricing" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "balances", "activity", "usage", "users", "projects", "jobs", "freeusage", "revenue", "plans", "pricing", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "providers", "balances", "activity", "usage", "users", "projects", "jobs", "freeusage", "revenue", "plans", "pricing", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -8287,6 +8408,11 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Providers. The float every wallet-funded generation draws on. */}
+        <div id="providers" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "providers" ? undefined : "none" }}>
+          <ProvidersPanel visible={activeTab === "providers"} />
         </div>
 
         {/* Balance. Its own section rather than a card inside Stats: Stats is
