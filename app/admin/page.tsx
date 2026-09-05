@@ -2022,9 +2022,12 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         />
       </div>
 
-      {/* Then what customers hold against them */}
+      {/* Then what customers hold against them. Admin accounts are left out of
+          every figure here: they hold test credit in the thousands, and
+          counting it made the float look claimed when it is not. The rows
+          below still list them. */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile label="Accounts holding credit" value={n(data?.totals.accounts ?? 0, 0)}
+        <Tile label="Customers holding credit" value={n(data?.totals.accounts ?? 0, 0)}
           note={`${n(data?.totals.walletFunded ?? 0, 0)} funded by Heclus`} />
         <Tile label="Heclus Credits outstanding" value={n(data?.totals.credits ?? 0)}
           note={`${n(data?.totals.reserved ?? 0)} held by work in flight`} accent noteStrong />
@@ -2373,8 +2376,8 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
       {typeof data?.totals.credits === "number" && (
         <p className="text-xs" style={{ color: "var(--c-45)" }}>
           Customers hold {data.totals.credits.toLocaleString(undefined, { maximumFractionDigits: 0 })} Heclus
-          Credits against these balances. One credit buys one KIE or PoYo credit, so the two are directly
-          comparable.
+          Credits against these balances, admin accounts excluded. One credit buys one KIE or PoYo credit,
+          so the two are directly comparable.
         </p>
       )}
     </div>

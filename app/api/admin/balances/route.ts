@@ -176,7 +176,13 @@ export async function GET() {
       || r.clipsGrant > 0 || r.clipsPaid > 0 || r.clipsReserved > 0)
     .sort((a, b) => (b.credits + b.reserved) - (a.credits + a.reserved) || b.spent - a.spent);
 
-  const totals = rows.reduce((t, r) => ({
+  // Customers only.
+  //
+  // An admin account holds credit for testing, thousands of it, and counting
+  // that as outstanding made the float look far more claimed than it is. The
+  // rows still list admins, flagged as such; it is the totals underneath them
+  // that have to mean "what customers are owed".
+  const totals = rows.filter((r) => !r.isAdmin).reduce((t, r) => ({
     accounts: t.accounts + 1,
     credits: t.credits + r.credits,
     reserved: t.reserved + r.reserved,
