@@ -80,37 +80,56 @@ export async function alertIfLowBalance(
   const to = await adminRecipients();
   const amount = credits.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const subject = `Heclus: ${provider} balance down to ${amount} credits`;
-  const body =
-    `The ${provider} account is at ${amount} credits, below the ${threshold} alert threshold.\n\n` +
-    `Image generation stops entirely at 80 credits: every submit is refused and customers ` +
-    `see a provider error they cannot act on.\n\n` +
-    `Top up at https://poyo.ai/ , or move the image surface to another provider in ` +
-    `Admin, Config, Operators.\n\n` +
-    `Balances: https://app.heclus.io/admin (Providers)\n`;
+  const lines = [
+    `The ${provider} account is at ${amount} credits, below the ${threshold} alert threshold.`,
+    `Image generation stops entirely at 80 credits: every submit is refused and customers see a provider error they cannot act on.`,
+    `Top up at https://poyo.ai/ , or move the image surface to another provider in Admin, Config, Operators.`,
+    `Balances: https://app.heclus.io/admin (Providers)`,
+  ];
+  const text = lines.join("\n\n") + "\n";
+  // Sent as HTML as well as text. A plain-text-only message from a transactional
+  // domain is the shape spam filters are most suspicious of, and this is the one
+  // mail that must not be filed quietly.
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.55;color:#111">` +
+    `<p style="font-size:20px;font-weight:700;margin:0 0 4px">${provider} is low: ${amount} credits</p>` +
+    `<p style="margin:0 0 16px;color:#555">Alert threshold ${threshold}. Generation stops at 80.</p>` +
+    lines.slice(1).map((l) => `<p style="margin:0 0 12px">${l}</p>`).join("") +
+    `<p style="margin:20px 0 0"><a href="https://app.heclus.io/admin" style="background:#111;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;display:inline-block">Open the Providers view</a></p>` +
+    `</div>`;
 
-  try {
-    await sendEmail({
-      from: process.env.HOSTINGER_SMTP_USER ?? "info@heclus.com",
-      to,
-      subject,
-      text: body,
-    });
-  } catch (e) {
-    // A failed mail must not fail the snapshot it rides on, but it does have to
-    // be visible: this is the alert nobody would otherwise miss.
-    console.error(`[provider-balance] alert mail failed:`, e instanceof Error ? e.message : e);
+  // One message per admin rather than one with everybody on it. A shared To
+  // line reads as a bulk send to a filter, and a single bad address would take
+  // the whole send down with it.
+  let delivered = 0;
+  for (const address of to) {
+    try {
+      await sendEmail({
+        from: process.env.HOSTINGER_SMTP_USER ?? "support@heclus.com",
+        to: address,
+        subject,
+        text,
+        html,
+      });
+      delivered += 1;
+    } catch (e) {
+      console.error(`[provider-balance] alert mail to ${address} failed:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  if (delivered === 0) {
     await logSystemEvent({
       level: "error", source: SOURCE,
-      message: `${provider} is at ${amount} credits and the alert mail failed to send`,
-      metadata: { provider, credits, threshold },
+      message: `${provider} is at ${amount} credits and every alert mail failed to send`,
+      metadata: { provider, credits, threshold, recipients: to },
     });
     return "sent";
   }
 
   await logSystemEvent({
     level: "warn", source: SOURCE,
-    message: `${provider} balance low: ${amount} credits, alerted ${to.length} admin${to.length === 1 ? "" : "s"}`,
-    metadata: { provider, credits, threshold, recipients: to },
+    message: `${provider} balance low: ${amount} credits, alerted ${delivered} of ${to.length} admin${to.length === 1 ? "" : "s"}`,
+    metadata: { provider, credits, threshold, recipients: to, delivered },
   });
   return "sent";
 }
