@@ -25,22 +25,29 @@ export function CreditsAnnouncement() {
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
   // ?announce=1 shows it whatever the flag says, for checking the thing itself.
-  const forced = params.get("announce") === "1";
+  // Read from the hook and from the URL, because a page that has not finished
+  // hydrating hands the hook an empty set and the override then does nothing.
+  const forced =
+    params.get("announce") === "1" ||
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("announce") === "1");
 
   useEffect(() => {
+    // Forced opens straight away. It used to wait on the status call and open
+    // only if that resolved, so a failed or slow request made the override look
+    // broken: the one thing an override must not do.
+    if (forced) { setOpen(true); return; }
+
     let live = true;
-    if (!forced) {
-      try {
-        if (window.localStorage.getItem(SEEN_KEY)) return;
-      } catch { /* private mode: show it, once per session at worst */ }
-    }
+    try {
+      if (window.localStorage.getItem(SEEN_KEY)) return;
+    } catch { /* private mode: show it, once per session at worst */ }
     void fetch("/api/me/api-keys-status")
       .then((r) => (r.ok ? r.json() : null))
       .then((s: ApiKeysStatus | null) => {
         if (!live || !s) return;
         // The people this is about: still on their own keys, not on a credits
         // plan. Anyone already moved has nothing to be told.
-        if (forced || (s.fundingMode === "byo" && !s.onHeclusCreditsPlan)) setOpen(true);
+        if (s.fundingMode === "byo" && !s.onHeclusCreditsPlan) setOpen(true);
       })
       .catch(() => undefined);
     return () => { live = false; };
