@@ -14,10 +14,13 @@ import { logSystemEvent } from "@/lib/system-logger";
 // the floor is crossed is a report of an outage, not a warning: PoYo is topped
 // up by hand, which takes minutes at best and hours if it lands overnight.
 
-/** Alert below this many PoYo credits. Roughly a day of image generation at the
- *  busiest we have been, and more than three times the hard floor, so there is
- *  room to act. Override with POYO_LOW_BALANCE_CREDITS. */
-export const POYO_LOW_BALANCE = Number(process.env.POYO_LOW_BALANCE_CREDITS ?? 300);
+/** Alert below this many PoYo credits.
+ *
+ *  Twelve times the hard floor of 80, and several days of image generation at
+ *  the busiest we have been, because topping PoYo up is a manual job: the point
+ *  of the warning is that it arrives while there is still time to act on it in
+ *  working hours. Override with POYO_LOW_BALANCE_CREDITS. */
+export const POYO_LOW_BALANCE = Number(process.env.POYO_LOW_BALANCE_CREDITS ?? 1000);
 
 /** How long to stay quiet after alerting. The balance is read hourly; without
  *  this, an account left low would send a mail every hour until somebody paid,

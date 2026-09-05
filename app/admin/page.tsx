@@ -14,7 +14,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search, Wallet,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search, Wallet, Bell,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2005,6 +2005,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         />
         <ProviderTile
           label="PoYo credits"
+          logo="/providers/poyo.png"
           note="Whatever the operator switch has moved to PoYo"
           p={data?.providers.poyo}
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -2014,6 +2015,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         />
         <ProviderTile
           label="ElevenLabs characters"
+          logo="/providers/elevenlabs.png"
           note="Voiceovers and caption alignment"
           p={data?.providers.elevenlabs}
           format={(v) => v.toLocaleString()}
@@ -2346,6 +2348,7 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <ProviderTile
           label="KIE credits"
+          logo="/providers/kie.png"
           note="Images, clips and the Claude relay"
           p={data?.providers.kie}
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -2355,17 +2358,19 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
         />
         <ProviderTile
           label="PoYo credits"
+          logo="/providers/poyo.png"
           note="Whatever the operator switch has moved to PoYo"
           p={data?.providers.poyo}
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           /* The same number the alert mail fires on, so the tile turns amber
              when an admin's inbox does. */
-          low={data?.providers.poyo?.alertBelow ?? 300}
+          low={data?.providers.poyo?.alertBelow ?? 1000}
           href="https://poyo.ai/"
           claim={data?.totals.credits}
         />
         <ProviderTile
           label="ElevenLabs characters"
+          logo="/providers/elevenlabs.png"
           note="Voiceovers and caption alignment"
           p={data?.providers.elevenlabs}
           format={(v) => v.toLocaleString()}
@@ -2412,7 +2417,10 @@ function AnthropicTile({ p }: { p: ProviderBalance | undefined }) {
   return (
     <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Anthropic</p>
+        <p className="text-sm font-semibold flex items-center gap-2 min-w-0" style={{ color: "var(--c-78)" }}>
+          <ProviderMark src="/providers/anthropic.png" label="Anthropic" />
+          <span className="truncate">Anthropic</span>
+        </p>
         <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer"
           className="text-[11px] shrink-0 hover:opacity-80 transition-opacity"
           style={{ color: "oklch(0.62 0.15 220)" }}>
@@ -2425,7 +2433,36 @@ function AnthropicTile({ p }: { p: ProviderBalance | undefined }) {
   );
 }
 
-function ProviderTile({ label, note, p, format, low, href, claim }: {
+/**
+ * A provider's own mark, from its favicon, vendored under /providers.
+ *
+ * Local files rather than a favicon service: four tiles that each reach out to
+ * Google to draw a 16 pixel image is a request per render for something that
+ * changes once a year, and it would not load at all behind a strict CSP.
+ *
+ * Falls back to nothing on a broken file. A missing logo is a smaller problem
+ * than a broken-image icon next to a balance.
+ */
+function ProviderMark({ src, label }: { src: string; label: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      width={18}
+      height={18}
+      onError={() => setFailed(true)}
+      className="rounded-[4px] shrink-0"
+      style={{ objectFit: "contain" }}
+      title={label}
+    />
+  );
+}
+
+function ProviderTile({ label, note, p, format, low, href, claim, logo }: {
   label: string;
   note: string;
   p: ProviderBalance | undefined;
@@ -2438,6 +2475,8 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
    *  one Heclus credit buys one provider credit at either. Omitted on
    *  ElevenLabs, whose characters are not the same unit as a credit. */
   claim?: number;
+  /** The provider's mark, under /providers. */
+  logo?: string;
 }) {
   const state = !p ? "loading"
     : !p.configured ? "nokey"
@@ -2459,19 +2498,30 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
     : state === "unknown" ? "Unavailable"
     : format(p!.balance!);
 
-  // Kept short: three cards to a row leaves little width, and these lines sit
+  // Kept short: four cards to a row leaves little width, and these lines sit
   // under a large number where a wrapped third line reads as clutter.
   const detail = state === "nokey" ? "Add one on Config, API Keys."
     : state === "invalid" ? "The provider rejected this key."
     : state === "unknown" ? (p?.issue === "scope" ? "This key cannot read the balance." : "Could not reach the provider.")
     : state === "empty" ? "Out of credit. Wallet work is failing."
+    : state === "low" && p?.alertBelow ? `Below ${format(p.alertBelow)}. The admins have been emailed.`
     : p?.limit ? `${note} · ${format(p.limit)} in the plan`
     : note;
+
+  // Where a balance is watched, say at what. A threshold nobody can see is a
+  // number that only exists in an inbox, and the tile is where somebody looks
+  // when they are deciding whether to top up now or later.
+  const watch = p?.alertBelow && state !== "nokey" && state !== "invalid"
+    ? `Alerts below ${format(p.alertBelow)}`
+    : null;
 
   return (
     <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>{label}</p>
+        <p className="text-sm font-semibold flex items-center gap-2 min-w-0" style={{ color: "var(--c-78)" }}>
+          {logo && <ProviderMark src={logo} label={label} />}
+          <span className="truncate">{label}</span>
+        </p>
         <a href={href} target="_blank" rel="noopener noreferrer"
           className="text-[11px] shrink-0 hover:opacity-80 transition-opacity"
           style={{ color: "oklch(0.62 0.15 220)" }}>
@@ -2488,6 +2538,20 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
       >
         {detail}
       </p>
+      {watch && (
+        <span
+          className="inline-flex items-center gap-1 mt-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+          style={{
+            background: state === "low" || state === "empty" ? "oklch(0.70 0.18 45 / 0.14)" : "oklch(0 0 0 / 0.04)",
+            color: state === "low" || state === "empty" ? "oklch(0.58 0.16 65)" : "var(--c-50)",
+            border: "1px solid var(--input)",
+          }}
+          title="An email goes to every admin when the balance falls below this. Once, then quiet for six hours."
+        >
+          <Bell size={9} />
+          {watch}
+        </span>
+      )}
       {claim !== undefined && (
         // The float above is what we hold; this is what customers can spend
         // against it. Shown in the same card because the comparison is the
