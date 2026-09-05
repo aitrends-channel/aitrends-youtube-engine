@@ -8,6 +8,7 @@ import { creditsForUnits, getCreditRates } from "@/lib/pricing";
 import { USD_PER_CREDIT } from "@/lib/credit-unit";
 import type { CostUnitKind } from "@/lib/costs";
 import { fetchPoyoBalance } from "@/lib/poyo/client";
+import { POYO_LOW_BALANCE } from "@/lib/providers/low-balance";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,9 @@ export interface ProviderBalance {
   limit: number | null;
   /** Why there is no number, when we know it. */
   issue: "scope" | "key_id" | null;
+  /** The balance an alert fires below, where one is watched. Sent so the tile
+   *  turns amber at the same number the email uses. */
+  alertBelow?: number;
   /** What this provider has cost in the last 30 days, in USD.
    *
    *  For Anthropic it is the only figure there is: a plain API key cannot read
@@ -262,6 +266,7 @@ async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> 
       issue: kie?.balanceIssue ?? null,
     },
     poyo: {
+      alertBelow: POYO_LOW_BALANCE,
       configured: !!poyoKey,
       // The balance read doubles as the key check: PoYo has no separate
       // validation endpoint, so a number back means the key works, a 401 or

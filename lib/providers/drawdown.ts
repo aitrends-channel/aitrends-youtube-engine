@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 import { fetchKieBalance } from "@/lib/kie/client";
 import { fetchPoyoBalance } from "@/lib/poyo/client";
 import { getActiveProductKey } from "@/lib/claude/routing";
+import { alertIfLowBalance } from "@/lib/providers/low-balance";
 
 // Does the provider's balance fall by what we recorded spending?
 //
@@ -81,6 +82,18 @@ export async function snapshotProviderBalances(): Promise<{
   const rows = snapshots
     .filter((s) => s.credits !== null)
     .map((s) => ({ provider: s.provider, credits: s.credits as number }));
+
+  // The read is already done, so the check costs nothing extra. Warned about
+  // here rather than in its own cron because a second job reading the same two
+  // numbers on its own schedule is a second thing to keep alive.
+  const poyo = snapshots.find((s) => s.provider === "poyo");
+  if (poyo) {
+    try {
+      await alertIfLowBalance("poyo", poyo.credits);
+    } catch (e) {
+      problems.push(`low-balance check failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   if (rows.length === 0) return { stored: 0, problems };
 

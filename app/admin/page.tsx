@@ -2358,7 +2358,9 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
           note="Whatever the operator switch has moved to PoYo"
           p={data?.providers.poyo}
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          low={100}
+          /* The same number the alert mail fires on, so the tile turns amber
+             when an admin's inbox does. */
+          low={data?.providers.poyo?.alertBelow ?? 300}
           href="https://poyo.ai/"
           claim={data?.totals.credits}
         />
