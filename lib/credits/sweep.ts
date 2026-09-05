@@ -33,11 +33,18 @@ export const STALE_HOURS = 6;
  * Per-provider windows, where the default is the wrong shape.
  *
  * An Anthropic hold is taken and settled inside a single request, and the
- * longest of them, a prompts run over a long script, is minutes. One still open
- * an hour later belongs to a request that died.
+ * request itself cannot outlive the function's own limit: five minutes at the
+ * most, and the longest prompts run we have measured is under two. A hold still
+ * open a quarter of an hour later belongs to a request that died, and waiting
+ * an hour to say so left a customer looking at 149 credits marked "in use" for
+ * work that had finished forty minutes earlier.
+ *
+ * ElevenLabs is the same shape for the same reason: synthesis is settled in the
+ * request that asked for it.
  */
 export const STALE_HOURS_BY_PROVIDER: Record<string, number> = {
-  anthropic: 1,
+  anthropic: 0.25,
+  elevenlabs: 0.5,
 };
 
 const MAX_PER_RUN = 200;

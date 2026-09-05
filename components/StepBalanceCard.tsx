@@ -75,6 +75,14 @@ export function StepBalanceCard() {
   useEffect(() => {
     if (balanceVersion === 0) return;
     void mutate();
+    // A step finishing is also the moment to hand back anything a step that
+    // died was still holding. The sweep only touches holds past their window,
+    // so it cannot take credits from work in flight, and doing it here means an
+    // abandoned hold is returned when the next thing completes rather than when
+    // the hourly cron gets to it.
+    void fetch("/api/credits/sweep", { method: "POST" })
+      .then(() => mutate())
+      .catch(() => undefined);
     const t = setTimeout(() => { void mutate(); }, 3000);
     return () => clearTimeout(t);
   }, [balanceVersion, mutate]);
