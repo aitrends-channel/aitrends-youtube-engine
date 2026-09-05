@@ -7085,6 +7085,35 @@ function UserDetailDrawer({ user, onClose }: { user: AdminUser; onClose: () => v
           </button>
         </div>
 
+        {/* The same control the project drawer has. Reading a row tells you what
+            an account holds; this is for the questions only their screen
+            answers, like why a paid account was asked for an API key.
+            Not offered for an admin: act-as refuses admin to admin. */}
+        {!u.isAdmin && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/admin/act-as", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ email: u.email }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error ?? "Could not switch");
+                window.location.href = "/dashboard";
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not switch");
+              }
+            }}
+            title={`Work inside ${u.email}'s account. Their credits, their data.`}
+            className="inline-flex text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 items-center gap-1.5 cursor-pointer"
+            style={{ background: "oklch(0.72 0.18 65 / 0.12)", color: "oklch(0.55 0.16 65)", border: "1px solid oklch(0.72 0.18 65 / 0.35)" }}
+          >
+            Open as {u.email} →
+          </button>
+        )}
+
         <div className="overflow-x-auto rounded-xl"
           style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
           <table className="w-full border-collapse table-fixed">

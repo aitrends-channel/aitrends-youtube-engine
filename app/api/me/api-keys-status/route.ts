@@ -56,12 +56,20 @@ export async function GET() {
   const elevenlabsSet = !!row?.elevenlabs_api_key?.trim();
   const fundingMode = await getFundingMode(user);
   const bothSet = kieSet && elevenlabsSet;
+  // The plan counts on its own, not only through the funding mode.
+  //
+  // getFundingMode fails soft to "byo" on an unreadable row, which is the right
+  // default for spending but the wrong one for nagging: it would ask somebody
+  // who has bought credits to go and connect a KIE account, which is precisely
+  // what their plan removed. One subscriber met that on the morning they paid
+  // and opened a ticket asking where to add a key.
+  const onHeclusCreditsPlan = isHeclusCreditsPlan(billingPlanOf(user));
   return NextResponse.json({
     kieSet,
     elevenlabsSet,
     bothSet,
     fundingMode,
-    readyToGenerate: fundingMode === "wallet" || bothSet,
-    onHeclusCreditsPlan: isHeclusCreditsPlan(billingPlanOf(user)),
+    readyToGenerate: fundingMode === "wallet" || onHeclusCreditsPlan || bothSet,
+    onHeclusCreditsPlan,
   } satisfies ApiKeysStatus);
 }

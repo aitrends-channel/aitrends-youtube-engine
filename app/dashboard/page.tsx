@@ -944,7 +944,11 @@ export default function HomePage() {
     // would send a customer who owes us nothing to a setup page with nothing to
     // fill in.
     if (isAdmin) { action(); return; }
-    if (apiKeysStatus && !apiKeysStatus.readyToGenerate) {
+    // The plan is checked here as well as on the server. This modal asks a
+    // customer to go and open a KIE account, and it must not be reachable by
+    // somebody whose plan sold them credits instead, whatever a funding read
+    // did or did not manage to say.
+    if (apiKeysStatus && !apiKeysStatus.readyToGenerate && !apiKeysStatus.onHeclusCreditsPlan) {
       setShowApiKeysModal(true);
       return;
     }
