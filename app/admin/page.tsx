@@ -2364,7 +2364,7 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           /* The same number the alert mail fires on, so the tile turns amber
              when an admin's inbox does. */
-          low={data?.providers.poyo?.alertBelow ?? 1000}
+          low={data?.providers.poyo?.alertBelow ?? 2000}
           href="https://poyo.ai/"
           claim={data?.totals.credits}
         />

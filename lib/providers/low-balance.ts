@@ -16,11 +16,11 @@ import { logSystemEvent } from "@/lib/system-logger";
 
 /** Alert below this many PoYo credits.
  *
- *  Twelve times the hard floor of 80, and several days of image generation at
+ *  Twenty-five times the hard floor of 80, and several days of image generation at
  *  the busiest we have been, because topping PoYo up is a manual job: the point
  *  of the warning is that it arrives while there is still time to act on it in
  *  working hours. Override with POYO_LOW_BALANCE_CREDITS. */
-export const POYO_LOW_BALANCE = Number(process.env.POYO_LOW_BALANCE_CREDITS ?? 1000);
+export const POYO_LOW_BALANCE = Number(process.env.POYO_LOW_BALANCE_CREDITS ?? 2000);
 
 /** How long to stay quiet after alerting. The balance is read hourly; without
  *  this, an account left low would send a mail every hour until somebody paid,
