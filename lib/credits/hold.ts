@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase/client";
 import { roundCredits, creditsForUnits, getCreditRates } from "@/lib/pricing";
 import type { CostStep } from "@/lib/costs";
 import { estimateRun, estimateCharacters, estimateStepFloor, type RunEstimate } from "@/lib/credits/estimate";
+import { spendableCredits } from "@/lib/heclus-charge";
+import { logSystemEvent } from "@/lib/system-logger";
 
 // Hold the credits before the work, settle on what it actually cost.
 //
@@ -157,7 +159,37 @@ export async function holdForRun(opts: {
     beatNumber: opts.beatNumber,
     exact: opts.estimate.exact,
   });
-  return { hold, refused: hold === null };
+  if (hold) return { hold, refused: false };
+
+  // A refused hold is told apart from an unaffordable one.
+  //
+  // credits_reserve returns null for four different reasons: no account row, a
+  // balance that will not cover the hold, a non-positive amount, and any error
+  // the RPC itself hits. Only the second is the customer's problem, and the
+  // route above cannot tell them apart, so all four came out as "Out of
+  // credits, top up" — which a subscriber saw over a balance of 1,944.
+  //
+  // If the balance covers what we tried to hold, the refusal is ours. The work
+  // proceeds unheld: it is still metered and still charged when it completes,
+  // so the only thing lost is the race protection a hold gives, and losing
+  // that beats refusing a customer who has the credits.
+  const balance = await spendableCredits(opts.userId);
+  const wanted = roundCredits(opts.estimate.total * (opts.estimate.exact ? PADDING_EXACT : PADDING));
+  const covered = balance >= wanted;
+  await logSystemEvent({
+    level: covered ? "error" : "warn",
+    source: "credits",
+    message: covered
+      ? `hold refused with the balance to cover it: wanted ${wanted}, balance ${balance}. Proceeding unheld.`
+      : `hold refused, balance short: wanted ${wanted}, balance ${balance}.`,
+    userId: opts.userId,
+    projectId: opts.projectId,
+    metadata: {
+      wanted, balance, provider: opts.provider,
+      estimate: opts.estimate.total, source: opts.estimate.source, exact: !!opts.estimate.exact,
+    },
+  });
+  return { hold: null, refused: !covered };
 }
 
 /** Convenience for the in-request paths: estimate and hold in one step. */
