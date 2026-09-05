@@ -7,6 +7,7 @@ import type { CostUnitKind } from "@/lib/costs";
 import { getFundingMode } from "@/lib/funding";
 import { billingPlanOf } from "@/lib/plans-gating";
 import { isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { isAdminUser } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -414,5 +415,12 @@ export async function GET(
   const inCredits =
     isHeclusCreditsPlan(billingPlanOf(user)) || (await getFundingMode(user)) === "wallet";
 
-  return NextResponse.json({ projectId, columns, inCredits, log, events });
+  // Whether the account whose log this is may see the internal columns.
+  //
+  // Decided here rather than in the browser, because getRequiredUser resolves
+  // impersonation and the browser's session does not: an admin acting as a
+  // customer was reading the customer's rows with their own admin columns on,
+  // which is both the wrong view of what the customer sees and the model name
+  // on a page it does not belong on.
+  return NextResponse.json({ projectId, columns, inCredits, log, events, isAdmin: isAdminUser(user) });
 }

@@ -302,6 +302,10 @@ type CostsResponse = {
   columns: Record<CostColumn, ColumnSummary>;
   log?: CreditLogEntry[];
   events?: CostEventEntry[];
+  /** Whether the account this log belongs to is an admin. From the server, so
+   *  it follows impersonation: acting as a customer shows the customer's
+   *  columns, not the admin's. */
+  isAdmin?: boolean;
 };
 
 /** One metered event, for an account with no ledger to read. Same list the
@@ -402,9 +406,9 @@ function ProviderFilter({ options, total, value, onChange }: {
 const RUNNING_ORANGE = "oklch(0.70 0.18 45)";
 
 function StatusCell({ running }: { running: boolean }) {
-  // While it runs, the dot alone. A pulsing orange point in a column of green
-  // pills says "this one is still moving" without a word, and the row it sits
-  // on already names the step and the beats.
+  // The dot alone, either way: orange and pulsing while a row is still moving,
+  // green once it is done. In a column of forty rows the colour is the whole
+  // message, and the word beside it was only ever repeating the colour.
   if (running) {
     return (
       <span className="inline-flex items-center" title="In progress" aria-label="In progress">
@@ -414,10 +418,8 @@ function StatusCell({ running }: { running: boolean }) {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2 py-0.5 text-[11px] font-medium whitespace-nowrap"
-      style={{ background: "var(--bg-progress)", color: CHARGE_GREEN, border: "1px solid var(--bd-8)" }}>
-      <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: CHARGE_GREEN }} />
-      success
+    <span className="inline-flex items-center" title="Done" aria-label="Done">
+      <span className="inline-block w-2 h-2 rounded-full" style={{ background: CHARGE_GREEN }} />
     </span>
   );
 }
@@ -608,6 +610,8 @@ export default function ProjectCostPage({ params }: PageProps) {
     });
   }, []);
   const showCredits = isAdmin && planView ? planView === "new" : !!data?.inCredits;
+  // Internal columns follow the account being read, not the browser session.
+  const showAdminColumns = !!data?.isAdmin;
 
   // One provider at a time, from the providers this project actually used.
   // Built from the whole list rather than the filtered one, so choosing a
@@ -767,12 +771,12 @@ export default function ProjectCostPage({ params }: PageProps) {
                 <ProviderFilter options={providerOptions} total={events.length} value={providerFilter} onChange={setProviderFilter} />
                 <div className="overflow-x-auto rounded-xl lg:py-5 lg:px-8 xl:px-10"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}>
-                  <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1260px]" : "min-w-[1080px]"}`}>
+                  <table className={`w-full border-collapse table-fixed ${showAdminColumns ? "min-w-[1260px]" : "min-w-[1080px]"}`}>
                     <colgroup>
                       <col />
                       <col style={{ width: "110px" }} />
                       <col style={{ width: "110px" }} />
-                      {isAdmin && <col style={{ width: "170px" }} />}
+                      {showAdminColumns && <col style={{ width: "170px" }} />}
                       <col style={{ width: "110px" }} />
                       <col style={{ width: "180px" }} />
                       <col style={{ width: "110px" }} />
@@ -781,7 +785,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                     </colgroup>
                     <thead>
                       <tr>
-                        {(isAdmin
+                        {(showAdminColumns
                           ? ["Process", "Step", "Provider", "Model", "Result", "Activity", "Status", "Used", "Date/Time"]
                           : ["Process", "Step", "Provider", "Result", "Activity", "Status", "Used", "Date/Time"]
                         ).map((h) => (
@@ -810,7 +814,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                           <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
                             {r.provider ? PROVIDER_LABEL[r.provider] ?? r.provider : "—"}
                           </td>
-                          {isAdmin && (
+                          {showAdminColumns && (
                             <td className="py-2.5 px-3 text-xs font-mono truncate" style={{ color: "var(--c-55)" }}>
                               {r.model ?? "—"}
                             </td>
@@ -965,14 +969,14 @@ export default function ProjectCostPage({ params }: PageProps) {
                   Nothing charged on this project yet.
                 </p>
               ) : (
-              <table className={`w-full border-collapse table-fixed ${isAdmin ? "min-w-[1100px]" : "min-w-[920px]"}`}>
+              <table className={`w-full border-collapse table-fixed ${showAdminColumns ? "min-w-[1100px]" : "min-w-[920px]"}`}>
                 {/* Fixed columns, so a long process name cannot squeeze the
                     amount, and the three narrow columns line up down the page
                     instead of shifting row to row. */}
                 <colgroup>
                   <col />
                   <col style={{ width: "120px" }} />
-                  {isAdmin && <col style={{ width: "170px" }} />}
+                  {showAdminColumns && <col style={{ width: "170px" }} />}
                   <col style={{ width: "110px" }} />
                   <col style={{ width: "100px" }} />
                   <col style={{ width: "110px" }} />
@@ -984,7 +988,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                     {/* Type is what came out, Action is what the credits did.
                         The badge column used to be called Type, which left the
                         table with no word for the thing being paid for. */}
-                    {(isAdmin
+                    {(showAdminColumns
                       ? ["Process", "Type", "Model", "Result", "Action", "Status", "Credits", "Date/Time"]
                       : ["Process", "Type", "Result", "Action", "Status", "Credits", "Date/Time"]
                     ).map((h) => (
@@ -1014,7 +1018,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                       <td className="py-2.5 px-3 text-xs truncate" style={{ color: "var(--c-55)" }}>
                         {(r.step && STEP_KIND[r.step]) ?? "—"}
                       </td>
-                      {isAdmin && (
+                      {showAdminColumns && (
                         /* A refund is not a generation, so it names no model. */
                         <td className="py-2.5 px-3 text-xs font-mono truncate" style={{ color: "var(--c-55)" }}>
                           {r.type === "refunded" ? "—" : r.model ?? "—"}
@@ -1084,7 +1088,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                 <tfoot>
                   <tr style={{ borderTop: "1px solid var(--bd-card)" }}>
                     <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
-                      style={{ color: "var(--c-45)" }} colSpan={isAdmin ? 6 : 5}>
+                      style={{ color: "var(--c-45)" }} colSpan={showAdminColumns ? 6 : 5}>
                       Net charged
                     </td>
                     <td className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums text-right"
