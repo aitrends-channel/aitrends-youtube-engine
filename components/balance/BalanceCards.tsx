@@ -309,19 +309,6 @@ function WalletCard({ data }: { data: CreditsData | null }) {
       ? "oklch(0.72 0.17 75)"
       : "oklch(0.72 0.25 285)";
 
-  // Ledger rows in the customer's terms. The stored note is written for
-  // support, so the kind decides the wording here.
-  const label = (kind: string, note: string | null) => {
-    switch (kind) {
-      case "monthly_grant": return "Monthly free credits";
-      case "grant_expiry":  return "Unused free credits expired";
-      case "topup":         return "Credits purchased";
-      case "debit":         return note ? `Video clip (${note})` : "Video clip";
-      case "refund":        return "Refunded — clip did not render";
-      default:              return "Adjustment";
-    }
-  };
-
   return (
     <div className="space-y-4 flex flex-col h-full">
       <div className="flex items-center gap-3">
@@ -405,36 +392,9 @@ function WalletCard({ data }: { data: CreditsData | null }) {
         </p>
       )}
 
-      {ledger.length > 0 && (
-        <div className="rounded-2xl overflow-hidden flex-1"
-          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          <p className="text-xs font-semibold px-4 py-2.5" style={{ color: "var(--c-55)", borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
-            Recent activity
-          </p>
-          <ul>
-            {ledger.slice(0, 8).map((row) => (
-              <li key={row.id} className="flex items-start justify-between gap-3 px-4 py-2"
-                style={{ borderTop: "1px solid oklch(1 0 0 / 0.04)" }}>
-                <span className="min-w-0">
-                  <span className="text-xs block truncate" style={{ color: "var(--c-70)" }}>
-                    {label(row.kind, row.note)}
-                  </span>
-                  <span className="text-[10px] block" style={{ color: "var(--c-42)" }}>
-                    {new Date(row.created_at).toLocaleString(undefined, {
-                      day: "numeric", month: "short", year: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                    })}
-                  </span>
-                </span>
-                <span className="text-xs font-semibold tabular-nums shrink-0"
-                  style={{ color: row.credits > 0 ? "oklch(0.62 0.15 145)" : "var(--c-55)" }}>
-                  {row.credits > 0 ? `+${row.credits}` : row.credits}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* The video wallet's ledger came out with the Heclus one. Both cards
+          answer the same question now, how much is left and what it buys, and
+          neither is a place to read a list of charges. */}
     </div>
   );
 }
