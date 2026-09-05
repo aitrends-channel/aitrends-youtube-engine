@@ -10,7 +10,6 @@ import type { LucideIcon } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
-import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -41,7 +40,6 @@ const DASH_NAV: { id: DashTab; label: string; short: string; icon: LucideIcon }[
 
 // Free-resources teaser. Shown to every account until dismissed. The suffix
 // is the user id, added at render time.
-const FREE_TEASER_KEY = "heclus.dashboard.freeTeaser";
 // Niche is a filter over one flat video list, not a container around its own
 // grid. NICHE_ALL is the unfiltered default.
 const NICHE_ALL = "__all__";
@@ -576,25 +574,6 @@ export default function HomePage() {
     try { window.localStorage.setItem(DASH_TAB_KEY, t); } catch { /* storage disabled */ }
   };
 
-  // Free-resources teaser: every account, until dismissed. Keyed by user id so dismissing it on one account doesn't hide it from
-  // another on a shared browser. localStorage, not the database, so it costs
-  // no migration and no request; the trade is that it reappears in a second
-  // browser, which for a teaser is cheaper than the column.
-  const [showFreeTeaser, setShowFreeTeaser] = useState(false);
-  const [freeTeaserKey, setFreeTeaserKey] = useState("");
-  const dismissFreeTeaser = () => {
-    setShowFreeTeaser(false);
-    try { if (freeTeaserKey) window.localStorage.setItem(freeTeaserKey, "1"); } catch { /* storage disabled */ }
-  };
-
-  // ?teaser=1 forces the banner on, independent of auth. Kept out of the auth
-  // effect so it still works if the session read never reaches applyUser.
-  useEffect(() => {
-    try {
-      if (new URLSearchParams(window.location.search).get("teaser") === "1") setShowFreeTeaser(true);
-    } catch { /* no window */ }
-  }, []);
-
   const [nicheFilter, setNicheFilter] = useState<string>(NICHE_ALL);
   const [videoView, setVideoView] = useState<"list" | "cards">("list");
   useEffect(() => {
@@ -682,23 +661,6 @@ export default function HomePage() {
       setUserEmail(user.email ?? "");
       if (user.created_at) {
         setMemberSince(new Date(user.created_at).toLocaleDateString("en", { month: "short", year: "numeric" }));
-      }
-      // Free-resources teaser: every account until dismissed, except founders,
-      // whose plan already includes what the banner is pointing at. Outside the
-      // created_at branch because it no longer depends on account age.
-      // applyUser runs twice (cached session, then verified user), so this has
-      // to stay idempotent: read the dismissal every time rather than only
-      // showing on the first pass.
-      {
-        const key = `${FREE_TEASER_KEY}.${user.id}`;
-        setFreeTeaserKey(key);
-        let dismissed = false;
-        try { dismissed = window.localStorage.getItem(key) === "1"; } catch { /* storage disabled */ }
-        // ?teaser=1 forces it past a dismissal so the banner can be reviewed.
-        let forced = false;
-        try { forced = new URLSearchParams(window.location.search).get("teaser") === "1"; } catch { /* no window */ }
-        const isFounder = user.app_metadata?.plan === "founder";
-        setShowFreeTeaser(forced || (!dismissed && !isFounder));
       }
       const paid = (user.app_metadata?.paid === true) || false;
       setIsPaid(paid);
@@ -1441,36 +1403,6 @@ export default function HomePage() {
 
           return (
             <div className="space-y-6">
-              {/* Free-resources teaser. Copy tracks the kill-switches so it
-                  can never advertise something the Free tab still hides:
-                  voiceover is live, images are still coming. */}
-              {showFreeTeaser && (
-                <div className="relative rounded-2xl px-4 py-4 sm:px-6 sm:py-5"
-                  style={{ background: "oklch(0.65 0.15 145 / 0.10)", border: "1px solid oklch(0.65 0.15 145 / 0.25)", marginTop: "10px" }}>
-                  <button
-                    onClick={dismissFreeTeaser}
-                    aria-label="Dismiss"
-                    className="absolute top-3 right-3 p-1 rounded-lg transition-opacity hover:opacity-70 cursor-pointer"
-                    style={{ color: "var(--c-45)" }}
-                  >
-                    <X size={15} />
-                  </button>
-                  <div className="flex items-start gap-3 pr-8">
-                    <Gift size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.65 0.15 145)" }} />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold" style={{ color: "var(--c-88)" }}>
-                        Free resources are included with your account
-                      </p>
-                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-                        {FREE_TTS_COMING_SOON
-                          ? "Free text-to-speech credits are on the way. It's our way of saying thank you for choosing us. Watch out for more exciting Heclus perks."
-                          : "Utilize our free text-to-speech credits to scale up your production. It's our way of saying thank you for choosing us. Watch out for more exciting Heclus perks."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {dashTab === "stats" && (<>
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
