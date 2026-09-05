@@ -4557,17 +4557,20 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     {assembling ? "Rendering…" : showPreview ? "Re-render" : "Render"}
                   </button>
-                  {/* The next step, beside the button that produced the thing
-                      it works on. Shown exactly when that button reads
-                      "Re-render": before a render there is no video to make a
-                      thumbnail for, and during one the video is changing. */}
-                  {showPreview && !assembling && (
+                  {/* Always here, render or no render.
+                      It used to appear only once a video existed, on the
+                      reasoning that a thumbnail is made for a finished video.
+                      It is not: thumbnails are made from the channel's style
+                      and the topic, both of which exist long before the render,
+                      and people want the thumbnail decided while the video is
+                      still being put together. Only a render in progress hides
+                      it, because that row is about the render then. */}
+                  {!assembling && (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); router.push(`/projects/${projectId}/thumbnails`); }}
-                      disabled={previewLoadError}
-                      title={previewLoadError ? "Render the video again first — the cached render cannot be loaded." : "Make a thumbnail for this video"}
-                      className="shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Make a thumbnail for this video"
+                      className="shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-all"
                       style={{ background: "oklch(0.72 0.25 285 / 0.18)", border: "1px solid oklch(0.72 0.25 285 / 0.45)", color: "var(--accent-purple-text)" }}
                     >
                       Generate Thumbnail
