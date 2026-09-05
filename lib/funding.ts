@@ -86,7 +86,25 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
   const cached = cacheMap.get(userId);
   if (cached && Date.now() - cached.at < TTL_MS) return cached.mode;
 
-  let mode: FundingMode = "byo";
+  // The plan decides. The column used to have to agree with it, and that AND
+  // is what stopped the first subscriber on a credits plan from spending the
+  // credits they had just bought: migration 131 backfilled every pre-existing
+  // account to 'byo', so anyone who signed up before the new products and
+  // subscribed after them was pinned to keys they do not have.
+  //
+  // Reading the column could only ever turn the wallet off for someone whose
+  // plan sells credits, which is not a state anybody can want: a credits plan
+  // has no other way to pay. It still records what the account asked for, and
+  // the admin panel still shows it.
+  const check = await walletEligibleById(userId);
+  const mode: FundingMode = check.eligible ? "wallet" : "byo";
+  if (!check.admin) cacheMap.set(userId, { mode, at: Date.now() });
+  return mode;
+}
+
+/** The account's own record of the arrangement. Kept for the admin views and
+ *  for the funding routes that write it; no longer a gate on the plan. */
+export async function storedFundingMode(userId: string): Promise<FundingMode | null> {
   try {
     // select("*") for the same reason getSettings does it: PostgREST fails the
     // whole query on one unknown column, and naming funding_mode before
@@ -97,8 +115,8 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
       .eq("user_id", userId)
       .maybeSingle();
     if (error && error.code !== "PGRST116") {
-      console.warn("[funding] read failed, defaulting to byo:", error.message);
-      return "byo";
+      console.warn("[funding] stored mode read failed:", error.message);
+      return null;
     }
     // Three states, and the difference matters:
     //
@@ -113,33 +131,14 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
     //                        matching the DB default for new rows; the migration
     //                        backfilled every pre-existing account to 'byo'
     //                        explicitly so none of them land here.
-    if (!data) {
-      mode = "wallet";
-    } else {
-      const raw = (data as Record<string, unknown>).funding_mode;
-      if (raw === undefined) mode = "byo";
-      else if (raw === null || raw === "wallet") mode = "wallet";
-      else mode = "byo";
-    }
+    if (!data) return null;
+    const raw = (data as Record<string, unknown>).funding_mode;
+    if (raw === undefined || raw === null) return null;
+    return raw === "wallet" ? "wallet" : "byo";
   } catch (e) {
-    console.warn("[funding] read threw, defaulting to byo:", e instanceof Error ? e.message : e);
-    return "byo";
+    console.warn("[funding] stored mode threw:", e instanceof Error ? e.message : e);
+    return null;
   }
-
-  // The column says what the account asked for; the plan says what it bought.
-  // Both have to agree before Heclus's keys pay for anything.
-  let admin = false;
-  if (mode === "wallet") {
-    const check = await walletEligibleById(userId);
-    admin = check.admin;
-    if (!check.eligible) mode = "byo";
-  }
-
-  // An admin's answer depends on a switch they can flip between two calls, so
-  // caching it would leave them billed the old way for up to a minute after
-  // moving it. Nobody else's changes that fast.
-  if (!admin) cacheMap.set(userId, { mode, at: Date.now() });
-  return mode;
 }
 
 /** walletEligible needs the user object, and the choke points only have an id.
