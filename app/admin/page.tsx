@@ -2452,10 +2452,10 @@ function ProviderMark({ src, label }: { src: string; label: string }) {
       src={src}
       alt=""
       aria-hidden
-      width={18}
-      height={18}
+      width={28}
+      height={28}
       onError={() => setFailed(true)}
-      className="rounded-[4px] shrink-0"
+      className="rounded-[6px] shrink-0"
       style={{ objectFit: "contain" }}
       title={label}
     />
