@@ -66,7 +66,7 @@ export function CreditsAnnouncement() {
             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
             <Wallet size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
           </div>
-          <DialogTitle>New accounts run on Heclus Credits</DialogTitle>
+          <DialogTitle>Heclus has moved from BYO</DialogTitle>
           <DialogDescription>
             No API keys to bring. Yours still runs on your own keys, and you can switch either way in Billing.
             Your free resources stay the same on either.
