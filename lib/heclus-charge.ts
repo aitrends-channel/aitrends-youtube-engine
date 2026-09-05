@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getFundingModeById } from "@/lib/funding";
 import { getCreditRates, creditsForUnits, roundCredits } from "@/lib/pricing";
-import { reserveHeclusCredits, settleHeclusCredits } from "@/lib/heclus-credits";
+import { ensurePeriodGrant, reserveHeclusCredits, settleHeclusCredits } from "@/lib/heclus-credits";
 import type { CostEntry } from "@/lib/costs";
 import { getFundingMode } from "@/lib/funding";
 import type { User } from "@supabase/supabase-js";
@@ -153,16 +153,41 @@ async function debit(opts: {
 
 /** Spendable now, excluding what open reservations already hold. */
 export async function spendableCredits(userId: string): Promise<number> {
-  const { data, error } = await supabase
-    .from("credit_accounts")
-    .select("credits")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    console.warn("[heclus-charge] balance read failed:", error.message);
-    return 0;
+  const read = async () => {
+    const { data, error } = await supabase
+      .from("credit_accounts")
+      .select("credits")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      console.warn("[heclus-charge] balance read failed:", error.message);
+      return null;
+    }
+    return data as { credits?: number | string } | null;
+  };
+
+  const row = await read();
+  if (row) return Number(row.credits ?? 0);
+
+  // No row at all, which for a paid account means nobody has read their
+  // balance yet: the plan's credits are granted lazily, and the only two
+  // callers that issue them are the balance endpoints. A subscriber whose
+  // first action after paying is a generation would be refused for having a
+  // balance of zero they had just paid to have.
+  //
+  // Only in the missing-row case, so this costs one extra lookup once in an
+  // account's life. The grant itself is idempotent.
+  try {
+    const { data: found } = await supabase.auth.admin.getUserById(userId);
+    if (found?.user) {
+      await ensurePeriodGrant(found.user);
+      const granted = await read();
+      if (granted) return Number(granted.credits ?? 0);
+    }
+  } catch (e) {
+    console.warn("[heclus-charge] grant-on-read failed:", e instanceof Error ? e.message : e);
   }
-  return Number((data as { credits?: number | string } | null)?.credits ?? 0);
+  return 0;
 }
 
 /** The message a refusal shows. One string, so every surface refuses in the same

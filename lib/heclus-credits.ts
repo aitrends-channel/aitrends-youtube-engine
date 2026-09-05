@@ -111,7 +111,7 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
  * Fail-soft throughout. A grant that cannot be issued must not stop the balance
  * from rendering, and the next read will try again.
  */
-async function ensurePeriodGrant(user: User): Promise<void> {
+export async function ensurePeriodGrant(user: User): Promise<void> {
   try {
     // Customers only. The grant is real provider spend and the plans sell it as
     // an allowance, so handing it to an account that has bought nothing gives
