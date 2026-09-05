@@ -9,6 +9,7 @@ import { isAdminUser } from "@/lib/admin";
 import { billingPlanOf, planSlugOf } from "@/lib/plans-gating";
 import { getPlanBySlug, getAllPlans } from "@/lib/plans";
 import { heclusPlanFor, isHeclusCreditsPlan } from "@/lib/plan-tier";
+import { hasPaidAccess } from "@/lib/subscription";
 import { scheduleHeclusPlanChange, cancelScheduledPlanChange, pendingPlanOf } from "@/lib/dodo/plan-change";
 import { logSystemEvent } from "@/lib/system-logger";
 
@@ -124,10 +125,18 @@ async function statusFor(user: User): Promise<FundingStatus> {
     r ? `${r.name} ${r.priceDisplay}${r.periodDisplay}` : null;
   const dodo = ((user.app_metadata ?? {}) as { dodo?: Record<string, unknown> }).dodo ?? {};
 
-  // Stated as a reason rather than a missing option: an account not on a
-  // credits plan that chose wallet would be told it worked and then resolve to
-  // byo on the next call, which is worse than being told what it needs.
-  const walletGated = !isAdminUser(user) && !isHeclusCreditsPlan(billingPlan);
+  // Who may choose the wallet.
+  //
+  // It used to be "already on a credits plan", which made the switch
+  // unreachable for exactly the people it is for: a paying customer on the old
+  // products was told to move plan, by a card whose whole purpose is to move
+  // them. The POST path has always known how to do it, by booking the matching
+  // credits plan for their next renewal, and nothing could reach that branch.
+  //
+  // Now: an existing customer with a plan to move to may choose it. A free
+  // signup still cannot, because there is no subscription to reprice.
+  const canReprice = hasPaidAccess(user) && !!target;
+  const walletGated = !isAdminUser(user) && !isHeclusCreditsPlan(billingPlan) && !canReprice;
 
   return {
     mode,
@@ -138,7 +147,7 @@ async function statusFor(user: User): Promise<FundingStatus> {
     canUseWallet: !walletGated,
     canUseByo: kieKeySet,
     walletBlockedReason: walletGated
-      ? "Heclus Credits comes with the Starter, Pro and Max plans. Move to one of those to spend credits instead of your own keys."
+      ? "Heclus Credits comes with the Starter, Pro and Max plans. Subscribe to one of those to spend credits instead of your own keys."
       : null,
     byoBlockedReason: kieKeySet
       ? null

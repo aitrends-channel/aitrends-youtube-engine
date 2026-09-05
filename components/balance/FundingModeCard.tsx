@@ -84,7 +84,9 @@ export function FundingModeCard() {
   const chosen = data?.switchOptions.find((o) => o.slug === target) ?? null;
 
   return (
-    <div className="p-5 rounded-2xl space-y-4"
+    // The anchor the credits notice points at, so "See the options" lands on
+    // the switch rather than at the top of a page it is halfway down.
+    <div id="funding" className="p-5 rounded-2xl space-y-4 scroll-mt-24"
       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
       <div>
         <h2 className="text-xl font-bold text-foreground">Billing Mode</h2>

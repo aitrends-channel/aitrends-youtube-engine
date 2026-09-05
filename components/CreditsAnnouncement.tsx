@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Wallet } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 
 // Told once, to the people it is about.
@@ -60,36 +60,49 @@ export function CreditsAnnouncement() {
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-2"
-            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <Wallet size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+      {/* Dark on purpose. DialogContent ships white with zinc text, which is
+          right for the forms it was built for and wrong for a notice that
+          appears over a dark dashboard: a white sheet reads as an error before
+          it reads as news. */}
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-[26rem] p-0 gap-0 border-0"
+        style={{ background: "oklch(0.14 0.005 285)", border: "1px solid oklch(1 0 0 / 0.10)", boxShadow: "0 24px 60px oklch(0 0 0 / 0.55)" }}
+      >
+        <div className="p-7">
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-5"
+            style={{ background: "oklch(0.72 0.25 285 / 0.14)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+            <Wallet size={20} style={{ color: "oklch(0.76 0.20 285)" }} />
           </div>
-          <DialogTitle>Heclus has moved from BYO</DialogTitle>
-          <DialogDescription>
-            No API keys to bring. Yours still runs on your own keys, and you can switch either way in Billing.
-            Your free resources stay the same on either.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <button
-            type="button"
-            onClick={close}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer"
-            style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-          >
-            Keep my keys
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); router.push("/billing"); }}
-            className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 cursor-pointer"
-            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
-          >
-            See the options
-          </button>
-        </DialogFooter>
+          <DialogHeader className="space-y-3 text-left">
+            <DialogTitle className="text-xl font-bold tracking-tight" style={{ color: "oklch(0.96 0 0)" }}>
+              Heclus has moved from BYO
+            </DialogTitle>
+            <DialogDescription className="text-[13.5px] leading-[1.7]" style={{ color: "oklch(0.72 0 0)" }}>
+              New accounts run on Heclus Credits, with no API keys to bring. Yours still runs on your own
+              keys, and you can switch either way in Billing. Your free resources stay the same on either.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2.5 mt-7">
+            <button
+              type="button"
+              onClick={() => { close(); router.push("/billing#funding"); }}
+              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.99 0 0)" }}
+            >
+              See the options
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80 cursor-pointer"
+              style={{ background: "transparent", border: "1px solid oklch(1 0 0 / 0.14)", color: "oklch(0.74 0 0)" }}
+            >
+              Keep my keys
+            </button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
