@@ -62,6 +62,7 @@ export function CreditsAnnouncement() {
           <DialogTitle>New accounts run on Heclus Credits</DialogTitle>
           <DialogDescription>
             No API keys to bring. Yours still runs on your own keys, and you can switch either way in Billing.
+            Your free resources stay the same on either.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
