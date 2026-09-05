@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
@@ -22,16 +22,17 @@ const SEEN_KEY = "heclus.announce.credits-v1";
 
 export function CreditsAnnouncement() {
   const router = useRouter();
-  const params = useSearchParams();
   const [open, setOpen] = useState(false);
-  // ?announce=1 shows it whatever the flag says, for checking the thing itself.
-  // Read from the hook and from the URL, because a page that has not finished
-  // hydrating hands the hook an empty set and the override then does nothing.
-  const forced =
-    params.get("announce") === "1" ||
-    (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("announce") === "1");
 
   useEffect(() => {
+    // ?announce=1 shows it whatever the flag says, for checking the thing
+    // itself. Read off the location rather than with useSearchParams: that hook
+    // opts the whole page out of static rendering unless it is wrapped in a
+    // Suspense boundary, and it failed the build of /dashboard for a query
+    // param only this component cares about.
+    let forced = false;
+    try { forced = new URLSearchParams(window.location.search).get("announce") === "1"; } catch { /* no window */ }
+
     // Forced opens straight away. It used to wait on the status call and open
     // only if that resolved, so a failed or slow request made the override look
     // broken: the one thing an override must not do.
@@ -51,7 +52,7 @@ export function CreditsAnnouncement() {
       })
       .catch(() => undefined);
     return () => { live = false; };
-  }, [forced]);
+  }, []);
 
   function close() {
     setOpen(false);
