@@ -1260,11 +1260,14 @@ export default function AssemblePage({ params }: PageProps) {
   // plans: they are drawn by our own worker from assets that ship with it, so
   // they cost nothing per use and there is nothing to meter.
   //
-  // Sound is off for everyone, including admins. The tab is withdrawn rather
-  // than gated: a project that already carries beat sounds or placed ones
-  // still renders them, so nothing recorded is lost, but no new ones can be
-  // added from here.
-  const soundsTabEnabled = false;
+  // Sound is back, for everyone, on every plan.
+  //
+  // It was withdrawn while the renderer dropped the effects bed: the tab let
+  // people place sounds that never reached the finished file. The worker builds
+  // the bed properly now, so the tab is open again, and to all accounts rather
+  // than the credit plans alone, the same way transitions, elements and text
+  // are. It is also what the plan cards and the site have been promising.
+  const soundsTabEnabled = true;
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
