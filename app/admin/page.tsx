@@ -2001,7 +2001,6 @@ function BalancesPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           low={100}
           href="https://kie.ai/billing"
-          claim={data?.totals.credits}
         />
         <ProviderTile
           label="PoYo credits"
@@ -2011,7 +2010,6 @@ function BalancesPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           low={100}
           href="https://poyo.ai/"
-          claim={data?.totals.credits}
         />
         <ProviderTile
           label="ElevenLabs characters"
@@ -2354,7 +2352,6 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           low={100}
           href="https://kie.ai/billing"
-          claim={data?.totals.credits}
         />
         <ProviderTile
           label="PoYo credits"
@@ -2366,7 +2363,6 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
              when an admin's inbox does. */
           low={data?.providers.poyo?.alertBelow ?? 2000}
           href="https://poyo.ai/"
-          claim={data?.totals.credits}
         />
         <ProviderTile
           label="ElevenLabs characters"
@@ -2380,13 +2376,33 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
         <AnthropicTile p={data?.providers.anthropic} />
       </div>
 
-      {typeof data?.totals.credits === "number" && (
-        <p className="text-xs" style={{ color: "var(--c-45)" }}>
-          Customers hold {data.totals.credits.toLocaleString(undefined, { maximumFractionDigits: 0 })} Heclus
-          Credits against these balances, admin accounts excluded. One credit buys one KIE or PoYo credit,
-          so the two are directly comparable.
-        </p>
-      )}
+      {/* What customers hold, on its own.
+          It used to sit inside the KIE and the PoYo cards, which read as though
+          each provider owed that amount. It is one figure about the platform:
+          credits are spent wherever the operator switch points, so it belongs
+          beside the providers rather than inside any of them. */}
+      {typeof data?.totals.credits === "number" && (() => {
+        const claim = data.totals.credits;
+        const float = (data.providers.kie.balance ?? 0) + (data.providers.poyo.balance ?? 0);
+        const readable = data.providers.kie.balance !== null || data.providers.poyo.balance !== null;
+        const short = readable && claim > float;
+        return (
+          <div className="p-5 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+            <div className="flex items-baseline justify-between gap-4 flex-wrap">
+              <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Customer balances</p>
+              <p className="text-2xl font-bold tabular-nums"
+                style={{ color: short ? "oklch(0.58 0.16 65)" : "var(--c-90)" }}>
+                {claim.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <p className="text-[11px] mt-1" style={{ color: "var(--c-45)" }}>
+              {short
+                ? `Heclus Credits customers can spend, against ${float.toLocaleString(undefined, { maximumFractionDigits: 0 })} held at KIE and PoYo together. More is owed than the accounts can cover.`
+                : "Heclus Credits customers can spend, admin accounts excluded. One credit buys one KIE or PoYo credit, so it is comparable to the two balances above."}
+            </p>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2462,7 +2478,7 @@ function ProviderMark({ src, label }: { src: string; label: string }) {
   );
 }
 
-function ProviderTile({ label, note, p, format, low, href, claim, logo }: {
+function ProviderTile({ label, note, p, format, low, href, logo }: {
   label: string;
   note: string;
   p: ProviderBalance | undefined;
@@ -2470,11 +2486,6 @@ function ProviderTile({ label, note, p, format, low, href, claim, logo }: {
   /** Below this the number turns amber. Not a hard limit, a prompt to top up. */
   low: number;
   href: string;
-  /** Heclus Credits customers are holding, which is a claim on this float.
-   *  Directly comparable because both perKieCredit and perPoyoCredit are 1, so
-   *  one Heclus credit buys one provider credit at either. Omitted on
-   *  ElevenLabs, whose characters are not the same unit as a credit. */
-  claim?: number;
   /** The provider's mark, under /providers. */
   logo?: string;
 }) {
@@ -2551,29 +2562,6 @@ function ProviderTile({ label, note, p, format, low, href, claim, logo }: {
           <Bell size={9} />
           {watch}
         </span>
-      )}
-      {claim !== undefined && (
-        // The float above is what we hold; this is what customers can spend
-        // against it. Shown in the same card because the comparison is the
-        // point: a claim larger than the float is a promise we cannot keep,
-        // and it is invisible when the two numbers live in separate sections.
-        <div className="mt-2.5 pt-2.5 flex items-baseline justify-between gap-2"
-          style={{ borderTop: "1px solid var(--bd-6)" }}>
-          <span className="text-[11px]" style={{ color: "var(--c-45)" }}>Users total balance</span>
-          <span
-            className="text-sm font-semibold tabular-nums"
-            title={p?.balance != null && claim > p.balance
-              ? "Customers hold more credit than this account can cover."
-              : undefined}
-            style={{
-              color: p?.balance != null && claim > p.balance
-                ? "oklch(0.58 0.16 65)"
-                : "var(--c-78)",
-            }}
-          >
-            {claim.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </span>
-        </div>
       )}
     </div>
   );
