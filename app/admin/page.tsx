@@ -2330,7 +2330,7 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 py-1 sm:py-2">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm" style={{ color: "var(--c-55)" }}>
           {isLoading ? "Reading the providers…" : "Live from each provider, not from our records."}
@@ -2345,7 +2345,7 @@ function ProvidersPanel({ visible }: { visible: boolean }) {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <ProviderTile
           label="KIE credits"
           logo="/providers/kie.png"
@@ -2415,7 +2415,7 @@ function AnthropicTile({ p }: { p: ProviderBalance | undefined }) {
   const colour = state === "nokey" || state === "invalid" ? "oklch(0.55 0.19 25)" : "var(--c-90)";
 
   return (
-    <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+    <div className="p-5 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold flex items-center gap-2 min-w-0" style={{ color: "var(--c-78)" }}>
           <ProviderMark src="/providers/anthropic.png" label="Anthropic" />
@@ -2516,7 +2516,7 @@ function ProviderTile({ label, note, p, format, low, href, claim, logo }: {
     : null;
 
   return (
-    <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+    <div className="p-5 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold flex items-center gap-2 min-w-0" style={{ color: "var(--c-78)" }}>
           {logo && <ProviderMark src={logo} label={label} />}
@@ -8480,7 +8480,7 @@ export default function AdminPage() {
         </div>
 
         {/* Providers. The float every wallet-funded generation draws on. */}
-        <div id="providers" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "providers" ? undefined : "none" }}>
+        <div id="providers" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "22px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "providers" ? undefined : "none" }}>
           <ProvidersPanel visible={activeTab === "providers"} />
         </div>
 
