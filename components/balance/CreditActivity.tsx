@@ -5,6 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { ListFilter } from "lucide-react";
 import type { LedgerPage } from "@/app/api/heclus-credits/ledger/route";
+import { creditRowLabel } from "@/lib/credit-labels";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -23,14 +24,8 @@ const KINDS = [
   { value: "adjustment", label: "Adjusted" },
 ];
 
-function labelFor(kind: string, provider: string | null) {
-  switch (kind) {
-    case "topup":      return "Credits purchased";
-    case "refund":     return "Refunded";
-    case "adjustment": return "Adjusted by Heclus";
-    default:           return provider ? `Spent on ${provider}` : "Spent";
-  }
-}
+// Shared with anything else that renders a credit movement, so a row cannot be
+// called one thing here and another elsewhere.
 
 export function CreditActivity() {
   const [kind, setKind] = useState("");
@@ -140,7 +135,7 @@ export function CreditActivity() {
                       })}
                     </td>
                     <td className="px-4 py-3" style={{ color: "var(--c-75)" }}>
-                      {labelFor(r.kind, r.provider)}
+                      {creditRowLabel(r.kind, r.note ?? null, r.provider)}
                       {r.note && <span className="block text-xs" style={{ color: "var(--c-42)" }}>{r.note}</span>}
                     </td>
                     <td className="px-4 py-3">

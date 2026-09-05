@@ -118,17 +118,6 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
       }))
     : null;
 
-  const label = (kind: string, provider: string | null) => {
-    switch (kind) {
-      case "topup":      return "Credits purchased";
-      case "refund":     return "Refunded";
-      case "adjustment": return "Adjusted by Heclus";
-      // Spend rows name the provider, since that is the part a user recognises:
-      // "spent" alone tells them nothing about which step took it.
-      default:           return provider ? `Spent on ${provider}` : "Spent";
-    }
-  };
-
   return (
     <div className="space-y-4 flex flex-col h-full">
       <div className="flex items-center gap-3">
@@ -283,28 +272,11 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
         </div>
       </div>
 
-      {ledger.length > 0 && (
-        <div className="rounded-2xl overflow-hidden flex-1" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
-          <p className="px-4 py-3 text-xs font-semibold" style={{ color: "var(--c-55)", borderBottom: "1px solid var(--bd-8)" }}>
-            Recent activity
-          </p>
-          {ledger.map((row) => (
-            <div key={row.id} className="flex items-center justify-between gap-3 px-4 py-3"
-              style={{ borderTop: "1px solid var(--bd-6)" }}>
-              <div className="min-w-0">
-                <p className="text-sm truncate" style={{ color: "var(--c-75)" }}>{label(row.kind, row.provider)}</p>
-                <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
-                  {new Date(row.created_at).toLocaleString()}
-                </p>
-              </div>
-              <span className="text-sm font-semibold tabular-nums shrink-0"
-                style={{ color: row.credits > 0 ? "oklch(0.7 0.15 145)" : "var(--c-55)" }}>
-                {row.credits > 0 ? "+" : ""}{row.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* No activity list here. The billing page answers what you can spend;
+          where it went is per project, on the Logs view, where a row can name
+          the beat and open what it paid for. This one was clipped mid-row by
+          the grid cell it sat in, and ran to hundreds of lines on an account
+          that had made a few videos. */}
     </div>
   );
 }
