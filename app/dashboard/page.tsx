@@ -16,6 +16,7 @@ import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { CopyButton } from "@/components/CopyButton";
 import { ApiKeysRequiredModal } from "@/components/ApiKeysRequiredModal";
+import { CreditsAnnouncement } from "@/components/CreditsAnnouncement";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import type { ElevenLabsCheck, KieCheck } from "@/lib/key-check";
 import { DEMO_DATA } from "@/lib/demo-data";
@@ -2748,6 +2749,10 @@ export default function HomePage() {
 
       {showApiKeysModal && (
         <ApiKeysRequiredModal onClose={() => setShowApiKeysModal(false)} />
+      )}
+      {/* Once, for accounts still on their own keys. */}
+      {!showDemo && (
+        <CreditsAnnouncement />
       )}
 
     </div>
