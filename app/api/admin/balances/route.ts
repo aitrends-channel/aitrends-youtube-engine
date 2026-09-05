@@ -212,24 +212,57 @@ export async function GET() {
  * An unreachable provider reports null rather than zero. The distinction is the
  * whole point: zero means stop generating, null means we could not ask.
  */
-/** What Claude has cost us over the last 30 days, from the cost ledger.
- *  Anthropic publishes no balance to an API key, so spend is the only number
- *  that answers the question this tile is asked. */
+/**
+ * What Claude has cost Heclus over the last 30 days.
+ *
+ * Two things this has to get right, and the first version got neither.
+ *
+ * Paged, because PostgREST caps a response at a thousand rows whatever limit
+ * is asked for, and a busy month is several thousand: the figure was a third of
+ * the real one and looked plausible, which is the worst way to be wrong.
+ *
+ * And only what our own key paid for. A client running Claude on their own
+ * Anthropic key logs the same rows against the same provider, and their spend
+ * is theirs, not a line on our bill.
+ */
 async function anthropicSpend30dUsd(): Promise<number | null> {
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data, error } = await supabase
-    .from("project_costs")
-    .select("unit_kind, units, model, provider")
-    .like("unit_kind", "claude_tokens%")
-    .gte("created_at", since)
-    .limit(20_000);
-  if (error || !data) return null;
+
+  // Accounts billing Claude to themselves. Read first, so the sum below can
+  // leave them out row by row rather than after the fact.
+  const ownKey = new Set<string>();
+  try {
+    const { data } = await supabase.from("account_settings").select("*");
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const direct = row.anthropic_direct_enabled === true;
+      const key = typeof row.anthropic_api_key === "string" && row.anthropic_api_key.trim();
+      if (direct && key && typeof row.user_id === "string") ownKey.add(row.user_id);
+    }
+  } catch { /* an unreadable settings table overstates, which is the safer miss */ }
+
   const rates = await getCreditRates();
+  const PAGE = 1000;
   let credits = 0;
-  for (const row of data as Array<{ unit_kind: string; units: number | null; model: string | null; provider: string | null }>) {
-    credits += creditsForUnits(row.unit_kind as CostUnitKind, Number(row.units ?? 0), rates, {
-      model: row.model, provider: row.provider,
-    });
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("unit_kind, units, model, provider, user_id")
+      .like("unit_kind", "claude_tokens%")
+      .eq("provider", "anthropic")
+      .gte("created_at", since)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) return null;
+    const rows = (data ?? []) as Array<{
+      unit_kind: string; units: number | null; model: string | null; provider: string | null; user_id: string | null;
+    }>;
+    for (const row of rows) {
+      if (row.user_id && ownKey.has(row.user_id)) continue;
+      credits += creditsForUnits(row.unit_kind as CostUnitKind, Number(row.units ?? 0), rates, {
+        model: row.model, provider: row.provider,
+      });
+    }
+    if (rows.length < PAGE) break;
   }
   return credits * USD_PER_CREDIT;
 }

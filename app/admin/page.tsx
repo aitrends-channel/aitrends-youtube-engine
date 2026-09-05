@@ -2427,7 +2427,7 @@ function AnthropicTile({ p }: { p: ProviderBalance | undefined }) {
     : "—";
   const detail = state === "nokey" ? "Add one on Config, API Keys."
     : state === "invalid" ? "Anthropic rejected this key."
-    : "Spent in the last 30 days. Anthropic publishes no balance to a key.";
+    : "Spent on our key in the last 30 days. Anthropic publishes no balance to a key.";
   const colour = state === "nokey" || state === "invalid" ? "oklch(0.55 0.19 25)" : "var(--c-90)";
 
   return (
