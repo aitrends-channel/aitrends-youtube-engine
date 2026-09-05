@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import useSWR from "swr";
 import { useViewerPlan } from "@/lib/admin-view";
 import { Plus } from "lucide-react";
@@ -29,6 +30,35 @@ export function StepBalanceCard() {
   // and ElevenLabs /user hits.
   const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const [picking, setPicking] = useState(false);
+  // Where to draw the top-up panel.
+  //
+  // It used to be positioned against the button with absolute, inside a header
+  // that carries backdrop-filter. That property opens a stacking context, so
+  // the panel could never rise above anything painted after the header however
+  // high its z-index went: the model cards on the Generate step drew straight
+  // over it. Fixed coordinates from the button's own rect, portalled to the
+  // body, put it above the page instead of above its corner of it.
+  const topUpBtn = useRef<HTMLButtonElement | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const place = useCallback(() => {
+    const el = topUpBtn.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setAnchor({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+  }, []);
+  useEffect(() => {
+    if (!picking) return;
+    place();
+    // Follows the button if the page moves under it. Capture, because the
+    // scroll happens on an inner container rather than the window.
+    const onMove = () => place();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [picking, place]);
   const { data, mutate } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
@@ -230,6 +260,7 @@ export function StepBalanceCard() {
       <div className="relative inline-flex shrink-0">
         <button
           type="button"
+          ref={topUpBtn}
           onClick={() => setPicking((v) => !v)}
           disabled={!checkoutUrl || !options}
           title={checkoutUrl ? "Add Heclus Credits" : "No top-up pack is configured yet."}
@@ -248,11 +279,19 @@ export function StepBalanceCard() {
             the question would charge a different amount from the same label.
             TopUpOptions is the same component that card uses, so the prices
             cannot drift between the two. */}
-        {picking && checkoutUrl && options && (
+        {picking && checkoutUrl && options && anchor && typeof document !== "undefined" && createPortal(
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setPicking(false)} />
-            <div className="absolute right-0 top-full mt-2 z-50 w-[26rem] max-w-[92vw] rounded-2xl p-7"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.55)", boxShadow: "0 12px 32px oklch(0 0 0 / 0.4)" }}>
+            <div className="fixed inset-0 z-[590]" onClick={() => setPicking(false)} />
+            <div
+              className="fixed z-[600] w-[26rem] max-w-[92vw] rounded-2xl p-7"
+              style={{
+                top: anchor.top,
+                right: anchor.right,
+                background: "var(--bg-card)",
+                border: "1px solid oklch(1 0 0 / 0.55)",
+                boxShadow: "0 12px 32px oklch(0 0 0 / 0.4)",
+              }}
+            >
               <TopUpOptions
                 checkoutUrl={checkoutUrl}
                 onCancel={() => setPicking(false)}
@@ -262,7 +301,8 @@ export function StepBalanceCard() {
                 unitNoun=""
               />
             </div>
-          </>
+          </>,
+          document.body,
         )}
       </div>
       </div>
