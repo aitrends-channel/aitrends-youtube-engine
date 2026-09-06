@@ -2987,6 +2987,10 @@ function HeclusCreditsPanel() {
 
   const [packLinkTest, setPackLinkTest] = useState("");
   const [packLinkProd, setPackLinkProd] = useState("");
+  const [imgLinkTest, setImgLinkTest] = useState("");
+  const [imgLinkProd, setImgLinkProd] = useState("");
+  const [imgImages, setImgImages] = useState("");
+  const [imgPrice, setImgPrice] = useState("");
   const [packCredits, setPackCredits] = useState("");
   const [packPrice, setPackPrice] = useState("");
   const [grant, setGrant] = useState("");
@@ -3008,6 +3012,10 @@ function HeclusCreditsPanel() {
     setPackLinkProd(data.packLinkProduction ?? "");
     setPackCredits(data.packCredits != null ? String(data.packCredits) : "");
     setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
+    setImgLinkTest(data.freeImageLinkTest ?? "");
+    setImgLinkProd(data.freeImageLinkProduction ?? "");
+    setImgImages(data.freeImageImages != null ? String(data.freeImageImages) : "");
+    setImgPrice(data.freeImagePriceUsd != null ? String(data.freeImagePriceUsd) : "");
     setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
     setGrantPro(data.signupGrantCreditsPro != null ? String(data.signupGrantCreditsPro) : "");
     setGrantMax(data.signupGrantCreditsMax != null ? String(data.signupGrantCreditsMax) : "");
@@ -3197,6 +3205,83 @@ function HeclusCreditsPanel() {
         <p className="text-sm" style={{ color: "var(--c-42)" }}>
           The price is display only. What lands is the pack size times the quantity Dodo confirms, so a
           reprice never changes what an old payment granted.
+        </p>
+      </div>
+
+      {/* Free images. Its own product on purpose: this one grants images on the
+          free lane's model, the pack above grants spendable credit, and a link
+          shared between them would credit one wallet for a purchase of the
+          other. It was configurable only by editing the table by hand. */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Free image pack</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Tops up the free image allowance on the Generate step. A different Dodo product from the
+            credits pack above, and from the video clip pack.
+          </p>
+        </div>
+
+        {(["test", "production"] as const).map((env) => (
+          <div key={env}>
+            <label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
+              Checkout link ({env})
+              {env === activeEnv && (
+                <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                  style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
+                  in use here
+                </span>
+              )}
+            </label>
+            <input
+              type="text"
+              value={env === "test" ? imgLinkTest : imgLinkProd}
+              onChange={(e) => (env === "test" ? setImgLinkTest(e.target.value) : setImgLinkProd(e.target.value))}
+              placeholder="https://checkout.dodopayments.com/buy/…"
+              disabled={isLoading || saving !== null}
+              className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none transition-all"
+              style={inputStyle}
+            />
+          </div>
+        ))}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Images per pack</label>
+            <input
+              type="number" min={1} step="any" value={imgImages}
+              onChange={(e) => setImgImages(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Price USD</label>
+            <input
+              type="number" min={0} step="any" value={imgPrice}
+              onChange={(e) => setImgPrice(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => save("freeImagePack", {
+              freeImageLinkTest: imgLinkTest.trim() || null,
+              freeImageLinkProduction: imgLinkProd.trim() || null,
+              freeImageImages: imgImages.trim() || null,
+              freeImagePriceUsd: imgPrice.trim() || null,
+            })}
+            disabled={saving !== null || isLoading}
+            className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={saveStyle(saving === null && !isLoading)}
+          >
+            {saving === "freeImagePack" ? "Saving…" : "Save image pack"}
+          </button>
+        </div>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
+          Both halves are needed before the Top up button opens: a link with no pack size could take the
+          money and grant nothing.
         </p>
       </div>
 

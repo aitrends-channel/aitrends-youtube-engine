@@ -27,6 +27,13 @@ export interface HeclusCreditsConfig {
   packLinkProduction: string | null;
   packCredits: number | null;
   packPriceUsd: number | null;
+  /** The free-image pack: its own Dodo product, its own size. Separate from the
+   *  credits pack because the two buy different things, and one link shared
+   *  between them would credit one wallet for a purchase of the other. */
+  freeImageLinkTest: string | null;
+  freeImageLinkProduction: string | null;
+  freeImageImages: number | null;
+  freeImagePriceUsd: number | null;
   signupGrantCredits: number | null;
   /** Pro and Founder. Unset means they read the Starter figure. */
   signupGrantCreditsPro: number | null;
@@ -40,7 +47,7 @@ export interface HeclusCreditsConfig {
   activeEnv: "test" | "production";
   /** Columns migrations 130, 132 and 133 add. False means the tab can display
    *  but not save that field, and says why. */
-  schema: { pack: boolean; signupGrant: boolean; signupGrantPro: boolean; signupGrantMax: boolean; rates: boolean };
+  schema: { pack: boolean; freeImagePack: boolean; signupGrant: boolean; signupGrantPro: boolean; signupGrantMax: boolean; rates: boolean };
   /** The keys the wallet spends. Set on the API Keys tab, shown here because a
    *  wallet with no provider key behind it fails every generation. */
   keys: { kie: boolean; elevenlabs: boolean };
@@ -115,6 +122,13 @@ export async function GET() {
     packLinkProduction: str(row.heclus_pack_checkout_url_production),
     packCredits: num(row.heclus_pack_credits),
     packPriceUsd: num(row.heclus_pack_price_usd),
+    // The free-image pack: a second product, its own link and its own size.
+    // It was configurable only by writing the table by hand, which is a
+    // setting nobody but its author can maintain.
+    freeImageLinkTest: str(row.heclus_free_image_top_checkout_url_test),
+    freeImageLinkProduction: str(row.heclus_free_image_top_checkout_url_production),
+    freeImageImages: num(row.heclus_free_image_top_credits),
+    freeImagePriceUsd: num(row.heclus_free_image_top_price_usd),
     signupGrantCredits: num(row.heclus_signup_grant_credits),
     signupGrantCreditsPro: num(row.heclus_signup_grant_credits_pro),
     signupGrantCreditsMax: num(row.heclus_signup_grant_credits_max),
@@ -123,6 +137,7 @@ export async function GET() {
     activeEnv: getEffectivePaymentMode(),
     schema: {
       pack: "heclus_pack_checkout_url_test" in row,
+      freeImagePack: "heclus_free_image_top_checkout_url_test" in row,
       signupGrant: "heclus_signup_grant_credits" in row,
       signupGrantPro: "heclus_signup_grant_credits_pro" in row,
       signupGrantMax: "heclus_signup_grant_credits_max" in row,
@@ -140,6 +155,10 @@ export interface HeclusCreditsPatch {
   packLinkProduction?: string | null;
   packCredits?: number | string | null;
   packPriceUsd?: number | string | null;
+  freeImageLinkTest?: string | null;
+  freeImageLinkProduction?: string | null;
+  freeImageImages?: number | string | null;
+  freeImagePriceUsd?: number | string | null;
   signupGrantCredits?: number | string | null;
   signupGrantCreditsPro?: number | string | null;
   signupGrantCreditsMax?: number | string | null;
@@ -158,6 +177,8 @@ export async function PATCH(req: Request) {
   for (const [field, column] of [
     ["packLinkTest", "heclus_pack_checkout_url_test"],
     ["packLinkProduction", "heclus_pack_checkout_url_production"],
+    ["freeImageLinkTest", "heclus_free_image_top_checkout_url_test"],
+    ["freeImageLinkProduction", "heclus_free_image_top_checkout_url_production"],
   ] as const) {
     const raw = body[field];
     if (raw === undefined) continue;
@@ -182,6 +203,8 @@ export async function PATCH(req: Request) {
   for (const [field, column] of [
     ["packCredits", "heclus_pack_credits"],
     ["packPriceUsd", "heclus_pack_price_usd"],
+    ["freeImageImages", "heclus_free_image_top_credits"],
+    ["freeImagePriceUsd", "heclus_free_image_top_price_usd"],
     ["signupGrantCredits", "heclus_signup_grant_credits"],
     ["signupGrantCreditsPro", "heclus_signup_grant_credits_pro"],
     ["signupGrantCreditsMax", "heclus_signup_grant_credits_max"],
