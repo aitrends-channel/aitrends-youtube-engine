@@ -44,6 +44,9 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
 /**
  * Restrict the whole credits feature to admins.
  *
+ * OFF as of 6 September: every paying plan has the free video lane, which is
+ * what the plan cards have been promising since the July repositioning.
+ *
  * OFF: starter, pro and admin now have the free video lane. Who gets what is
  * decided by the allowance, not by this flag — genaipro_video_credits in
  * QUOTA_DEFAULTS carries starter 300, pro 300 and founder 0, and capFromConfig
@@ -60,7 +63,7 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
  * modal, and the top-up button. A zero allowance with no bought credit is what
  * every one of those already treats as "no wallet".
  */
-export const VIDEO_CREDITS_ADMIN_ONLY = true;
+export const VIDEO_CREDITS_ADMIN_ONLY = false;
 
 /**
  * Whether anyone may buy more free-video credits.

@@ -24,10 +24,11 @@ export const FREE_TTS_COMING_SOON = false;
 // database and reappear when this flips. The reserve and settle paths are
 // deliberately left alone so anything already queued can still finish.
 //
-// OFF while GenAIPro is brought up. That does NOT put the feature in front of
-// customers: VIDEO_CREDITS_ADMIN_ONLY in lib/credits.ts still zeroes a
-// non-admin's allowance, so the Free tab on the Generate step is live for
-// admins and stays a coming-soon teaser for everyone else. Turning it on for
+// OFF, and since 6 September the lane is in front of customers too:
+// VIDEO_CREDITS_ADMIN_ONLY in lib/credits.ts is off, so a paying plan gets the
+// allowance its card advertises rather than a coming-soon teaser. This flag
+// remains the harder switch, the one that empties the wallet for everyone
+// including admins. Turning it on for
 // customers means flipping that second flag, which is a spend decision:
 // starter and pro carry 300 clips a month each from QUOTA_DEFAULTS, at $0.02
 // a clip of Heclus's money.
