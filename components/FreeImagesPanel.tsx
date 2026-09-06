@@ -101,7 +101,7 @@ export function FreeImagesPanel() {
             {empty
               // Not a dead end: the model is still there, it just bills now.
               ? "All used for this month. Top up, or pick any model in All."
-              : `${left.toLocaleString()} left · included with your plan`}
+              : `${left.toLocaleString()} image${left === 1 ? "" : "s"} left · included with your plan`}
           </p>
         </div>
 
@@ -144,7 +144,7 @@ export function FreeImagesPanel() {
             style={{ width: `${pct}%`, background: pct >= 100 ? "oklch(0.6 0.22 25)" : "oklch(0.72 0.25 285)" }} />
         </div>
         <p className="text-[10px]" style={{ color: "var(--c-45)" }}>
-          {used.toLocaleString()} used this month · {left.toLocaleString()} of {cap.toLocaleString()} left
+          {used.toLocaleString()} used this month · {left.toLocaleString()} of {cap.toLocaleString()} images left
           {bonus > 0 && ` · ${bonus.toLocaleString()} bought, which do not expire`}
         </p>
       </div>

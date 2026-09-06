@@ -86,13 +86,14 @@ export function VideoCreditsPanel() {
         <div className="min-w-0">
           <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: "var(--c-85)" }}>
             <Sparkles size={13} style={{ color: "var(--brand-text)" }} />
-            Video credits
+            Free clips
           </p>
           <p className="text-[11px] mt-0.5" style={{ color: "var(--c-50)" }}>
-            {/* Stated in clips because that is what a credit buys. A finished
-                video is many clips, and the number varies by script length, so
-                promising videos here would be a promise we cannot keep. */}
-            {total.toLocaleString()} left · one credit per clip
+            {/* Counted in clips, not credits: one credit is one clip, and the
+                credit was a unit nobody had to think about. A finished video is
+                many clips and the number varies by script length, so this stops
+                at clips rather than promising videos. */}
+            {total.toLocaleString()} clip{total === 1 ? "" : "s"} left
             {reserved > 0 && ` · ${reserved} rendering`}
           </p>
         </div>
@@ -122,7 +123,7 @@ export function VideoCreditsPanel() {
           </div>
           <p className="text-[10px]" style={{ color: "var(--c-45)" }}>
             {usage ? `${usage.thisMonth.toLocaleString()} used this month · ` : ""}
-            {grant.toLocaleString()} of this month&apos;s {monthlyGrant.toLocaleString()} free credits left
+            {grant.toLocaleString()} of this month&apos;s {monthlyGrant.toLocaleString()} free clips left
             {paid > 0 && ` · ${paid.toLocaleString()} bought credits, which do not expire`}
           </p>
         </div>

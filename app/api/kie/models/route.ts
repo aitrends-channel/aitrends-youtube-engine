@@ -176,18 +176,14 @@ function withFreeImageTier(models: KieModel[], allowance: { cap: number; remaini
       name: "Heclus Free",
       description: `${left} of ${allowance.cap.toLocaleString()} left this month`,
       tags: [FREE_MODEL_TAG],
-      // One credit an image, whole, and only on this card.
+      // No price at all, like the free video card beside it.
       //
-      // Not what z-image bills, which is 0.8, and not what the customer
-      // pays, which is nothing while the allowance lasts. It is the rate
-      // the allowance is drawn down at, and the allowance counts images. A
-      // chip reading "0.8 cr" beside a free option was answering a question
-      // nobody asked with a number that is neither the price nor the count.
-      //
-      // Every other tab still quotes the real observed figure: this is the
-      // free lane's own presentation, not a change to how models are
-      // priced.
-      costPerUnit: "1",
+      // It carried "1 cr", meaning the rate the allowance is drawn down at,
+      // and every reading of that was wrong: it is not what z-image bills
+      // (0.8), not what the customer pays (nothing), and not the number that
+      // matters here, which is how many images are left. The description says
+      // that instead.
+      costPerUnit: undefined,
       costByResolution: undefined,
       costIsFloor: undefined,
       servedBy: undefined,
