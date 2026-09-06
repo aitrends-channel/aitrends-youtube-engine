@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase/client";
 // links carry it in the path (/buy/pdt_…), so the configured pack links are the
 // source of truth for which product ids mean credits.
 
-export type PackWallet = "genai" | "heclus";
+export type PackWallet = "genai" | "heclus" | "free_images";
 
 /** Pulls pdt_… out of a Dodo checkout link. */
 export function productIdFromCheckoutUrl(url: string | null | undefined): string | null {
@@ -52,7 +52,7 @@ export async function walletForPayment(raw: Record<string, unknown>): Promise<Pa
 
   const { data, error } = await supabase
     .from("product_config")
-    .select("heclus_pack_checkout_url_test, heclus_pack_checkout_url_production, credit_pack_checkout_url_test, credit_pack_checkout_url_production")
+    .select("heclus_pack_checkout_url_test, heclus_pack_checkout_url_production, credit_pack_checkout_url_test, credit_pack_checkout_url_production, heclus_free_image_top_checkout_url_test, heclus_free_image_top_checkout_url_production")
     .eq("service", "_global")
     .maybeSingle();
   if (error || !data) return null;
@@ -65,10 +65,23 @@ export async function walletForPayment(raw: Record<string, unknown>): Promise<Pa
     .map((u) => productIdFromCheckoutUrl(u as string | null))
     .filter((v): v is string => !!v);
 
+  const freeImages = [
+    row.heclus_free_image_top_checkout_url_test,
+    row.heclus_free_image_top_checkout_url_production,
+  ]
+    .map((u) => productIdFromCheckoutUrl(u as string | null))
+    .filter((v): v is string => !!v);
+
   // Heclus first: if one product id were ever configured as both, crediting the
   // general wallet is the recoverable mistake. Video clips are not refundable
   // into it.
   if (ids.some((id) => heclus.includes(id))) return "heclus";
   if (ids.some((id) => genai.includes(id))) return "genai";
+  // Recognised so the webhook cannot mistake it for a subscription. An
+  // unrecognised product falls through to the plan branch, which flips
+  // app_metadata.paid and sends a welcome mail, so a customer buying images
+  // would be handed plan access nobody sold them. Crediting itself stays with
+  // the verified return, which is where every free-image purchase is granted.
+  if (ids.some((id) => freeImages.includes(id))) return "free_images";
   return null;
 }

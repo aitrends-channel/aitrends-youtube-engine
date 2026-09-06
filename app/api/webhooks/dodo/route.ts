@@ -176,6 +176,13 @@ export async function POST(request: Request) {
       }
 
       const units = purchasedQuantity(data);
+      // Images are granted on the verified return, idempotently on the payment
+      // id, so there is nothing to do here beyond not treating the purchase as
+      // a subscription.
+      if (wallet === "free_images") {
+        console.log(`[dodo-webhook] free-image purchase ${dodoPaymentId} for ${email}, left to the return path`);
+        return NextResponse.json({ success: true, event, credited: false });
+      }
       if (wallet === "heclus") {
         const pack = await getHeclusPack();
         if (pack.credits === null) {
