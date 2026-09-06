@@ -215,7 +215,14 @@ function ModelOption({
   // selection, so there is nothing left to click it for.
   if (footer) {
     return (
-      <div className={`relative rounded-xl transition-all p-3 space-y-1.5 ${model.servedBy ? "pb-7" : ""}`} style={frame}>
+      // A floor on the height, so the image and video pickers sitting side by
+      // side line up. A model with nothing to configure, the free clip lane
+      // being the one that has neither ratio nor duration nor resolution to
+      // offer, drew a card half the height of the one beside it.
+      <div
+        className={`relative rounded-xl transition-all p-3 space-y-1.5 min-h-[68px] ${model.servedBy ? "pb-7" : ""}`}
+        style={frame}
+      >
         {/* Price rides on the model row, top right. It is a property of the
             selection rather than another setting to make, and the eye finds it
             in the same place on every card. */}
