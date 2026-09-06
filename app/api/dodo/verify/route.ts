@@ -5,6 +5,7 @@ import { getPaymentSettings, getPlanBySlug } from "@/lib/plans";
 import { planSlugForProductId, productIdOnSubscription } from "@/lib/dodo/plan-products";
 import { productIdsOnPayment } from "@/lib/dodo/pack-products";
 import { shouldWelcome, sendWelcomeEmail } from "@/lib/email/welcome";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 export async function POST(request: Request) {
   let user;
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
   let dodoRes: Response;
   try {
     dodoRes = await fetch(`${dodoBase}/${usePath}`, {
-      headers: { Authorization: `Bearer ${secretKey}` },
+      headers: dodoHeaders(secretKey, false),
     });
   } catch (e) {
     return NextResponse.json({ error: `Dodo fetch failed: ${(e as Error).message}` }, { status: 502 });
@@ -245,7 +246,7 @@ export async function POST(request: Request) {
     try {
       const res = await fetch(`${dodoBase}/subscriptions/${previousSubId}`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+        headers: dodoHeaders(secretKey),
         body: JSON.stringify({ cancel_at_next_billing_date: true }),
       });
       if (res.ok) {
@@ -361,7 +362,7 @@ export async function POST(request: Request) {
     if (!subId) return null;
 
     const listRes = await fetch(`${dodoBase}/payments?subscription_id=${encodeURIComponent(subId)}`, {
-      headers: { Authorization: `Bearer ${secretKey}` },
+      headers: dodoHeaders(secretKey, false),
     }).catch(() => null);
     if (!listRes?.ok) return null;
 
@@ -373,7 +374,7 @@ export async function POST(request: Request) {
 
     // Only the single-payment endpoint returns settlement_amount.
     const oneRes = await fetch(`${dodoBase}/payments/${pid}`, {
-      headers: { Authorization: `Bearer ${secretKey}` },
+      headers: dodoHeaders(secretKey, false),
     }).catch(() => null);
     return (oneRes?.ok ? await oneRes.json().catch(() => succeeded) : succeeded) ?? null;
   };

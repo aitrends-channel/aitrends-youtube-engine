@@ -44,3 +44,26 @@ export async function resolveDodoCredentials(
   }
   return { ok: true, creds: { env, secretKey, baseUrl } };
 }
+
+/**
+ * The headers every call to Dodo's API needs.
+ *
+ * The User-Agent is not decoration. live.dodopayments.com sits behind
+ * Cloudflare, which answers a request carrying Node's default agent with 403
+ * and Cloudflare error 1010, a browser-signature block. Every server-side call
+ * we make is such a request. The same call with an ordinary agent string
+ * returns 200 and a session.
+ *
+ * This was invisible while the checkout session had a payment-link fallback:
+ * the session failed, the customer went to the link, and the only symptom was
+ * that nobody ever saw a saved card. Removing the fallback made it a visible
+ * error, which is how it was found.
+ */
+export function dodoHeaders(secretKey: string, json = true): Record<string, string> {
+  return {
+    Authorization: `Bearer ${secretKey}`,
+    Accept: "application/json",
+    "User-Agent": "Heclus/1.0 (+https://heclus.io)",
+    ...(json ? { "Content-Type": "application/json" } : {}),
+  };
+}

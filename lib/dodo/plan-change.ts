@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
 import { resolveDodoCredentials } from "@/lib/dodo/credentials";
 import { productIdForPlan } from "@/lib/dodo/plan-products";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 // Moving a customer onto the Heclus Credits product without charging them today.
 //
@@ -89,7 +90,7 @@ export async function scheduleHeclusPlanChange(user: User, targetSlug: string): 
   try {
     res = await fetch(`${baseUrl}/subscriptions/${subscriptionId}/change-plan`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+      headers: dodoHeaders(secretKey),
       body: JSON.stringify({
         product_id: productId,
         quantity: 1,
@@ -156,7 +157,7 @@ export async function upgradeHeclusPlanNow(user: User, targetSlug: string): Prom
   try {
     res = await fetch(`${baseUrl}/subscriptions/${subscriptionId}/change-plan`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+      headers: dodoHeaders(secretKey),
       body: JSON.stringify({
         product_id: productId,
         quantity: 1,
@@ -208,7 +209,7 @@ export async function cancelScheduledPlanChange(user: User): Promise<PlanChangeR
   try {
     res = await fetch(`${baseUrl}/subscriptions/${subscriptionId}/change-plan/scheduled`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${secretKey}` },
+      headers: dodoHeaders(secretKey, false),
     });
   } catch (e) {
     return { ok: false, error: `Could not reach Dodo: ${(e as Error).message}` };

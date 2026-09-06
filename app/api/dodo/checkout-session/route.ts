@@ -10,6 +10,7 @@ import { getHeclusPack } from "@/lib/heclus-pack";
 import { supabase } from "@/lib/supabase/client";
 import { getPaymentSettings } from "@/lib/plans";
 import { canSeeNewPlans, isGatedPlan } from "@/lib/rollout";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -138,7 +139,7 @@ export async function POST(req: Request) {
 
   const create = (withCustomerId: boolean) => fetch(`${baseUrl}/checkouts`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+    headers: dodoHeaders(secretKey),
     body: JSON.stringify(buildPayload(withCustomerId)),
   });
 

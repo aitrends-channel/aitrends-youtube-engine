@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getPaymentSettings } from "@/lib/plans";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 // POST /api/dodo/portal-session
 //
@@ -58,10 +59,7 @@ export async function POST() {
   try {
     dodoRes = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: dodoHeaders(secretKey),
       body: "{}",
     });
   } catch (e) {

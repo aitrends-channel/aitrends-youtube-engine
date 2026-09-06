@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { supabase as supabaseService } from "@/lib/supabase/client";
 import { getPaymentSettings } from "@/lib/plans";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 // POST /api/dodo/cancel-subscription
 //
@@ -57,10 +58,7 @@ export async function POST() {
   try {
     dodoRes = await fetch(`${dodoBase}/subscriptions/${subscriptionId}`, {
       method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: dodoHeaders(secretKey),
       body: JSON.stringify({ cancel_at_next_billing_date: true }),
     });
   } catch (e) {

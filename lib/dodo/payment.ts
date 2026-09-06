@@ -1,4 +1,5 @@
 import { getPaymentSettings } from "@/lib/plans";
+import { dodoHeaders } from "@/lib/dodo/credentials";
 
 // Confirming a one-time payment with Dodo.
 //
@@ -99,7 +100,7 @@ export async function confirmDodoPayment(
     let res: Response;
     try {
       res = await fetch(`${creds.baseUrl}/payments/${encodeURIComponent(paymentId)}`, {
-        headers: { Authorization: `Bearer ${creds.secretKey}` },
+        headers: dodoHeaders(creds.secretKey, false),
       });
     } catch (e) {
       lastError = {
