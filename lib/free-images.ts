@@ -54,7 +54,7 @@ async function boughtImages(userId: string): Promise<number> {
  * While this is on, freeImageAllowance reports nothing for a customer, which
  * every surface already reads as "no free lane": the Free tab keeps its
  * teaser, and z-image appears in the picker under its own name at its own
- * price instead of as the Heclus Free card.
+ * price instead of as the Heclus Images card.
  */
 export const FREE_IMAGES_ADMIN_ONLY = true;
 

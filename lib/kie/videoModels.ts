@@ -33,7 +33,10 @@ export const VIDEO_MODELS: KieModel[] = [
   // video-worker. It lives in this list because this list is what the picker
   // renders; the models route only includes it for plans with an allowance.
   // The "Free" tag is what puts it under the picker's Free tab.
-  m(GENAIPRO_VIDEO_MODEL_ID,            "Veo (free credits)", ["Free", "Image-to-Video", "Google"]),
+  // Named for the lane rather than the vendor, matching "Heclus Images" on the
+  // image side. What the customer picks here is our free clip allowance; which
+  // model serves it is ours to change without renaming their option.
+  m(GENAIPRO_VIDEO_MODEL_ID,            "Heclus Videos", ["Free", "Image-to-Video"]),
 ];
 
 export interface DurationOption {

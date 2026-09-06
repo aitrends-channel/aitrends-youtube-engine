@@ -173,7 +173,10 @@ function withFreeImageTier(models: KieModel[], allowance: { cap: number; remaini
     out.push({ ...m, description: `Free while your ${left} included image${allowance.remaining === 1 ? "" : "s"} last` });
     out.push({
       ...m,
-      name: "Heclus Free",
+      // Named for the lane, like Heclus Videos on the clip side. The model
+      // underneath is z-image today and may not be tomorrow; what the customer
+      // is choosing is our free allowance.
+      name: "Heclus Images",
       description: `${left} of ${allowance.cap.toLocaleString()} left this month`,
       tags: [FREE_MODEL_TAG],
       // No price at all, like the free video card beside it.
