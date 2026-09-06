@@ -80,11 +80,12 @@ export function startTopUp(
   newTab = false,
 ): void {
   markPendingTopUp(wallet);
-  const direct = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
   const start = new URL("/payment/start", window.location.origin);
   start.searchParams.set("wallet", wallet);
   start.searchParams.set("qty", String(Math.max(1, Math.floor(units))));
-  start.searchParams.set("fb", direct);
+  // No fallback link. Dodo asked that payment links stop being used for
+  // customer payments, so a checkout that cannot be created says so and is
+  // retried rather than quietly becoming a link.
   const url = start.toString();
   if (newTab) {
     // A synthetic anchor click, not window.open: under noopener the browser

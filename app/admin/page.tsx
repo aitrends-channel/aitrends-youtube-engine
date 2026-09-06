@@ -3147,7 +3147,7 @@ function HeclusCreditsPanel() {
         {(["test", "production"] as const).map((env) => (
           <div key={env}>
             <label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
-              Checkout link ({env})
+              Product id ({env})
               {env === activeEnv && (
                 <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
                   style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
@@ -3159,7 +3159,7 @@ function HeclusCreditsPanel() {
               type="text"
               value={env === "test" ? packLinkTest : packLinkProd}
               onChange={(e) => (env === "test" ? setPackLinkTest(e.target.value) : setPackLinkProd(e.target.value))}
-              placeholder="https://checkout.dodopayments.com/buy/…"
+              placeholder="pdt_…"
               disabled={isLoading || saving !== null}
               className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none transition-all"
               style={inputStyle}
@@ -3224,7 +3224,7 @@ function HeclusCreditsPanel() {
         {(["test", "production"] as const).map((env) => (
           <div key={env}>
             <label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
-              Checkout link ({env})
+              Product id ({env})
               {env === activeEnv && (
                 <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
                   style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
@@ -3236,7 +3236,7 @@ function HeclusCreditsPanel() {
               type="text"
               value={env === "test" ? imgLinkTest : imgLinkProd}
               onChange={(e) => (env === "test" ? setImgLinkTest(e.target.value) : setImgLinkProd(e.target.value))}
-              placeholder="https://checkout.dodopayments.com/buy/…"
+              placeholder="pdt_…"
               disabled={isLoading || saving !== null}
               className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none transition-all"
               style={inputStyle}
@@ -5725,7 +5725,7 @@ function PlansPanel() {
                     <p
                       className="text-xs font-mono break-all mt-1.5 leading-snug"
                       style={{ color: "oklch(0.62 0.15 220)" }}
-                      title="Production test checkout URL"
+                      title="Production test product"
                     >
                       {prodTestLink}
                     </p>
@@ -5735,16 +5735,23 @@ function PlansPanel() {
                   <button
                     onClick={() => {
                       if (!prodTestLink) {
-                        toast.error("Set the production test link first via the pencil icon.");
+                        toast.error("Set the production test product first via the pencil icon.");
                         return;
                       }
-                      const url = new URL(prodTestLink);
-                      url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
-                      window.open(url.toString(), "_blank", "noopener,noreferrer");
+                      // Through the checkout session, like a customer's
+                      // purchase. It used to open the payment link directly,
+                      // which was the last place in the product that did: the
+                      // point of this button is to exercise the real path, and
+                      // it was exercising the one we are retiring.
+                      window.open(
+                        `${window.location.origin}/payment/start?plan=production-test`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
                     }}
                     disabled={!prodTestLink}
                     className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    title={prodTestLink ? "Initiate test purchase (opens checkout in new tab)" : "Set the production test link first"}
+                    title={prodTestLink ? "Initiate test purchase through the checkout session" : "Set the production test product first"}
                   >
                     <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
                   </button>
@@ -6215,7 +6222,7 @@ function ProductionTestEditModal({
             value={link}
             onChange={(e) => setLink(e.target.value)}
             disabled={saving}
-            placeholder="https://checkout.dodopayments.com/buy/…"
+            placeholder="pdt_…"
             className="w-full px-3 py-2 rounded-lg text-xs outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
           />
         </div>
@@ -6581,7 +6588,7 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           saved={savedPack}
           value={packValue}
           onChange={(v) => (activeEnv === "test" ? setTestPack(v) : setProdPack(v))}
-          placeholder="https://checkout.dodopayments.com/buy/…"
+          placeholder="pdt_…"
           disabled={saving}
           hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
         />

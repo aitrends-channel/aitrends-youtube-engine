@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
+import { productIdFrom } from "@/lib/dodo/pack-products";
 import { getEffectivePaymentMode } from "@/lib/env";
 import { DEFAULT_CREDIT_RATES, USD_PER_CREDIT, invalidateRatesCache, creditsForUnits, type CreditRates, type NumericRateKey } from "@/lib/pricing";
 import type { CostStep, CostUnitKind } from "@/lib/costs";
@@ -186,15 +187,21 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: `${field} must be a string, null or ''` }, { status: 400 });
     }
     const trimmed = (raw ?? "").trim();
-    // A link that is not a checkout URL cannot be credited: the webhook tells a
-    // top-up apart from a subscription payment by the product id in this path.
-    if (trimmed && !/\/buy\/[A-Za-z0-9_]+/.test(trimmed)) {
+    // A product id, or a legacy checkout link to take the id out of.
+    //
+    // Ids are what these fields hold now: Dodo's compliance review asked that
+    // payment links stop being used, and the id is the only part the code ever
+    // wanted, since it identifies the product to the Checkout API and tells a
+    // top-up apart from a subscription on the way back. A pasted link is still
+    // accepted and reduced to its id rather than refused.
+    const id = trimmed ? productIdFrom(trimmed) : null;
+    if (trimmed && !id) {
       return NextResponse.json(
-        { error: `${field} does not look like a Dodo checkout link (expected .../buy/pdt_…). A payment on this link could not be told apart from a subscription.` },
+        { error: `${field} must be a Dodo product id (pdt_…). A value we cannot resolve to a product could not be told apart from a subscription payment.` },
         { status: 400 },
       );
     }
-    update[column] = trimmed || null;
+    update[column] = id;
   }
 
   // Positive numbers or cleared. Zero is not a pack, and a zero grant is

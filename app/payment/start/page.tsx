@@ -22,11 +22,6 @@ export default function PaymentStartPage() {
     const plan = params.get("plan");
     const qty = Number(params.get("qty") ?? 1) || 1;
     // The plain /buy/ link, already carrying its return URL and quantity. Used
-    // when the session cannot be created, so a customer is never stranded here:
-    // the worst case is the checkout they had before, which asks for their
-    // details again.
-    const fallback = params.get("fb");
-
     let cancelled = false;
     (async () => {
       try {
@@ -37,7 +32,7 @@ export default function PaymentStartPage() {
         });
         const body = (await res.json().catch(() => ({}))) as { url?: string | null; error?: string };
         if (cancelled) return;
-        const target = body.url ?? fallback;
+        const target = body.url;
         if (target) {
           // replace, not assign: the back button should return to the app, not
           // to this page, which would immediately push them out again.
@@ -47,7 +42,6 @@ export default function PaymentStartPage() {
         setError(body.error ?? "Could not start the checkout.");
       } catch {
         if (cancelled) return;
-        if (fallback) { window.location.replace(fallback); return; }
         setError("Could not reach the checkout. Check your connection and try again.");
       }
     })();

@@ -4,7 +4,7 @@ import { walletParam, type TopUpWallet } from "@/lib/credits-checkout";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { resolveDodoCredentials } from "@/lib/dodo/credentials";
-import { productIdFromCheckoutUrl } from "@/lib/dodo/pack-products";
+import { productIdFrom } from "@/lib/dodo/pack-products";
 import { productIdForPlan } from "@/lib/dodo/plan-products";
 import { getHeclusPack } from "@/lib/heclus-pack";
 import { supabase } from "@/lib/supabase/client";
@@ -76,30 +76,28 @@ export async function POST(req: Request) {
   // whatever this deployment runs as.
   const mode = plan === "production-test" ? "production" : settings.mode;
 
-  // The configured link is still the source of truth for which product is sold.
-  // Resolved here rather than accepted from the client: this decides what is
-  // charged.
-  let fallbackUrl: string | null = null;
+  // Which product is being sold, resolved here rather than accepted from the
+  // client: this decides what is charged.
+  //
+  // No fallback link any more. Dodo's compliance review asked that payment
+  // links stop being used for customer payments, so a checkout that cannot be
+  // created is an error the customer sees and retries, not a redirect to a
+  // link that asks for their details again.
   let productId: string | null = null;
   if (plan) {
     productId = await productIdForPlan(plan, mode);
   } else if (wallet === "heclus") {
-    const pack = await getHeclusPack();
-    fallbackUrl = pack.checkoutUrl;
-    productId = productIdFromCheckoutUrl(pack.checkoutUrl);
+    productId = productIdFrom((await getHeclusPack()).checkoutUrl);
   } else if (wallet === "genai") {
-    fallbackUrl = await genaiPackUrl(mode);
-    productId = productIdFromCheckoutUrl(fallbackUrl);
+    productId = productIdFrom(await genaiPackUrl(mode));
   } else if (wallet === "free_images") {
-    const pack = await getFreeImagePack();
-    fallbackUrl = pack.checkoutUrl;
-    productId = productIdFromCheckoutUrl(pack.checkoutUrl);
+    productId = productIdFrom((await getFreeImagePack()).checkoutUrl);
   } else {
     return NextResponse.json({ error: "wallet must be 'heclus', 'genai' or 'free_images', or pass a plan" }, { status: 400 });
   }
 
   if (!productId) {
-    return NextResponse.json({ error: "Nothing is configured to sell here yet.", url: fallbackUrl }, { status: 409 });
+    return NextResponse.json({ error: "Nothing is configured to sell here yet." }, { status: 409 });
   }
 
   const origin = new URL(req.url).origin;
@@ -117,7 +115,7 @@ export async function POST(req: Request) {
 
   const resolved = await resolveDodoCredentials(mode);
   if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.error, url: fallbackUrl }, { status: 500 });
+    return NextResponse.json({ error: resolved.error }, { status: 500 });
   }
   const { secretKey, baseUrl } = resolved.creds;
 
@@ -126,36 +124,51 @@ export async function POST(req: Request) {
   const name =
     ((user.user_metadata ?? {}) as { full_name?: unknown }).full_name;
 
-  const payload: Record<string, unknown> = {
+  const buildPayload = (withCustomerId: boolean): Record<string, unknown> => ({
     product_cart: [{ product_id: productId, quantity }],
     // An id makes this a returning customer, details and saved cards included.
     // Without one, email and name still prefill the form and create the record,
     // so the NEXT purchase is the remembered one.
-    customer: customerId
+    customer: withCustomerId && customerId
       ? { customer_id: customerId }
       : { email: user.email, ...(typeof name === "string" && name.trim() ? { name: name.trim() } : {}) },
     show_saved_payment_methods: true,
     return_url: returnUrl.toString(),
-  };
+  });
+
+  const create = (withCustomerId: boolean) => fetch(`${baseUrl}/checkouts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(buildPayload(withCustomerId)),
+  });
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/checkouts`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    res = await create(true);
   } catch (e) {
-    console.warn("[dodo-checkout] unreachable:", (e as Error).message);
-    return NextResponse.json({ url: fallbackUrl, fallback: true });
+    console.error("[dodo-checkout] unreachable:", (e as Error).message);
+    return NextResponse.json({ error: "Could not reach the checkout. Try again in a moment." }, { status: 502 });
+  }
+
+  // A stale customer_id is the expected failure, and it used to be answered
+  // with a payment link. Answered by dropping the id and asking again instead:
+  // the customer still gets a Dodo-hosted checkout, and still must not be
+  // stopped from spending money by a record of ours being out of date.
+  if (!res.ok && customerId) {
+    const text = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+    console.warn(`[dodo-checkout] ${res.status} product=${productId} body=${text} — retrying without the customer id`);
+    try {
+      res = await create(false);
+    } catch (e) {
+      console.error("[dodo-checkout] unreachable on retry:", (e as Error).message);
+      return NextResponse.json({ error: "Could not reach the checkout. Try again in a moment." }, { status: 502 });
+    }
   }
 
   if (!res.ok) {
     const text = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
-    console.warn(`[dodo-checkout] ${res.status} product=${productId} body=${text}`);
-    // A stale customer_id is the expected failure here, and it must not stop
-    // someone spending money. The static link still works, it just asks again.
-    return NextResponse.json({ url: fallbackUrl, fallback: true });
+    console.error(`[dodo-checkout] ${res.status} product=${productId} body=${text}`);
+    return NextResponse.json({ error: "Could not start the checkout. Try again, or contact support." }, { status: 502 });
   }
 
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -166,8 +179,8 @@ export async function POST(req: Request) {
     null;
 
   if (!url) {
-    console.warn("[dodo-checkout] no url in response:", JSON.stringify(json).slice(0, 200));
-    return NextResponse.json({ url: fallbackUrl, fallback: true });
+    console.error("[dodo-checkout] no url in response:", JSON.stringify(json).slice(0, 200));
+    return NextResponse.json({ error: "Could not start the checkout. Try again, or contact support." }, { status: 502 });
   }
-  return NextResponse.json({ url, fallback: false });
+  return NextResponse.json({ url });
 }

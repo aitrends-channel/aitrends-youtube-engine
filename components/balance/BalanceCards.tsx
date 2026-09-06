@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Sparkles, Wallet } from "lucide-react";
 import { TopUpOptions } from "@/components/TopUpOptions";
-import { buildTopUpUrl, markPendingTopUp } from "@/lib/credits-checkout";
+import { startTopUp } from "@/lib/credits-checkout";
 
 // The two wallets, and the fetching behind them.
 //
@@ -43,22 +43,6 @@ interface HeclusCreditsData {
   /** Who pays for this account's generations. This wallet is only spent from on
    *  "wallet". */
   fundingMode?: "byo" | "wallet";
-}
-
-/**
- * The checkout link with a return URL attached.
- *
- * Without redirect_url Dodo leaves the buyer on its own receipt page, so the
- * page that confirms the payment and credits the wallet is never reached: the
- * money is taken and nothing lands. Built at click time rather than on the
- * server because it has to point at whichever host the customer is on.
- *
- * Falls back to the bare link during server rendering, where there is no
- * origin to build against. The anchor is only ever clicked in the browser.
- */
-function heclusCheckoutHref(checkoutUrl: string): string {
-  if (typeof window === "undefined") return checkoutUrl;
-  return buildTopUpUrl(checkoutUrl, window.location.origin, 1, "heclus");
 }
 
 /** Heclus Credits: the general wallet, bought from us and spent on work that runs
@@ -155,22 +139,18 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               Top up
             </button>
           ) : topUpUrl && !options ? (
-            /* Priced pack size but no price: there is nothing to quote, so the
-               link buys one pack directly. */
-            <a
-              href={heclusCheckoutHref(topUpUrl)}
-              onClick={() => markPendingTopUp("heclus")}
-              // New tab, so the wallet stays open behind the checkout: a
-              // customer who abandons the payment comes back to the page they
-              // were on rather than to a Dodo receipt with no way back.
-              target="_blank"
-              rel="noopener noreferrer"
+            /* A pack with no price to quote. It used to be an anchor straight
+               at the payment link; it goes through the checkout session like
+               everything else now, buying one pack. */
+            <button
+              type="button"
+              onClick={() => startTopUp(topUpUrl, 1, "heclus", true)}
               title="Top up your Heclus Credits"
               className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               Top up
-            </a>
+            </button>
           ) : topUpUrl && picking ? null : (
             <button
               type="button"

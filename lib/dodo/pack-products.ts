@@ -14,12 +14,29 @@ import { supabase } from "@/lib/supabase/client";
 
 export type PackWallet = "genai" | "heclus" | "free_images";
 
-/** Pulls pdt_… out of a Dodo checkout link. */
-export function productIdFromCheckoutUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const m = /\/buy\/([A-Za-z0-9_]+)/.exec(url);
+/**
+ * The Dodo product a configured value names.
+ *
+ * Takes a bare product id, which is what these fields hold now, and still
+ * reads a /buy/ link, which is what they held before. Dodo's compliance review
+ * asked us to stop using payment links, and the id is the only part of a link
+ * this code ever wanted: it identifies the product for the Checkout API and
+ * tells a top-up apart from a subscription on the way back.
+ *
+ * Keeping the link form working matters for the rows already configured. A
+ * migration that had to be applied by hand before payments worked again would
+ * be a worse answer than a regex.
+ */
+export function productIdFrom(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+  if (/^pdt_[A-Za-z0-9_]+$/.test(raw)) return raw;
+  const m = /\/buy\/([A-Za-z0-9_]+)/.exec(raw);
   return m ? m[1] : null;
 }
+
+/** @deprecated Use productIdFrom: the fields hold ids now, not links. */
+export const productIdFromCheckoutUrl = productIdFrom;
 
 /** Every product id the payload could carry, cart first. */
 export function productIdsOnPayment(raw: Record<string, unknown>): string[] {

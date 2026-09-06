@@ -212,6 +212,8 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
       // which is what a first-time subscriber needs regardless.
     }
 
+    // Presence, not a URL: the field holds a Dodo product id now, and
+    // /payment/start resolves it into a checkout server-side.
     const base = plan?.paymentLink;
     if (!base) {
       setError("Payment not configured for this plan. Contact support.");
@@ -227,12 +229,6 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
     // case both storages are blocked (private/incognito profiles).
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
     try { localStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    const callbackUrl = new URL("/payment/callback", window.location.origin);
-    callbackUrl.searchParams.set("plan", selectedPlan);
-    const direct = new URL(base);
-    direct.searchParams.set("redirect_url", callbackUrl.toString());
-    if (email) direct.searchParams.set("customer[email]", email);
-
     // Via /payment/start, which swaps the plain link for a checkout session
     // attached to the Dodo customer this account already has. A first-time
     // signup has no record to attach and gains nothing, but someone who bought
@@ -241,11 +237,11 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
     // payments under one customer in Dodo rather than a new one per purchase,
     // which is what the plan switch looks a subscription up by.
     //
-    // The plain link rides along as the fallback, so a failure lands them on
-    // exactly the checkout they get today.
+    // No fallback link rides along any more: Dodo's compliance review asked
+    // that payment links stop being used for customer payments, so a session
+    // that cannot be created shows an error to retry rather than a link.
     const url = new URL("/payment/start", window.location.origin);
     url.searchParams.set("plan", selectedPlan);
-    url.searchParams.set("fb", direct.toString());
 
     // Open Dodo checkout in a new tab via a synthetic anchor click.
     // window.open with "noopener" returns null even on success in most
